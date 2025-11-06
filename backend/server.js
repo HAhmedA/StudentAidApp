@@ -94,7 +94,7 @@ app.post('/api/auth/register', validate([
 
 app.post('/api/auth/login', validate([
   body('email').isEmail().normalizeEmail(),
-  body('password').isString().isLength({ min: 8, max: 200 })
+  body('password').isString().notEmpty()
 ]), async (req, res) => {
   try {
     const { email, password } = req.body

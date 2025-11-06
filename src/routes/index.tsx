@@ -5,6 +5,7 @@ import Run from "../pages/Run"
 import Edit from "../pages/Edit"
 import Results from "../pages/Results"
 import Login from "../pages/Login"
+import Register from "../pages/Register"
 import RequireAdmin from "../components/RequireAdmin"
 import RequireAuth from "../components/RequireAuth"
 import { useReduxDispatch, useReduxSelector } from '../redux'
@@ -15,10 +16,14 @@ export const NavBar = () => {
     const dispatch = useReduxDispatch()
     return (
         <>
-            {user && <NavLink className='sjs-nav-button' to="/"><span>My Surveys</span></NavLink>}
-            {!user && <NavLink className='sjs-nav-button' to="/login"><span>Login</span></NavLink>}
+            {user && <NavLink className='sjs-nav-button' to="/"><span>Home</span></NavLink>}
             {user && (
-                <span className='sjs-nav-button' onClick={() => dispatch(logout())}><span>Logout</span></span>
+                <>
+                    <span className='sjs-nav-button' style={{ cursor: 'default', color: '#fff' }}>
+                        {user.name || user.email}
+                    </span>
+                    <span className='sjs-nav-button' onClick={() => dispatch(logout())}><span>Logout</span></span>
+                </>
             )}
         </>
     )
@@ -30,6 +35,7 @@ const Content = (): React.ReactElement => (
     <>
         <Routes>
             <Route path="/login" element={<Login/>}></Route>
+            <Route path="/register" element={<Register/>}></Route>
             <Route path="/" element={<RequireAuth><Home/></RequireAuth>}></Route>
             <Route path="/run/:id" element={<RequireAuth><Run/></RequireAuth>}></Route>
             <Route path="/edit/:id" element={<RequireAuth><RequireAdmin><Edit/></RequireAdmin></RequireAuth>}></Route>

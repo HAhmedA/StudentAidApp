@@ -14,8 +14,8 @@ body {
 
 
 .sjs-app__header {
-  background: linear-gradient(90deg, #19b394 0%, #50b390 100%);
-  box-shadow: 0 2px 8px rgba(30,143,255,0.08);
+  background: linear-gradient(90deg, #4F46E5 0%, #7C3AED 100%);
+  box-shadow: 0 2px 8px rgba(79,70,229,0.15);
   padding: 0;
   position: sticky;
   top: 0;
