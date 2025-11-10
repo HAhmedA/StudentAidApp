@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'react-router'
 import { useReduxDispatch } from '../redux';
 import { get } from '../redux/surveys';
-import Viewer from '../components/Viewer'
+import Dashboard from '../components/Dashboard'
 
 const Results = () => {
     const dispatch = useReduxDispatch()
@@ -22,7 +22,7 @@ const Results = () => {
         {!!surveyData && <>
             <h1>{'\'' + surveyData.name + '\' results'}</h1>
             <div className='sjs-results-container'>
-                <Viewer id={id as string}/>
+                <Dashboard surveyId={id as string} />
             </div>
         </>}
     </>);

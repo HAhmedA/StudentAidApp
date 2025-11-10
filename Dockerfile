@@ -15,8 +15,6 @@ COPY . .
 # REACT_APP_* vars are baked at build-time in CRA
 ARG REACT_APP_API_BASE
 ENV REACT_APP_API_BASE=${REACT_APP_API_BASE}
-ARG REACT_APP_ENABLE_MSW
-ENV REACT_APP_ENABLE_MSW=${REACT_APP_ENABLE_MSW}
 
 # Build production bundle
 RUN npm run build

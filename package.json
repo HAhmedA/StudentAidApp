@@ -15,8 +15,6 @@
     "@types/react-router": "^5.1.18",
     "@types/react-router-dom": "^5.3.3",
     "axios": "^1.11.0",
-    "connected-react-router": "6.9.3",
-    "history": "5.3.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-redux": "^7.2.8",
@@ -27,8 +25,7 @@
     "survey-creator-core": "latest",
     "survey-creator-react": "latest",
     "survey-react-ui": "latest",
-    "typescript": "^4.6.3",
-    "web-vitals": "^2.1.4"
+    "typescript": "^4.6.3"
   },
   "scripts": {
     "start": "react-scripts start",
@@ -54,20 +51,7 @@
       "last 1 safari version"
     ]
   },
-  "msw": {
-    "workerDirectory": [
-      "public"
-    ]
-  },
   "devDependencies": {
-    "msw": "^2.10.4",
     "react-scripts": "^5.0.0"
-  },
-  "overrides": {
-    "connected-react-router": {
-      "react": "^18.0.0",
-      "react-router": "6.3.0",
-      "history": "5.3.0"
-    }
   }
 }

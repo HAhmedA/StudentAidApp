@@ -41,7 +41,9 @@ const Login = (): React.ReactElement => {
             await dispatch(loginEmailPassword({ email, password })).unwrap()
             navigate('/')
         } catch (err: any) {
-            setLocalError(err?.message || 'Invalid email or password')
+            // The error from rejectWithValue is the payload itself (a string)
+            const errorMessage = typeof err === 'string' ? err : (err?.message || err?.response?.data?.error || 'Invalid email or password')
+            setLocalError(errorMessage)
         }
     }
 
@@ -51,8 +53,8 @@ const Login = (): React.ReactElement => {
         <div className="login-container">
             <div className="login-card">
                 <div className="login-header">
-                    <h1 className="login-title">LAILA</h1>
-                    <p className="login-tagline">Learn with <strong>AI LA</strong>boratory</p>
+                    <h1 className="login-title">AIEDAI</h1>
+                    <p className="login-tagline">Learn with <strong>AI ED</strong>ucation <strong>AI</strong></p>
                 </div>
 
                 <form onSubmit={handleSubmit} className="login-form">

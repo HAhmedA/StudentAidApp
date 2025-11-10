@@ -17,12 +17,41 @@ const Run = () => {
         (async () => {
             const surveyAction = await dispatch(get(id as string))
             surveyDataSet(surveyAction.payload)
-            const model = new Model(surveyAction.payload?.json);
+            
+            // Make all questions mandatory by modifying the JSON before creating the model
+            const surveyJson = JSON.parse(JSON.stringify(surveyAction.payload?.json || {}))
+            if (surveyJson.pages) {
+                surveyJson.pages.forEach((page: any) => {
+                    if (page.elements) {
+                        page.elements.forEach((element: any) => {
+                            element.isRequired = true
+                        })
+                    }
+                })
+            }
+            
+            const model = new Model(surveyJson)
+            
+            // Set required text message
+            model.requiredText = '*'
+            
+            // Ensure validation prevents incomplete submissions
+            model.showProgressBar = 'bottom'
+            model.showQuestionNumbers = 'on'
+            
             model
                 .onComplete
                 .add((sender: Model) => {
                     dispatch(post({postId: id as string, surveyResult: sender.data, surveyResultText: JSON.stringify(sender.data)}))
-                });    
+                })
+            
+            // Prevent completion if any required question is not answered
+            model.onValidateQuestion.add((sender, options) => {
+                if (options.question.isRequired && !options.value) {
+                    options.error = 'This question is required'
+                }
+            })
+            
             surveyModelSet(model)
         })()
     }, [dispatch, id])

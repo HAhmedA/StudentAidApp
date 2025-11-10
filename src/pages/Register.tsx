@@ -52,7 +52,16 @@ const Register = (): React.ReactElement => {
             await dispatch(register({ name, email, password })).unwrap()
             navigate('/')
         } catch (err: any) {
-            setLocalError(err?.message || 'Registration failed. Email may already be in use.')
+            // The error from rejectWithValue is the payload itself (a string)
+            const errorMessage = typeof err === 'string' ? err : (err?.message || err?.response?.data?.error || 'Registration failed')
+            // Map backend error codes to user-friendly messages
+            if (errorMessage === 'email_in_use') {
+                setLocalError('This email is already registered. Please use a different email or try logging in.')
+            } else if (errorMessage === 'validation_error') {
+                setLocalError('Please check your input. Email must be valid and password must be at least 8 characters.')
+            } else {
+                setLocalError(errorMessage)
+            }
         }
     }
 
@@ -62,8 +71,8 @@ const Register = (): React.ReactElement => {
         <div className="login-container">
             <div className="login-card">
                 <div className="login-header">
-                    <h1 className="login-title">LAILA</h1>
-                    <p className="login-tagline">Learn with <strong>AI LA</strong>boratory</p>
+                    <h1 className="login-title">AIEDAI</h1>
+                    <p className="login-tagline">Learn with <strong>AI ED</strong>ucation <strong>AI</strong></p>
                 </div>
 
                 <form onSubmit={handleSubmit} className="login-form">

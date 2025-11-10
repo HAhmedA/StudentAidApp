@@ -1,12 +1,9 @@
 import { configureStore } from '@reduxjs/toolkit'
 import { useDispatch, useSelector, TypedUseSelectorHook } from 'react-redux'
-import { createBrowserHistory } from 'history'
 import rootReducer from './root-reducer'
 
-export const history = createBrowserHistory()
-
 const store = configureStore({
-    reducer: rootReducer(history),
+    reducer: rootReducer,
     // middleware: getDefaultMiddleware => getDefaultMiddleware(), // .prepend(middleware)
 })
 
