@@ -72,7 +72,7 @@ const Register = (): React.ReactElement => {
             <div className="login-card">
                 <div className="login-header">
                     <h1 className="login-title">AIEDAI</h1>
-                    <p className="login-tagline">Learn with <strong>AI ED</strong>ucation <strong>AI</strong></p>
+                    <p className="login-tagline">Understand yourself</p>
                 </div>
 
                 <form onSubmit={handleSubmit} className="login-form">

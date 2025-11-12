@@ -96,6 +96,64 @@ const Home = () => {
         }
     }
     
+    // Helper function to convert hex to RGB
+    const hexToRgb = (hex: string): [number, number, number] => {
+        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
+        return result
+            ? [
+                parseInt(result[1], 16),
+                parseInt(result[2], 16),
+                parseInt(result[3], 16)
+            ]
+            : [0, 0, 0]
+    }
+    
+    // Helper function to convert RGB to hex
+    const rgbToHex = (r: number, g: number, b: number): string => {
+        return '#' + [r, g, b].map(x => {
+            const hex = Math.round(x).toString(16)
+            return hex.length === 1 ? '0' + hex : hex
+        }).join('')
+    }
+    
+    // Interpolate between two colors
+    const interpolateColor = (color1: string, color2: string, factor: number): string => {
+        const rgb1 = hexToRgb(color1)
+        const rgb2 = hexToRgb(color2)
+        const r = rgb1[0] + (rgb2[0] - rgb1[0]) * factor
+        const g = rgb1[1] + (rgb2[1] - rgb1[1]) * factor
+        const b = rgb1[2] + (rgb2[2] - rgb1[2]) * factor
+        return rgbToHex(r, g, b)
+    }
+    
+    const getConstructColor = (average: number | null): string => {
+        if (average === null) {
+            return '#F9FAFB' // Default background when no data
+        }
+        
+        const lowColor = '#fdaeae'   // Red
+        const midColor = '#FFFF99'   // Yellow
+        const highColor = '#99FF99'  // Green
+        const midpoint = 3
+        
+        // Assume rating scale is 1-5 (adjust if needed)
+        const minValue = 1
+        const maxValue = 5
+        
+        // Clamp average to valid range
+        const clampedAverage = Math.max(minValue, Math.min(maxValue, average))
+        
+        if (clampedAverage <= midpoint) {
+            // Interpolate between red and yellow
+            const factor = (clampedAverage - minValue) / (midpoint - minValue)
+            return interpolateColor(lowColor, midColor, factor)
+        } else {
+            // Interpolate between yellow and green
+            const factor = (clampedAverage - midpoint) / (maxValue - midpoint)
+            return interpolateColor(midColor, highColor, factor)
+        }
+    }
+    
     const renderConstructs = (constructs: ConstructStat[], hasData: boolean) => {
         // Show "No survey responses yet" if no data or no constructs
         if (!hasData || constructs.length === 0) {
@@ -111,27 +169,44 @@ const Home = () => {
             return <div className='mood-no-data'>No survey responses yet</div>
         }
         
+        // Format construct name: remove underscores, capitalize first letter
+        const formatConstructName = (name: string) => {
+            return name
+                .replace(/_/g, ' ')
+                .split(' ')
+                .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+                .join(' ')
+        }
+        
         return (
             <div className='mood-constructs-grid'>
-                {constructs.map((construct) => (
-                    <div key={construct.name} className='mood-construct-item'>
-                        <div className='mood-construct-name'>{construct.name}</div>
-                        <div className='mood-construct-stats'>
-                            <div className='mood-stat'>
-                                <span className='mood-stat-label'>Avg:</span>
-                                <span className='mood-stat-value'>{construct.average !== null ? construct.average.toFixed(1) : 'N/A'}</span>
-                            </div>
-                            <div className='mood-stat'>
-                                <span className='mood-stat-label'>Min:</span>
-                                <span className='mood-stat-value'>{construct.min !== null ? construct.min : 'N/A'}</span>
-                            </div>
-                            <div className='mood-stat'>
-                                <span className='mood-stat-label'>Max:</span>
-                                <span className='mood-stat-value'>{construct.max !== null ? construct.max : 'N/A'}</span>
+                {constructs.map((construct) => {
+                    const backgroundColor = getConstructColor(construct.average)
+                    const formattedName = formatConstructName(construct.name)
+                    return (
+                        <div 
+                            key={construct.name} 
+                            className='mood-construct-item'
+                            style={{ backgroundColor }}
+                        >
+                            <div className='mood-construct-name'>{formattedName}</div>
+                            <div className='mood-construct-stats'>
+                                <div className='mood-stat'>
+                                    <span className='mood-stat-label'>Avg:</span>
+                                    <span className='mood-stat-value'>{construct.average !== null ? construct.average.toFixed(1) : 'N/A'}</span>
+                                </div>
+                                <div className='mood-stat'>
+                                    <span className='mood-stat-label'>Min:</span>
+                                    <span className='mood-stat-value'>{construct.min !== null ? construct.min : 'N/A'}</span>
+                                </div>
+                                <div className='mood-stat'>
+                                    <span className='mood-stat-label'>Max:</span>
+                                    <span className='mood-stat-value'>{construct.max !== null ? construct.max : 'N/A'}</span>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                ))}
+                    )
+                })}
             </div>
         )
     }

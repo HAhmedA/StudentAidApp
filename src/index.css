@@ -1,3 +1,14 @@
+:root {
+  /* SurveyJS theme colors */
+  --sjs-primary-color: #850b0b;
+  --sjs-primary-backcolor: #850b0b;
+  --sjs-primary-forecolor: #ffffff;
+  --sjs-border-color: #850b0b;
+  --sjs-shadow-small: 0 1px 2px rgba(133, 11, 11, 0.1);
+  --sjs-shadow-medium: 0 2px 4px rgba(133, 11, 11, 0.15);
+  --sjs-shadow-large: 0 4px 8px rgba(133, 11, 11, 0.2);
+}
+
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',

@@ -33,6 +33,13 @@ const Run = () => {
             
             const model = new Model(surveyJson)
             
+            // Set SurveyJS theme color
+            model.css = {
+                primary: '#850b0b',
+                primaryForeground: '#ffffff',
+                primaryLight: '#ffeaea'
+            }
+            
             // Set required text message
             model.requiredText = '*'
             

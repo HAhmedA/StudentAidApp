@@ -34,8 +34,8 @@
 }
 
 .stat-card {
-  background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%);
-  color: white;
+  background: linear-gradient(135deg, #850b0b 0%, #850b0b 100%);
+  color: #ffffff;
   padding: 20px 24px;
   border-radius: 12px;
   min-width: 180px;
@@ -93,8 +93,8 @@
 }
 
 .question-type {
-  background: #EEF2FF;
-  color: #4F46E5;
+  background: #ffeaea;
+  color: #850b0b;
   padding: 4px 12px;
   border-radius: 6px;
   font-size: 12px;
@@ -142,7 +142,7 @@
 }
 
 .rating-stat .stat-value-large {
-  color: #4F46E5;
+  color: #850b0b;
   font-size: 36px;
   font-weight: 700;
 }
@@ -170,7 +170,7 @@
   min-width: 30px;
   text-align: center;
   font-weight: 600;
-  color: #4F46E5;
+  color: #850b0b;
 }
 
 .distribution-bar-container {
@@ -183,7 +183,7 @@
 }
 
 .distribution-bar {
-  background: linear-gradient(90deg, #4F46E5 0%, #7C3AED 100%);
+  background: linear-gradient(90deg, #850b0b 0%, #850b0b 100%);
   height: 100%;
   display: flex;
   align-items: center;
@@ -194,7 +194,7 @@
 }
 
 .distribution-count {
-  color: white;
+  color: #ffffff;
   font-weight: 600;
   font-size: 12px;
 }
@@ -232,7 +232,7 @@
 }
 
 .choice-bar {
-  background: linear-gradient(90deg, #4F46E5 0%, #7C3AED 100%);
+  background: linear-gradient(90deg, #850b0b 0%, #850b0b 100%);
   height: 100%;
   display: flex;
   align-items: center;
@@ -243,7 +243,7 @@
 }
 
 .choice-count {
-  color: white;
+  color: #ffffff;
   font-weight: 600;
   font-size: 12px;
 }
@@ -283,7 +283,7 @@
   padding: 12px;
   background: white;
   border-radius: 6px;
-  border-left: 3px solid #4F46E5;
+  border-left: 3px solid #850b0b;
   color: #374151;
   line-height: 1.5;
 }
@@ -306,8 +306,8 @@
 }
 
 .response-badge {
-  background: #EEF2FF;
-  color: #4F46E5;
+  background: #ffeaea;
+  color: #850b0b;
   padding: 6px 12px;
   border-radius: 6px;
   font-size: 14px;

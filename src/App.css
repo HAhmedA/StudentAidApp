@@ -14,8 +14,8 @@ body {
 
 
 .sjs-app__header {
-  background: linear-gradient(90deg, #4F46E5 0%, #7C3AED 100%);
-  box-shadow: 0 2px 8px rgba(79,70,229,0.15);
+  background: linear-gradient(90deg, #850b0b 0%, #850b0b 100%);
+  box-shadow: 0 2px 8px rgba(133,11,11,0.15);
   padding: 0;
   position: sticky;
   top: 0;
@@ -50,7 +50,7 @@ body {
   font-size: 18px;
   text-decoration: none;
   line-height: 40px;
-  color: #fff;
+  color: #ffffff;
   padding: 0 8px;
   border-radius: 4px;
   transition: background 0.2s, color 0.2s;
@@ -58,9 +58,17 @@ body {
 
 .sjs-nav-button:hover,
 .sjs-nav-button.active {
-  background: rgba(255,255,255,0.15);
-  color: #fff;
+  background: rgba(255,255,255,0.2);
+  color: #ffffff;
   text-decoration: none;
+}
+
+.sjs-nav-button-orange {
+  color: #ffd700 !important;
+}
+
+.sjs-nav-button-orange:hover {
+  color: #ffd700 !important;
 }
 
 .sjs-app__content {

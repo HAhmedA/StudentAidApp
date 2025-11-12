@@ -34,20 +34,20 @@
   align-items: center;
   gap: 8px;
   padding: 12px 24px;
-  background: #4F46E5;
-  color: white;
+  background: #b71c1c;
+  color: #ffffff;
   text-decoration: none;
   border-radius: 8px;
   font-weight: 600;
   font-size: 16px;
   transition: background-color 0.2s, transform 0.1s;
-  box-shadow: 0 2px 4px rgba(79, 70, 229, 0.2);
+  box-shadow: 0 2px 4px rgba(183, 28, 28, 0.2);
 }
 
 .fill-survey-button:hover {
-  background: #4338CA;
+  background: #c62828;
   transform: translateY(-1px);
-  box-shadow: 0 4px 8px rgba(79, 70, 229, 0.3);
+  box-shadow: 0 4px 8px rgba(183, 28, 28, 0.3);
 }
 
 .fill-survey-button:active {

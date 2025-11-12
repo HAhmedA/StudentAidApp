@@ -19,7 +19,7 @@
     background: transparent;
     padding: 8px 24px;
     border: none;
-    color: var(--primary, #4F46E5);
+    color: var(--primary, #b71c1c);
     cursor: pointer;
     font-weight: 600;
     text-align: center;
@@ -27,7 +27,7 @@
 
 .sjs-button:hover {
     /* background-color: var(--primary, #4F46E5); */
-    background-color: var(--primary-light, rgba(79, 70, 229, 0.1));
+    background-color: var(--primary-light, rgba(183, 28, 28, 0.1));
 }
 
 .sjs-add-btn {
@@ -44,7 +44,7 @@
 
 .sjs-add-btn:hover,
 .sjs-add-btn:focus {
-    border-color: var(--primary, #4F46E5);
+    border-color: var(--primary, #b71c1c);
     background-color: white;
 }
 

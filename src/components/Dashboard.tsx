@@ -83,7 +83,7 @@ const Dashboard: React.FC<DashboardProps> = ({ surveyId }) => {
         {data.questions.map((question, idx) => (
           <div key={question.questionName || idx} className="question-card">
             <div className="question-header">
-              <h3 className="question-title">{question.questionTitle}</h3>
+              <h3 className="question-title">{idx + 1}. {question.questionTitle}</h3>
               <div className="question-meta">
                 <span className="question-type">{question.questionType}</span>
                 <span className="response-count">

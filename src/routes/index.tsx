@@ -17,13 +17,13 @@ export const NavBar = () => {
     const dispatch = useReduxDispatch()
     return (
         <>
-            {user && <NavLink className='sjs-nav-button' to="/"><span>Home</span></NavLink>}
+            {user && <NavLink className='sjs-nav-button sjs-nav-button-orange' to="/"><span>Home</span></NavLink>}
             {user && (
                 <>
-                    <span className='sjs-nav-button' style={{ cursor: 'default', color: '#fff' }}>
+                    <span className='sjs-nav-button' style={{ cursor: 'default', color: '#ffffff' }}>
                         Hello, {user.name || user.email}
                     </span>
-                    <span className='sjs-nav-button' onClick={() => dispatch(logout())}><span>Logout</span></span>
+                    <span className='sjs-nav-button sjs-nav-button-orange' onClick={() => dispatch(logout())}><span>Logout</span></span>
                 </>
             )}
         </>
