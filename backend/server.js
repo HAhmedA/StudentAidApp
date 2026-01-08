@@ -32,8 +32,8 @@ const pool = new Pool({
 const corsOptions = {
   origin: ['http://localhost:3000'],
   credentials: true,
-  methods: ['GET','POST','PUT','DELETE','OPTIONS'],
-  allowedHeaders: ['Content-Type','Authorization']
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }
 app.use(cors(corsOptions))
 app.options('*', cors(corsOptions))
@@ -188,7 +188,7 @@ app.get('/api/create', async (req, res) => {
       }]
     }
     const { rows } = await pool.query(
-      'INSERT INTO public.surveys (id, name, json) VALUES ($1, $2, $3::json) RETURNING id, name, json',
+      'INSERT INTO public.surveys (id, name, json) VALUES ($1, $2, $3::jsonb) RETURNING id, name, json',
       [id, name, JSON.stringify(json)]
     )
     res.json(mapSurveyRow(rows[0]))
@@ -222,7 +222,7 @@ app.post('/api/create', async (req, res) => {
       }]
     }
     const { rows } = await pool.query(
-      'INSERT INTO public.surveys (id, name, json) VALUES ($1, $2, $3::json) RETURNING id, name, json',
+      'INSERT INTO public.surveys (id, name, json) VALUES ($1, $2, $3::jsonb) RETURNING id, name, json',
       [id, name, JSON.stringify(json)]
     )
     res.json(mapSurveyRow(rows[0]))
@@ -265,7 +265,7 @@ app.post('/api/changeJson', async (req, res) => {
   try {
     const { id, json } = req.body || {}
     const { rows } = await pool.query(
-      'UPDATE public.surveys SET json = $2::json WHERE id = $1 RETURNING id, name, json',
+      'UPDATE public.surveys SET json = $2::jsonb WHERE id = $1 RETURNING id, name, json',
       [id, JSON.stringify(json)]
     )
     if (!rows[0]) return res.status(404).json({ error: 'not found' })
@@ -296,7 +296,7 @@ app.post('/api/post', async (req, res) => {
     const { postId, surveyResult } = req.body || {}
     const id = uuidv4()
     const userId = req.session.user?.id || null
-    await pool.query('INSERT INTO public.results (id, postid, json, user_id, created_at) VALUES ($1, $2, $3::json, $4, now())', [id, postId, JSON.stringify(surveyResult), userId])
+    await pool.query('INSERT INTO public.results (id, postid, json, user_id, created_at) VALUES ($1, $2, $3::jsonb, $4, now())', [id, postId, JSON.stringify(surveyResult), userId])
     res.json({ id, postId })
   } catch (e) {
     res.status(500).json({ error: 'db_error', details: String(e) })
@@ -567,14 +567,14 @@ app.get('/api/student/mood/history', requireAuth, async (req, res) => {
 app.get('/api/results/dashboard/:surveyId', async (req, res) => {
   try {
     const surveyId = req.params.surveyId
-    
+
     // Get survey structure
     const surveyResult = await pool.query('SELECT id, name, json FROM public.surveys WHERE id = $1', [surveyId])
     if (!surveyResult.rows[0]) {
       return res.status(404).json({ error: 'survey_not_found' })
     }
     const survey = surveyResult.rows[0]
-    
+
     // Get all results for this survey (admin sees all, not filtered by user)
     const resultsQuery = await pool.query('SELECT id, json, user_id FROM public.results WHERE postid = $1', [surveyId])
     const results = resultsQuery.rows.map(row => ({
@@ -582,7 +582,7 @@ app.get('/api/results/dashboard/:surveyId', async (req, res) => {
       userId: row.user_id,
       data: typeof row.json === 'string' ? JSON.parse(row.json) : row.json
     }))
-    
+
     // Extract questions from survey structure
     const questions = []
     if (survey.json && survey.json.pages) {
@@ -606,7 +606,7 @@ app.get('/api/results/dashboard/:surveyId', async (req, res) => {
         }
       })
     }
-    
+
     // Aggregate responses by question
     const aggregated = questions.map(question => {
       const responses = results
@@ -626,10 +626,10 @@ app.get('/api/results/dashboard/:surveyId', async (req, res) => {
           return value
         })
         .filter(v => v !== undefined && v !== null && v !== '')
-      
+
       const totalResponses = responses.length
       const responseRate = results.length > 0 ? (totalResponses / results.length) * 100 : 0
-      
+
       let aggregation = {
         questionName: question.name,
         questionTitle: question.title,
@@ -638,7 +638,7 @@ app.get('/api/results/dashboard/:surveyId', async (req, res) => {
         responseRate: Math.round(responseRate * 10) / 10,
         totalSubmissions: results.length
       }
-      
+
       // Aggregate based on question type
       if (question.type === 'rating') {
         const numericResponses = responses.map(r => Number(r)).filter(n => !isNaN(n))
@@ -647,13 +647,13 @@ app.get('/api/results/dashboard/:surveyId', async (req, res) => {
           const avg = sum / numericResponses.length
           const min = Math.min(...numericResponses)
           const max = Math.max(...numericResponses)
-          
+
           // Distribution
           const distribution = {}
           numericResponses.forEach(r => {
             distribution[r] = (distribution[r] || 0) + 1
           })
-          
+
           aggregation.average = Math.round(avg * 10) / 10
           aggregation.min = min
           aggregation.max = max
@@ -689,10 +689,10 @@ app.get('/api/results/dashboard/:surveyId', async (req, res) => {
         // Default: show all responses
         aggregation.allResponses = responses
       }
-      
+
       return aggregation
     })
-    
+
     res.json({
       surveyId: survey.id,
       surveyName: survey.name,
@@ -701,6 +701,111 @@ app.get('/api/results/dashboard/:surveyId', async (req, res) => {
     })
   } catch (e) {
     console.error('Dashboard error:', e)
+    res.status(500).json({ error: 'db_error', details: String(e) })
+  }
+})
+
+// Student Profile Endpoints
+app.get('/api/profile', requireAuth, async (req, res) => {
+  try {
+    const userId = req.session.user?.id
+    if (!userId) {
+      return res.status(401).json({ error: 'unauthorized' })
+    }
+
+    const { rows } = await pool.query(
+      'SELECT user_id, edu_level, field_of_study, major, learning_formats, disabilities, updated_at FROM public.student_profiles WHERE user_id = $1',
+      [userId]
+    )
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'profile_not_found' })
+    }
+
+    res.json(rows[0])
+  } catch (e) {
+    console.error('Get profile error:', e)
+    res.status(500).json({ error: 'db_error', details: String(e) })
+  }
+})
+
+app.put('/api/profile', requireAuth, async (req, res) => {
+  try {
+    const userId = req.session.user?.id
+    if (!userId) {
+      return res.status(401).json({ error: 'unauthorized' })
+    }
+
+    const { edu_level, field_of_study, major, learning_formats, disabilities } = req.body
+
+    // Upsert: insert or update if exists
+    const { rows } = await pool.query(
+      `INSERT INTO public.student_profiles (user_id, edu_level, field_of_study, major, learning_formats, disabilities, updated_at)
+       VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, NOW())
+       ON CONFLICT (user_id) 
+       DO UPDATE SET 
+         edu_level = EXCLUDED.edu_level,
+         field_of_study = EXCLUDED.field_of_study,
+         major = EXCLUDED.major,
+         learning_formats = EXCLUDED.learning_formats,
+         disabilities = EXCLUDED.disabilities,
+         updated_at = NOW()
+       RETURNING user_id, edu_level, field_of_study, major, learning_formats, disabilities, updated_at`,
+      [userId, edu_level || '', field_of_study || '', major || '', JSON.stringify(learning_formats || []), JSON.stringify(disabilities || [])]
+    )
+
+    res.json(rows[0])
+  } catch (e) {
+    console.error('Update profile error:', e)
+    res.status(500).json({ error: 'db_error', details: String(e) })
+  }
+})
+
+// Admin System Prompt Endpoints
+const requireAdmin = (req, res, next) => {
+  if (!req.session.user) return res.status(401).json({ error: 'unauthorized' })
+  // Check if user is admin (either by role or by email)
+  const isAdmin = req.session.user.role === 'admin' || req.session.user.email === 'admin@example.com'
+  if (!isAdmin) return res.status(403).json({ error: 'forbidden' })
+  next()
+}
+
+app.get('/api/admin/system-prompt', requireAdmin, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT prompt, updated_at FROM public.system_prompts ORDER BY updated_at DESC LIMIT 1'
+    )
+
+    if (rows.length === 0) {
+      // Return default if no prompt exists
+      return res.json({ prompt: 'Be Ethical', updated_at: null })
+    }
+
+    res.json(rows[0])
+  } catch (e) {
+    console.error('Get system prompt error:', e)
+    res.status(500).json({ error: 'db_error', details: String(e) })
+  }
+})
+
+app.put('/api/admin/system-prompt', requireAdmin, async (req, res) => {
+  try {
+    const { prompt } = req.body
+    const userId = req.session.user?.id
+
+    if (!prompt || typeof prompt !== 'string') {
+      return res.status(400).json({ error: 'prompt is required' })
+    }
+
+    // Insert new prompt (keep history)
+    const { rows } = await pool.query(
+      'INSERT INTO public.system_prompts (prompt, created_by, updated_at) VALUES ($1, $2, NOW()) RETURNING prompt, updated_at',
+      [prompt, userId]
+    )
+
+    res.json(rows[0])
+  } catch (e) {
+    console.error('Update system prompt error:', e)
     res.status(500).json({ error: 'db_error', details: String(e) })
   }
 })

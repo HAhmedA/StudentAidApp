@@ -1,100 +1,66 @@
-import { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useReduxSelector } from '../redux'
+import { useReduxSelector, useReduxDispatch } from '../redux'
+import { fetchProfile, updateProfile } from '../redux/profile'
+import { fetchSystemPrompt, updateSystemPrompt } from '../redux/admin'
+import {
+    educationLevels,
+    fieldsOfStudy,
+    majorsByField,
+    learningFormatOptions,
+    disabilityCategories
+} from '../models/profile-constants'
 import './Profile.css'
-
-const educationLevels = ['Bachelor\'s', 'Master\'s', 'PhD', 'Post Doc']
-
-const fieldsOfStudy = [
-    'Engineering & Technology',
-    'Computer Science & Information Technology',
-    'Natural Sciences',
-    'Health & Medical Sciences',
-    'Business & Management',
-    'Social Sciences',
-    'Arts & Humanities',
-    'Communication & Media',
-    'Education',
-    'Law, Policy & Public Service'
-]
-
-const majorsByField: Record<string, string[]> = {
-    'Engineering & Technology': [
-        'Mechanical Engineering', 'Civil Engineering', 'Electrical Engineering',
-        'Computer Engineering', 'Chemical Engineering', 'Industrial Engineering',
-        'Aerospace Engineering', 'Software Engineering', 'Biomedical Engineering',
-        'Environmental Engineering'
-    ],
-    'Computer Science & Information Technology': [
-        'Computer Science', 'Information Technology', 'Cybersecurity', 'Data Science',
-        'Artificial Intelligence', 'Game Design', 'Computer Networks', 'Web Development',
-        'Cloud Computing', 'Information Systems'
-    ],
-    'Natural Sciences': [
-        'Biology', 'Chemistry', 'Physics', 'Geology', 'Environmental Science',
-        'Astronomy', 'Oceanography', 'Ecology', 'Biochemistry', 'Marine Biology'
-    ],
-    'Health & Medical Sciences': [
-        'Nursing', 'Medicine', 'Public Health', 'Pharmacy', 'Dentistry',
-        'Nutrition and Dietetics', 'Physical Therapy', 'Biomedical Sciences',
-        'Occupational Therapy', 'Health Administration'
-    ],
-    'Business & Management': [
-        'Business Administration', 'Finance', 'Marketing', 'Accounting',
-        'Human Resource Management', 'International Business', 'Entrepreneurship',
-        'Supply Chain Management', 'Economics', 'Hospitality Management'
-    ],
-    'Social Sciences': [
-        'Psychology', 'Sociology', 'Anthropology', 'Political Science', 'Criminology',
-        'Geography', 'International Relations', 'Archaeology', 'Gender Studies',
-        'Cultural Studies'
-    ],
-    'Arts & Humanities': [
-        'English Literature', 'History', 'Philosophy', 'Linguistics', 'Religious Studies',
-        'Fine Arts', 'Art History', 'Music', 'Theatre Arts', 'Creative Writing'
-    ],
-    'Communication & Media': [
-        'Journalism', 'Media Studies', 'Public Relations', 'Film and Television Production',
-        'Communication Studies', 'Advertising', 'Digital Media', 'Broadcasting',
-        'Screenwriting', 'Visual Communication'
-    ],
-    'Education': [
-        'Early Childhood Education', 'Elementary Education', 'Secondary Education',
-        'Special Education', 'Educational Leadership', 'Curriculum and Instruction',
-        'Adult Education', 'Educational Psychology', 'Counseling', 'TESOL'
-    ],
-    'Law, Policy & Public Service': [
-        'Law', 'Public Policy', 'Public Administration', 'International Law',
-        'Political Science', 'Criminal Justice', 'Legal Studies', 'Human Rights',
-        'Urban Planning', 'Social Work'
-    ]
-}
-
-const learningFormatOptions = ['Reading', 'Listening', 'Watching', 'Hands-on Practice', 'Discussion', 'Writing']
-
-const disabilityCategories = {
-    'Reading Disabilities': ['Dyslexia', 'Hyperlexia', 'Visual Processing Disorder'],
-    'Writing Disabilities': ['Dysgraphia', 'Written Expression Disorder', 'Motor Coordination Disorder'],
-    'Mathematics Disabilities': ['Dyscalculia', 'Math Reasoning Disorder', 'Number Processing Disorder'],
-    'Attention & Focus Disorders': ['Attention Deficit Disorder (ADD)', 'Attention Deficit Hyperactivity Disorder (ADHD)', 'Executive Function Disorder'],
-    'Language & Communication Disorders': ['Auditory Processing Disorder (APD)', 'Expressive Language Disorder', 'Receptive Language Disorder'],
-    'Memory & Cognitive Processing Disorders': ['Working Memory Deficit', 'Slow Processing Speed', 'Nonverbal Learning Disability (NVLD)'],
-    'Autism Spectrum-Related Learning Differences': ['High-Functioning Autism', 'Asperger\'s Syndrome', 'Social Communication Disorder'],
-    'Generalized Learning Disorders': ['Specific Learning Disorder (SLD)', 'Global Developmental Delay', 'Mild Cognitive Impairment']
-}
 
 const Profile = () => {
     const navigate = useNavigate()
+    const dispatch = useReduxDispatch()
     const user = useReduxSelector(state => state.auth.user)
     const userName = user?.name || user?.email || 'User'
+    const isAdmin = user?.role === 'admin' || user?.email === 'admin@example.com'
 
+    // Admin State
+    const adminState = useReduxSelector(state => state.admin)
+    const [systemPrompt, setSystemPrompt] = useState('')
+
+    // Student State
+    const profileState = useReduxSelector(state => state.profile)
     const [educationLevel, setEducationLevel] = useState('')
     const [fieldOfStudy, setFieldOfStudy] = useState('')
     const [major, setMajor] = useState('')
     const [learningFormats, setLearningFormats] = useState<string[]>([])
     const [disabilities, setDisabilities] = useState<string[]>([])
 
-    const availableMajors = fieldOfStudy ? (majorsByField[fieldOfStudy] || []) : []
+    // Success message state
+    const [showAdminSuccess, setShowAdminSuccess] = useState(false)
+    const [showStudentSuccess, setShowStudentSuccess] = useState(false)
+
+    // Load Initial Data
+    useEffect(() => {
+        if (isAdmin) {
+            dispatch(fetchSystemPrompt())
+        } else {
+            dispatch(fetchProfile())
+        }
+    }, [isAdmin, dispatch])
+
+    // Update local state when redux state changes
+    useEffect(() => {
+        if (isAdmin && adminState.systemPrompt) {
+            setSystemPrompt(adminState.systemPrompt)
+        }
+    }, [isAdmin, adminState.systemPrompt])
+
+    useEffect(() => {
+        if (!isAdmin && profileState.data) {
+            setEducationLevel(profileState.data.edu_level || '')
+            setFieldOfStudy(profileState.data.field_of_study || '')
+            setMajor(profileState.data.major || '')
+            setLearningFormats(profileState.data.learning_formats || [])
+            setDisabilities(profileState.data.disabilities || [])
+        }
+    }, [isAdmin, profileState.data])
+
 
     const handleLearningFormatChange = (format: string) => {
         setLearningFormats(prev =>
@@ -112,16 +78,77 @@ const Profile = () => {
         )
     }
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleAdminSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
-        // TODO: Save profile data
-        console.log({
-            educationLevel,
-            fieldOfStudy,
+        const result = await dispatch(updateSystemPrompt(systemPrompt))
+        if (result.type.endsWith('/fulfilled')) {
+            setShowAdminSuccess(true)
+            setTimeout(() => setShowAdminSuccess(false), 3000)
+        }
+    }
+
+    const handleStudentSubmit = async (e: React.FormEvent) => {
+        e.preventDefault()
+        const payload = {
+            edu_level: educationLevel,
+            field_of_study: fieldOfStudy,
             major,
-            learningFormats,
+            learning_formats: learningFormats,
             disabilities
-        })
+        }
+        const result = await dispatch(updateProfile(payload))
+        if (result.type.endsWith('/fulfilled')) {
+            setShowStudentSuccess(true)
+            setTimeout(() => setShowStudentSuccess(false), 3000)
+        }
+    }
+
+    const availableMajors = fieldOfStudy ? (majorsByField[fieldOfStudy] || []) : []
+
+    if (isAdmin) {
+        return (
+            <div className='profile-wrapper'>
+                <div className='profile-container'>
+                    <button className='profile-back' onClick={() => navigate('/')}>
+                        ← Back
+                    </button>
+                    <h1 className='profile-title'>System Configuration</h1>
+                    <div className='profile-content'>
+                        <form onSubmit={handleAdminSubmit} className='profile-form'>
+                            <div className='profile-form-group'>
+                                <label className='profile-label' htmlFor="system-prompt">
+                                    System Prompt
+                                </label>
+                                <textarea
+                                    id="system-prompt"
+                                    className='profile-textarea'
+                                    value={systemPrompt}
+                                    onChange={(e) => setSystemPrompt(e.target.value)}
+                                    rows={10}
+                                    style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ccc', minHeight: '200px' }}
+                                />
+                                {adminState.lastUpdated && (
+                                    <p className="profile-last-updated" style={{ fontSize: '0.8rem', color: '#666', marginTop: '5px' }}>
+                                        Last updated: {new Date(adminState.lastUpdated).toLocaleString()}
+                                    </p>
+                                )}
+                            </div>
+                            <div className='profile-form-actions'>
+                                <button
+                                    type='submit'
+                                    className='profile-submit-button'
+                                    disabled={adminState.status === 'loading'}
+                                >
+                                    {adminState.status === 'loading' ? 'Updating...' : 'Update System Prompt'}
+                                </button>
+                            </div>
+                            {adminState.error && adminState.status === 'failed' && <p className="error-message" style={{ color: 'red', marginTop: '10px' }}>{adminState.error}</p>}
+                            {showAdminSuccess && <p className="success-message" style={{ color: 'green', marginTop: '10px' }}>System prompt updated successfully!</p>}
+                        </form>
+                    </div>
+                </div>
+            </div>
+        )
     }
 
     return (
@@ -132,11 +159,11 @@ const Profile = () => {
                 </button>
                 <h1 className='profile-title'>{userName}'s profile</h1>
                 <div className='profile-content'>
-                    <form onSubmit={handleSubmit} className='profile-form'>
+                    <form onSubmit={handleStudentSubmit} className='profile-form'>
                         {/* Education Level */}
                         <div className='profile-form-group'>
                             <label className='profile-label'>
-                                Current education level
+                                Current education level <span style={{ fontWeight: 'normal', color: '#6B7280' }}>(optional)</span>
                             </label>
                             <select
                                 className='profile-select'
@@ -153,7 +180,7 @@ const Profile = () => {
                         {/* Field of Study */}
                         <div className='profile-form-group'>
                             <label className='profile-label'>
-                                Field of study
+                                Field of study <span style={{ fontWeight: 'normal', color: '#6B7280' }}>(optional)</span>
                             </label>
                             <select
                                 className='profile-select'
@@ -174,7 +201,7 @@ const Profile = () => {
                         {fieldOfStudy && (
                             <div className='profile-form-group'>
                                 <label className='profile-label'>
-                                    Major
+                                    Major <span style={{ fontWeight: 'normal', color: '#6B7280' }}>(optional)</span>
                                 </label>
                                 <select
                                     className='profile-select'
@@ -192,7 +219,7 @@ const Profile = () => {
                         {/* Preferred Learning Formats */}
                         <div className='profile-form-group'>
                             <label className='profile-label'>
-                                Preferred learning formats
+                                Preferred learning formats <span style={{ fontWeight: 'normal', color: '#6B7280' }}>(optional)</span>
                             </label>
                             <div className='profile-checkbox-group'>
                                 {learningFormatOptions.map(format => (
@@ -212,7 +239,7 @@ const Profile = () => {
                         {/* Disabilities */}
                         <div className='profile-form-group'>
                             <label className='profile-label'>
-                                Disabilities
+                                Disabilities <span style={{ fontWeight: 'normal', color: '#6B7280' }}>(optional)</span>
                             </label>
                             <div className='profile-disabilities-container'>
                                 {Object.entries(disabilityCategories).map(([category, items]) => (
@@ -237,10 +264,16 @@ const Profile = () => {
                         </div>
 
                         <div className='profile-form-actions'>
-                            <button type='submit' className='profile-submit-button'>
-                                Save Profile
+                            <button
+                                type='submit'
+                                className='profile-submit-button'
+                                disabled={profileState.status === 'loading'}
+                            >
+                                {profileState.status === 'loading' ? 'Saving...' : 'Save Profile'}
                             </button>
                         </div>
+                        {profileState.error && profileState.status === 'failed' && <p className="error-message" style={{ color: 'red', marginTop: '10px' }}>{profileState.error}</p>}
+                        {showStudentSuccess && <p className="success-message" style={{ color: 'green', marginTop: '10px' }}>Profile saved successfully!</p>}
                     </form>
                 </div>
             </div>
@@ -249,4 +282,3 @@ const Profile = () => {
 }
 
 export default Profile
-
