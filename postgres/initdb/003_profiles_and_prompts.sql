@@ -13,17 +13,13 @@ CREATE TABLE IF NOT EXISTS public.student_profiles (
 );
 
 -- System prompts table (for admin configuration)
+-- Note: Default prompt is seeded by backend from prompts/system_prompt.txt on first startup
 CREATE TABLE IF NOT EXISTS public.system_prompts (
     id SERIAL PRIMARY KEY,
-    prompt TEXT NOT NULL DEFAULT 'Be Ethical',
+    prompt TEXT NOT NULL,
     created_by UUID REFERENCES public.users(id) ON DELETE SET NULL,
     updated_at TIMESTAMP DEFAULT NOW()
 );
-
--- Insert default system prompt
-INSERT INTO public.system_prompts (prompt, updated_at)
-VALUES ('Be Ethical', NOW())
-ON CONFLICT DO NOTHING;
 
 -- Create indexes for better query performance
 CREATE INDEX IF NOT EXISTS idx_student_profiles_user_id ON public.student_profiles(user_id);

@@ -7,6 +7,7 @@ import pool from './config/database.js'
 import logger from './utils/logger.js'
 import routes from './routes/index.js'
 import { ensureFixedSurvey } from './routes/surveys.js'
+import { initializeSystemPrompt } from './services/promptAssemblerService.js'
 
 import helmet from 'helmet'
 
@@ -90,6 +91,13 @@ app.use((err, req, res, next) => {
 // Start server
 app.listen(PORT, async () => {
   logger.info(`Backend listening on http://0.0.0.0:${PORT}`)
+
+  // Initialize system prompt (seeds from file if database is empty)
+  try {
+    await initializeSystemPrompt()
+  } catch (e) {
+    logger.error('Failed to initialize system prompt:', e.message)
+  }
 
   // Ensure the fixed Self-Regulated Learning Questionnaire exists
   try {

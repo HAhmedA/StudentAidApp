@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useReduxSelector, useReduxDispatch } from '../redux'
 import { fetchProfile, updateProfile } from '../redux/profile'
-import { fetchSystemPrompt, updateSystemPrompt } from '../redux/admin'
+import { fetchPrompts, updatePrompt } from '../redux/admin'
 import {
     educationLevels,
     fieldsOfStudy,
@@ -22,6 +22,7 @@ const Profile = () => {
     // Admin State
     const adminState = useReduxSelector(state => state.admin)
     const [systemPrompt, setSystemPrompt] = useState('')
+    const [alignmentPrompt, setAlignmentPrompt] = useState('')
 
     // Student State
     const profileState = useReduxSelector(state => state.profile)
@@ -32,13 +33,14 @@ const Profile = () => {
     const [disabilities, setDisabilities] = useState<string[]>([])
 
     // Success message state
-    const [showAdminSuccess, setShowAdminSuccess] = useState(false)
+    const [showSystemSuccess, setShowSystemSuccess] = useState(false)
+    const [showAlignmentSuccess, setShowAlignmentSuccess] = useState(false)
     const [showStudentSuccess, setShowStudentSuccess] = useState(false)
 
     // Load Initial Data
     useEffect(() => {
         if (isAdmin) {
-            dispatch(fetchSystemPrompt())
+            dispatch(fetchPrompts())
         } else {
             dispatch(fetchProfile())
         }
@@ -46,10 +48,11 @@ const Profile = () => {
 
     // Update local state when redux state changes
     useEffect(() => {
-        if (isAdmin && adminState.systemPrompt) {
+        if (isAdmin) {
             setSystemPrompt(adminState.systemPrompt)
+            setAlignmentPrompt(adminState.alignmentPrompt)
         }
-    }, [isAdmin, adminState.systemPrompt])
+    }, [isAdmin, adminState.systemPrompt, adminState.alignmentPrompt])
 
     useEffect(() => {
         if (!isAdmin && profileState.data) {
@@ -78,12 +81,21 @@ const Profile = () => {
         )
     }
 
-    const handleAdminSubmit = async (e: React.FormEvent) => {
+    const handleSystemPromptSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
-        const result = await dispatch(updateSystemPrompt(systemPrompt))
+        const result = await dispatch(updatePrompt({ prompt: systemPrompt, type: 'system' }))
         if (result.type.endsWith('/fulfilled')) {
-            setShowAdminSuccess(true)
-            setTimeout(() => setShowAdminSuccess(false), 3000)
+            setShowSystemSuccess(true)
+            setTimeout(() => setShowSystemSuccess(false), 3000)
+        }
+    }
+
+    const handleAlignmentPromptSubmit = async (e: React.FormEvent) => {
+        e.preventDefault()
+        const result = await dispatch(updatePrompt({ prompt: alignmentPrompt, type: 'alignment' }))
+        if (result.type.endsWith('/fulfilled')) {
+            setShowAlignmentSuccess(true)
+            setTimeout(() => setShowAlignmentSuccess(false), 3000)
         }
     }
 
@@ -114,10 +126,14 @@ const Profile = () => {
                     </button>
                     <h1 className='profile-title'>System Configuration</h1>
                     <div className='profile-content'>
-                        <form onSubmit={handleAdminSubmit} className='profile-form'>
+                        {/* System Prompt */}
+                        <form onSubmit={handleSystemPromptSubmit} className='profile-form'>
                             <div className='profile-form-group'>
                                 <label className='profile-label' htmlFor="system-prompt">
                                     System Prompt
+                                    <span style={{ fontWeight: 'normal', color: '#6B7280', marginLeft: '8px' }}>
+                                        (Instructions for the chatbot)
+                                    </span>
                                 </label>
                                 <textarea
                                     id="system-prompt"
@@ -127,9 +143,9 @@ const Profile = () => {
                                     rows={10}
                                     style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ccc', minHeight: '200px' }}
                                 />
-                                {adminState.lastUpdated && (
+                                {adminState.systemLastUpdated && (
                                     <p className="profile-last-updated" style={{ fontSize: '0.8rem', color: '#666', marginTop: '5px' }}>
-                                        Last updated: {new Date(adminState.lastUpdated).toLocaleString()}
+                                        Last updated: {new Date(adminState.systemLastUpdated).toLocaleString()}
                                     </p>
                                 )}
                             </div>
@@ -142,9 +158,47 @@ const Profile = () => {
                                     {adminState.status === 'loading' ? 'Updating...' : 'Update System Prompt'}
                                 </button>
                             </div>
-                            {adminState.error && adminState.status === 'failed' && <p className="error-message" style={{ color: 'red', marginTop: '10px' }}>{adminState.error}</p>}
-                            {showAdminSuccess && <p className="success-message" style={{ color: 'green', marginTop: '10px' }}>System prompt updated successfully!</p>}
+                            {showSystemSuccess && <p className="success-message" style={{ color: 'green', marginTop: '10px' }}>System prompt updated successfully!</p>}
                         </form>
+
+                        <hr style={{ margin: '30px 0', border: 'none', borderTop: '1px solid #e5e7eb' }} />
+
+                        {/* Alignment Prompt */}
+                        <form onSubmit={handleAlignmentPromptSubmit} className='profile-form'>
+                            <div className='profile-form-group'>
+                                <label className='profile-label' htmlFor="alignment-prompt">
+                                    Alignment Prompt
+                                    <span style={{ fontWeight: 'normal', color: '#6B7280', marginLeft: '8px' }}>
+                                        (Instructions for the LLM judge)
+                                    </span>
+                                </label>
+                                <textarea
+                                    id="alignment-prompt"
+                                    className='profile-textarea'
+                                    value={alignmentPrompt}
+                                    onChange={(e) => setAlignmentPrompt(e.target.value)}
+                                    rows={10}
+                                    style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ccc', minHeight: '200px' }}
+                                />
+                                {adminState.alignmentLastUpdated && (
+                                    <p className="profile-last-updated" style={{ fontSize: '0.8rem', color: '#666', marginTop: '5px' }}>
+                                        Last updated: {new Date(adminState.alignmentLastUpdated).toLocaleString()}
+                                    </p>
+                                )}
+                            </div>
+                            <div className='profile-form-actions'>
+                                <button
+                                    type='submit'
+                                    className='profile-submit-button'
+                                    disabled={adminState.status === 'loading'}
+                                >
+                                    {adminState.status === 'loading' ? 'Updating...' : 'Update Alignment Prompt'}
+                                </button>
+                            </div>
+                            {showAlignmentSuccess && <p className="success-message" style={{ color: 'green', marginTop: '10px' }}>Alignment prompt updated successfully!</p>}
+                        </form>
+
+                        {adminState.error && adminState.status === 'failed' && <p className="error-message" style={{ color: 'red', marginTop: '10px' }}>{adminState.error}</p>}
                     </div>
                 </div>
             </div>

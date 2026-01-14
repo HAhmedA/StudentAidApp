@@ -224,6 +224,20 @@ const Home = () => {
     // Calculate total responses for display
     const totalResponses24h = annotations24h.length > 0 ? annotations24h[0].responseCount : 0
     const totalResponses7d = annotations7d.length > 0 ? annotations7d[0].responseCount : 0
+    // Get distinct day count for 7-day period
+    const distinctDayCount7d = annotations7d.length > 0 ? annotations7d[0].distinctDayCount : 0
+
+    // Build description for 7-day card
+    const get7dDescription = () => {
+        if (totalResponses7d === 0) {
+            return 'Your mood statistics over the past week'
+        }
+        let desc = `Your mood statistics over the past week, based on ${totalResponses7d} ${totalResponses7d === 1 ? 'response' : 'responses'}`
+        if (distinctDayCount7d && distinctDayCount7d > 0) {
+            desc += `, from ${distinctDayCount7d} ${distinctDayCount7d === 1 ? 'day' : 'days'}`
+        }
+        return desc
+    }
 
     // For student users, show the mood tracking layout
     return (
@@ -265,7 +279,7 @@ const Home = () => {
                     >
                         <h2 className='mood-card-title'>Mood over the last 7 days</h2>
                         <p className='mood-card-description'>
-                            Your mood statistics over the past week{totalResponses7d > 0 ? `, based on ${totalResponses7d} ${totalResponses7d === 1 ? 'response' : 'responses'}` : ''}
+                            {get7dDescription()}
                         </p>
                         <div className='mood-card-content'>
                             {loading ? (

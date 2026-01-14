@@ -201,9 +201,15 @@ router.get('/history', async (req, res) => {
         })
 
         let chartData = []
+        let distinctDays = new Set()
+
+        // Track distinct days for metadata
+        results.forEach(result => {
+            distinctDays.add(result.date)
+        })
 
         if (period === 'today') {
-            // For today, show individual responses with time
+            // For today, show individual responses with time only
             chartData = results.map(result => {
                 const point = { time: result.time, timestamp: result.timestamp }
                 constructs.forEach(construct => {
@@ -221,8 +227,41 @@ router.get('/history', async (req, res) => {
                 })
                 return point
             })
+        } else if (period === '7days') {
+            // For 7 days, show individual responses with date+time
+            // This gives users visibility into each submission
+            chartData = results.map(result => {
+                const date = new Date(result.timestamp)
+                // Format: "Jan 8 09:30"
+                const dateTimeLabel = date.toLocaleDateString('en-US', {
+                    month: 'short',
+                    day: 'numeric'
+                }) + ' ' + result.time
+
+                const point = {
+                    date: result.date,
+                    time: result.time,
+                    datetime: dateTimeLabel,
+                    timestamp: result.timestamp
+                }
+                constructs.forEach(construct => {
+                    const value = result.data[construct.name]
+                    if (value !== undefined && value !== null) {
+                        const numValue = Number(value)
+                        if (!isNaN(numValue)) {
+                            point[construct.name] = numValue
+                        } else {
+                            point[construct.name] = null
+                        }
+                    } else {
+                        point[construct.name] = null
+                    }
+                })
+                return point
+            })
         } else {
-            // For other periods, group by date and calculate daily averages
+            // For "all time", group by date and calculate daily averages
+            // to prevent overcrowding with too many data points
             const dailyData = {}
             results.forEach(result => {
                 if (!dailyData[result.date]) {
@@ -261,7 +300,9 @@ router.get('/history', async (req, res) => {
         res.json({
             constructs: constructs.map(c => ({ name: c.name, title: c.title })),
             data: chartData,
-            period: period || 'all'
+            period: period || 'all',
+            totalResponses: results.length,
+            distinctDayCount: distinctDays.size
         })
     } catch (e) {
         logger.error('Student mood history error:', e)

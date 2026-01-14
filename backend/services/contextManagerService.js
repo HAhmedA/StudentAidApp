@@ -5,13 +5,13 @@
 import pool from '../config/database.js'
 import logger from '../utils/logger.js'
 import { chatCompletionWithRetry, checkAvailability } from './apiConnectorService.js'
-import { assemblePrompt, assembleInitialGreetingPrompt, getSystemInstructionsForAlignment } from './promptAssemblerService.js'
-import { getAlignedResponse, quickValidation } from './alignmentService.js'
+import { assemblePrompt, assembleInitialGreetingPrompt, getSystemInstructionsForAlignment, hasStudentProfile } from './promptAssemblerService.js'
+import { getAlignedResponse, quickValidation, SERVICE_UNAVAILABLE_MESSAGE, ALIGNMENT_FAILED_MESSAGE } from './alignmentService.js'
 import { invalidateSummary } from './summarizationService.js'
+import { hasSRLData } from './annotationService.js'
 
 // Configuration
 const SESSION_TIMEOUT_SECONDS = 1800 // 30 minutes
-const ERROR_MESSAGE = "Please, try again later."
 
 /**
  * Get or create an active session for a user
@@ -147,7 +147,7 @@ async function sendMessage(userId, userMessage) {
         const { available } = await checkAvailability()
         if (!available) {
             logger.error('LLM server not available')
-            return { success: false, response: ERROR_MESSAGE, sessionId: null }
+            return { success: false, response: SERVICE_UNAVAILABLE_MESSAGE, sessionId: null }
         }
 
         // Get or create session
@@ -173,7 +173,7 @@ async function sendMessage(userId, userMessage) {
         const quickCheck = quickValidation(result.content)
         if (!quickCheck.passed) {
             logger.warn(`Quick validation failed: ${quickCheck.reason}`)
-            result.content = ERROR_MESSAGE
+            result.content = ALIGNMENT_FAILED_MESSAGE
             result.passed = false
         }
 
@@ -206,12 +206,14 @@ async function sendMessage(userId, userMessage) {
             logger.error('Failed to save user message:', saveError.message)
         }
 
-        return { success: false, response: ERROR_MESSAGE, sessionId: null }
+        return { success: false, response: SERVICE_UNAVAILABLE_MESSAGE, sessionId: null }
     }
 }
 
 /**
  * Generate initial greeting for a new or returning session
+ * Handles cases where user has no SRL data with hardcoded responses
+ * to prevent LLM hallucination
  * 
  * @param {string} userId - User ID
  * @returns {Promise<{success: boolean, greeting: string, sessionId: string}>}
@@ -235,6 +237,52 @@ async function generateInitialGreeting(userId) {
             }
         }
 
+        // Check if user has SRL data - if not, return hardcoded message
+        // This prevents LLM from hallucinating questionnaire results
+        const userHasSRLData = await hasSRLData(pool, userId)
+
+        if (!userHasSRLData) {
+            // Check specifically for student profile data (not just username)
+            const hasProfileData = await hasStudentProfile(userId)
+
+            let noDataGreeting
+            if (hasProfileData) {
+                // Has profile but no SRL data
+                noDataGreeting = "Hello! Welcome to your learning support assistant. " +
+                    "I see you've set up your profile - that's great! " +
+                    "To provide you with personalized learning recommendations, " +
+                    "please complete the Self-Regulated Learning (SRL) questionnaire. " +
+                    "Once you've submitted your responses, I'll be able to analyze your learning patterns " +
+                    "and offer tailored advice. How can I help you in the meantime?"
+            } else {
+                // No profile and no SRL data
+                noDataGreeting = "Hello! Welcome to your learning support assistant. " +
+                    "I'm here to help you on your learning journey. " +
+                    "To get started with personalized recommendations, please: \n" +
+                    "1. Complete your profile with your educational background and preferences\n" +
+                    "2. Fill out the Self-Regulated Learning (SRL) questionnaire\n\n" +
+                    "Once you've done that, I'll be able to analyze your learning patterns " +
+                    "and provide tailored advice. Feel free to ask me any questions in the meantime!"
+            }
+
+            // Cache the greeting
+            await pool.query(
+                `UPDATE public.chat_sessions SET initial_greeting = $1 WHERE id = $2`,
+                [noDataGreeting, sessionId]
+            )
+
+            // Save as assistant message
+            await saveMessage(sessionId, userId, 'assistant', noDataGreeting, { passed: true, retries: 0 })
+
+            logger.info(`User ${userId} has no SRL data - returned hardcoded greeting`)
+            return {
+                success: true,
+                greeting: noDataGreeting,
+                sessionId
+            }
+        }
+
+        // User has SRL data - proceed with LLM-generated greeting
         // Check LLM availability
         const { available } = await checkAvailability()
         if (!available) {
@@ -242,7 +290,7 @@ async function generateInitialGreeting(userId) {
             return { success: true, greeting: fallbackGreeting, sessionId }
         }
 
-        // Generate new greeting
+        // Generate new greeting using LLM (only when we have actual data)
         const messages = await assembleInitialGreetingPrompt(userId)
         const greeting = await chatCompletionWithRetry(messages)
 

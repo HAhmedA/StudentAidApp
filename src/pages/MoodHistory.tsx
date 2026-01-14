@@ -128,8 +128,14 @@ const MoodHistory = () => {
                 ...item,
                 xLabel: item.time
             }
+        } else if (historyData.period === '7days' && (item as any).datetime) {
+            // For 7 days, use datetime label (e.g., "Jan 8 09:30")
+            return {
+                ...item,
+                xLabel: (item as any).datetime
+            }
         } else if (item.date) {
-            // For other periods, use date as the x-axis label
+            // For other periods (all time), use date as the x-axis label
             return {
                 ...item,
                 xLabel: new Date(item.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
@@ -222,7 +228,9 @@ const MoodHistory = () => {
 
                         const formattedTitle = formatConstructTitle(construct.title || construct.name)
                         const shortName = getShortConstructName(construct.name)
-                        const xAxisLabel = historyData.period === 'today' ? 'Time' : 'Day'
+                        // X-axis label: Time for today, Date/Time for 7days, Day for all time
+                        const xAxisLabel = historyData.period === 'today' ? 'Time' :
+                            historyData.period === '7days' ? 'Date/Time' : 'Day'
                         const legendName = shortName
 
                         // Get annotation for this construct
@@ -248,8 +256,12 @@ const MoodHistory = () => {
                                             tick={{ fontSize: 12 }}
                                             angle={historyData.period === 'today' ? 0 : -45}
                                             textAnchor={historyData.period === 'today' ? 'middle' : 'end'}
-                                            height={historyData.period === 'today' ? 40 : 60}
-                                            label={{ value: xAxisLabel, position: 'insideBottom', offset: -5 }}
+                                            height={historyData.period === 'today' ? 40 : 80}
+                                            label={{
+                                                value: xAxisLabel,
+                                                position: 'insideBottom',
+                                                offset: historyData.period === 'today' ? -5 : -15
+                                            }}
                                         />
                                         <YAxis
                                             domain={[1, 5]}

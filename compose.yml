@@ -24,6 +24,7 @@ services:
       - PGUSER=postgres
       - PGPASSWORD=password
       - PGDATABASE=postgres
+      - DEBUG_LLM=true
     ports:
       - "8080:8080" # expose the API on localhost:8080
     depends_on:

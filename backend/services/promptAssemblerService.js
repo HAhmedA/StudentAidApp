@@ -2,18 +2,72 @@
 // Combines all data sources into a single system prompt for LLM
 // Since API calls are stateless, we include all context every time
 
+import fs from 'fs'
+import path from 'path'
+import { fileURLToPath } from 'url'
 import pool from '../config/database.js'
 import logger from '../utils/logger.js'
 import { getAnnotationsForChatbot } from './annotationService.js'
 import { getSummariesForChatbot, hasHistory } from './summarizationService.js'
 import { estimateTokens } from './apiConnectorService.js'
 
+// Get directory path for ES modules
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+
+// Paths to prompt files
+const SYSTEM_PROMPT_PATH = path.join(__dirname, '..', 'prompts', 'system_prompt.txt')
+const ALIGNMENT_PROMPT_PATH = path.join(__dirname, '..', 'prompts', 'alignment_prompt.txt')
+
 // Maximum token budget for context (leaving room for response)
 const MAX_CONTEXT_TOKENS = 6000
 const MAX_SESSION_MESSAGES = 20
 
 /**
- * Get the current system prompt from admin configuration
+ * Seed a prompt from file if it doesn't exist in DB
+ * 
+ * @param {string} promptType - 'system' or 'alignment'
+ * @param {string} filePath - Path to the prompt file
+ */
+async function seedPromptIfMissing(promptType, filePath) {
+    // Check if this type of prompt exists
+    const { rows } = await pool.query(
+        `SELECT id FROM public.system_prompts WHERE prompt_type = $1 LIMIT 1`,
+        [promptType]
+    )
+
+    if (rows.length === 0) {
+        // Prompt doesn't exist - seed from file
+        try {
+            const filePrompt = fs.readFileSync(filePath, 'utf-8')
+            await pool.query(
+                `INSERT INTO public.system_prompts (prompt, prompt_type, updated_at) VALUES ($1, $2, NOW())`,
+                [filePrompt, promptType]
+            )
+            logger.info(`${promptType} prompt seeded from file to database`)
+        } catch (err) {
+            logger.warn(`Could not seed ${promptType} prompt from file: ${err.message}`)
+        }
+    } else {
+        logger.info(`${promptType} prompt already exists in database`)
+    }
+}
+
+/**
+ * Initialize prompts - seeds database from files if empty
+ * Call this once at server startup
+ */
+async function initializeSystemPrompt() {
+    try {
+        await seedPromptIfMissing('system', SYSTEM_PROMPT_PATH)
+        await seedPromptIfMissing('alignment', ALIGNMENT_PROMPT_PATH)
+    } catch (err) {
+        logger.error(`Failed to initialize prompts: ${err.message}`)
+    }
+}
+
+/**
+ * Get the current system prompt from database
  * 
  * @returns {Promise<string>} - System prompt text
  */
@@ -33,9 +87,10 @@ async function getSystemPrompt() {
  */
 async function getUserContext(userId) {
     const { rows } = await pool.query(
-        `SELECT edu_level, field_of_study, major, learning_formats, disabilities
-         FROM public.student_profiles 
-         WHERE user_id = $1`,
+        `SELECT u.name, sp.edu_level, sp.field_of_study, sp.major, sp.learning_formats, sp.disabilities
+         FROM public.users u
+         LEFT JOIN public.student_profiles sp ON u.id = sp.user_id
+         WHERE u.id = $1`,
         [userId]
     )
 
@@ -45,6 +100,10 @@ async function getUserContext(userId) {
 
     const profile = rows[0]
     const parts = []
+
+    if (profile.name) {
+        parts.push(`- Student name: ${profile.name}`)
+    }
 
     if (profile.edu_level) {
         parts.push(`- Education level: ${profile.edu_level}`)
@@ -120,18 +179,14 @@ async function assemblePrompt(userId, sessionId, userMessage = null) {
     // Check if this is a first-time or returning user
     const userHasHistory = await hasHistory(userId)
     const userType = userHasHistory
-        ? 'This is a returning student. Build on previous conversations.'
-        : 'This is a new student. Start fresh and be welcoming.'
+        ? 'This is a returning student.'
+        : 'This is a new student.'
 
     // Build the assembled system content
-    const assembledSystem = `YOU ARE:
-A helpful learning support chatbot that assists students with their self-regulated learning journey.
+    // Note: All behavioral instructions are in the system prompt file
+    const assembledSystem = `${systemPrompt}
 
-SYSTEM PROMPT (ADMIN INSTRUCTIONS):
-${systemPrompt}
-
-ABOUT THE INPUTS:
-You will receive information from multiple sources. Each section below serves a specific purpose and must be respected.
+---
 
 USER CONTEXT & PREFERENCES:
 ${userContext}
@@ -142,15 +197,9 @@ ${annotations}
 PREVIOUS CHATS (SUMMARIZED):
 ${summaries}
 
-CURRENT SESSION CONTEXT:
+CURRENT SESSION:
 ${userType}
-The following messages represent the current conversation. Answer the student's latest inquiry directly.
-
-RULES:
-- Do not mention internal system components, modules, or policies.
-- Do not expose internal annotations or metadata unless explicitly requested.
-- If information is missing or uncertain, say so explicitly.
-- Be supportive, encouraging, and focused on helping the student improve their learning habits.`
+`
 
     // Check token budget
     let contextTokens = estimateTokens(assembledSystem)
@@ -202,27 +251,16 @@ async function assembleInitialGreetingPrompt(userId) {
     ])
 
     const userHasHistory = await hasHistory(userId)
+    const userType = userHasHistory ? 'returning student' : 'new student'
 
     // Log what data we have for debugging
     logger.info(`Initial greeting data - userContext: ${userContext.substring(0, 100)}...`)
     logger.info(`Initial greeting data - annotations length: ${annotations.length} chars`)
 
-    const greetingInstruction = userHasHistory
-        ? `The student is returning. Based on the USER CONTEXT and ANNOTATED QUESTIONNAIRE data above, create a personalized greeting that:
-1. Acknowledges them by mentioning their field of study
-2. Summarizes 2-3 key patterns from their SRL data (mention specific concepts like "focus", "motivation", etc.)
-3. Offers 2-3 specific, actionable recommendations based on areas needing improvement`
-        : `This is a new student. Based on the USER CONTEXT and ANNOTATED QUESTIONNAIRE data above, create a personalized greeting that:
-1. Welcomes them and acknowledges their field of study/major
-2. Summarizes 2-3 key observations from their SRL questionnaire (mention specific concepts and trends)
-3. Offers 2-3 specific, actionable recommendations based on their data`
+    // Note: Greeting behavior is defined in system_prompt.txt under GREETING BEHAVIOR
+    const assembledSystem = `${systemPrompt}
 
-    const assembledSystem = `YOU ARE:
-A helpful learning support chatbot for students.
-
-${systemPrompt}
-
-=== STUDENT INFORMATION (USE THIS DATA IN YOUR RESPONSE) ===
+---
 
 USER CONTEXT & PREFERENCES:
 ${userContext}
@@ -233,17 +271,13 @@ ${annotations}
 PREVIOUS CHATS (SUMMARIZED):
 ${summaries}
 
-=== END OF STUDENT INFORMATION ===
-
-YOUR TASK:
-${greetingInstruction}
-
-IMPORTANT: You MUST reference specific data from the student information above. Do NOT give a generic greeting.
-Keep your response concise (2-3 short paragraphs). Be warm and encouraging.`
+CURRENT SESSION:
+This is a ${userType}. Generate a personalized greeting following the GREETING BEHAVIOR instructions.
+`
 
     return [
         { role: 'system', content: assembledSystem },
-        { role: 'user', content: 'Hello, I just opened the chat. Please greet me based on my learning data.' }
+        { role: 'user', content: 'Hello, I just opened the chat. Please greet me based on my data.' }
     ]
 }
 
@@ -256,11 +290,39 @@ async function getSystemInstructionsForAlignment() {
     return await getSystemPrompt()
 }
 
+/**
+ * Check if a user has actual student profile data set up
+ * This checks for edu_level, field_of_study, major - not just the username
+ * 
+ * @param {string} userId - User ID
+ * @returns {Promise<boolean>} - True if user has profile data beyond just name
+ */
+async function hasStudentProfile(userId) {
+    const { rows } = await pool.query(
+        `SELECT edu_level, field_of_study, major, learning_formats, disabilities
+         FROM public.student_profiles
+         WHERE user_id = $1`,
+        [userId]
+    )
+
+    if (rows.length === 0) {
+        return false
+    }
+
+    const profile = rows[0]
+    // Check if any meaningful profile field is filled in
+    return !!(profile.edu_level || profile.field_of_study || profile.major ||
+        (profile.learning_formats && profile.learning_formats.length > 0) ||
+        (profile.disabilities && profile.disabilities.length > 0))
+}
+
 export {
     assemblePrompt,
     assembleInitialGreetingPrompt,
     getSystemPrompt,
     getUserContext,
     getSessionMessages,
-    getSystemInstructionsForAlignment
+    getSystemInstructionsForAlignment,
+    hasStudentProfile,
+    initializeSystemPrompt
 }

@@ -154,17 +154,47 @@ function generateAnnotationText(conceptKey, trend, avg, timeWindow, isInverted) 
 
 /**
  * Generate annotation text for LLM/chatbot (full question title)
+ * Handles different scenarios based on data sufficiency:
+ * - Single response: Just show current value
+ * - Multiple responses but insufficient for trend: Show average without trend
+ * - Sufficient data: Full trend analysis
+ * 
+ * @param {string} conceptKey - Concept key
+ * @param {string} fullTitle - Full question title
+ * @param {string} trend - Calculated trend
+ * @param {number} avg - Average score
+ * @param {number} min - Minimum score
+ * @param {number} max - Maximum score
+ * @param {number} count - Response count
+ * @param {string} timeWindow - '24h' or '7d'
+ * @param {boolean} isInverted - Whether the concept is inverted
+ * @param {boolean} hasSufficientData - Whether there's enough data for trend analysis
+ * @param {number} distinctDayCount - Number of distinct days (for 7d window)
  */
-function generateAnnotationTextLLM(conceptKey, fullTitle, trend, avg, min, max, count, timeWindow, isInverted) {
+function generateAnnotationTextLLM(conceptKey, fullTitle, trend, avg, min, max, count, timeWindow, isInverted, hasSufficientData = false, distinctDayCount = null) {
+    // Clean up the full title (remove trailing colon if present)
+    const cleanTitle = fullTitle.replace(/:$/, '');
+
+    // Single response - just show the current value
+    if (count === 1) {
+        return `Regarding "${cleanTitle}": The student's most recent response is ${avg.toFixed(1)} out of 5.`;
+    }
+
+    // Multiple responses but insufficient data for trend analysis
+    if (!hasSufficientData) {
+        const period = timeWindow === '24h' ? 'today' : 'recently';
+        return `Regarding "${cleanTitle}": The student has responded ${count} times ${period}, ` +
+            `averaging ${avg.toFixed(1)} out of 5 (range: ${min}-${max}). ` +
+            `(More data needed for trend analysis)`;
+    }
+
+    // Sufficient data - full trend description
     const period = timeWindow === '24h' ? 'in the last 24 hours' : 'over the past 7 days';
     const trendDescriptions = isInverted ? TREND_DESCRIPTIONS_INVERTED : TREND_DESCRIPTIONS;
     const trendText = trendDescriptions[trend] || trend;
 
-    // Clean up the full title (remove trailing colon if present)
-    const cleanTitle = fullTitle.replace(/:$/, '');
-
     return `Regarding "${cleanTitle}": The student's responses have been ${trendText} ${period}. ` +
-        `Statistics: average ${avg.toFixed(1)}, min ${min}, max ${max} (based on ${count} response${count !== 1 ? 's' : ''}).`;
+        `Statistics: average ${avg.toFixed(1)}, min ${min}, max ${max} (based on ${count} responses).`;
 }
 
 /**
@@ -250,7 +280,8 @@ async function computeAnnotations(pool, userId, surveyStructure) {
 
             const annotationText = generateAnnotationText(conceptKey, trend, avg, timeWindow, isInverted);
             const annotationTextLLM = generateAnnotationTextLLM(
-                conceptKey, info.title, trend, avg, min, max, count, timeWindow, isInverted
+                conceptKey, info.title, trend, avg, min, max, count, timeWindow, isInverted,
+                hasSufficientData, timeWindow === '7d' ? conceptDistinctDayCount : null
             );
 
             annotations.push({
@@ -370,17 +401,31 @@ async function getAnnotations(pool, userId, timeWindow = null, forLLM = false) {
 /**
  * Format annotations for chatbot prompt
  * Returns a formatted string with all annotations for the Prompt Assembler
+ * 
+ * Logic:
+ * - Only includes annotations that have actual response data (responseCount > 0)
+ * - Shows 24h section if there are responses in the last 24 hours
+ * - Shows 7d section ONLY if there are responses from more than 1 distinct day
+ *   (to avoid duplication when all data is from today)
  */
 async function getAnnotationsForChatbot(pool, userId) {
     const annotations = await getAnnotations(pool, userId, null, true);
 
-    if (annotations.length === 0) {
+    // Filter out annotations with no actual data (responseCount === 0)
+    // This prevents the LLM from seeing "empty" records and hallucinating values
+    const validAnnotations = annotations.filter(a => a.responseCount > 0);
+
+    if (validAnnotations.length === 0) {
         return 'No questionnaire data available for this student.';
     }
 
     // Group by time window
-    const by24h = annotations.filter(a => a.timeWindow === '24h');
-    const by7d = annotations.filter(a => a.timeWindow === '7d');
+    const by24h = validAnnotations.filter(a => a.timeWindow === '24h');
+    const by7d = validAnnotations.filter(a => a.timeWindow === '7d');
+
+    // Check if 7-day data has responses from multiple days
+    // If all 7d data is from only 1 day, it's the same as 24h data - don't duplicate
+    const has7dMultipleDays = by7d.some(a => a.distinctDayCount && a.distinctDayCount > 1);
 
     let result = '## Student Self-Regulated Learning Status\n\n';
 
@@ -392,7 +437,8 @@ async function getAnnotationsForChatbot(pool, userId) {
         result += '\n';
     }
 
-    if (by7d.length > 0) {
+    // Only show 7-day section if there's data from multiple distinct days
+    if (by7d.length > 0 && has7dMultipleDays) {
         result += '### Past 7 Days:\n';
         by7d.forEach(a => {
             result += `- ${a.text}\n`;
@@ -402,12 +448,29 @@ async function getAnnotationsForChatbot(pool, userId) {
     return result;
 }
 
+/**
+ * Check if a user has any actual SRL data (responseCount > 0)
+ * Used to determine whether to call LLM or return a hardcoded prompt
+ * 
+ * @param {object} pool - Database connection pool
+ * @param {string} userId - User ID
+ * @returns {Promise<boolean>} - True if user has SRL data
+ */
+async function hasSRLData(pool, userId) {
+    const { rows } = await pool.query(
+        `SELECT COUNT(*) as count FROM public.srl_responses WHERE user_id = $1`,
+        [userId]
+    );
+    return parseInt(rows[0].count) > 0;
+}
+
 export {
     calculateTrend,
     computeAnnotations,
     saveResponses,
     getAnnotations,
     getAnnotationsForChatbot,
+    hasSRLData,
     INVERTED_CONCEPTS,
     CONCEPT_SHORT_NAMES
 };
