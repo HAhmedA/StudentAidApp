@@ -3,15 +3,23 @@ import express from 'express'
 import cors from 'cors'
 import session from 'express-session'
 import connectPgSimple from 'connect-pg-simple'
+import helmet from 'helmet'
+import swaggerUi from 'swagger-ui-express'
+
 import pool from './config/database.js'
 import logger from './utils/logger.js'
 import routes from './routes/index.js'
 import { ensureFixedSurvey } from './routes/surveys.js'
 import { initializeSystemPrompt } from './services/promptAssemblerService.js'
-
-import helmet from 'helmet'
+import { specs } from './config/swagger.js'
+import { apiLimiter } from './middleware/rateLimit.js'
+import { validateEnvironment } from './config/envValidation.js'
 
 const app = express()
+const isProduction = process.env.NODE_ENV === 'production'
+
+// Validate environment variables (fails in production if critical vars missing)
+validateEnvironment(isProduction)
 
 // Security headers
 app.use(helmet())
@@ -26,8 +34,13 @@ app.set('trust proxy', 1)
 const PORT = process.env.PORT || 8080
 
 // Allow cross-origin requests from the frontend
+// Configurable via CORS_ORIGINS environment variable (comma-separated)
+const corsOrigins = process.env.CORS_ORIGINS
+  ? process.env.CORS_ORIGINS.split(',').map(s => s.trim())
+  : ['http://localhost:3000']
+
 const corsOptions = {
-  origin: ['http://localhost:3000'],
+  origin: corsOrigins,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
@@ -41,7 +54,6 @@ app.use(express.json())
 
 // Postgres-backed session store
 const PgSession = connectPgSimple(session)
-const isProduction = process.env.NODE_ENV === 'production'
 
 app.use(session({
   store: new PgSession({
@@ -65,13 +77,6 @@ app.use((req, res, next) => {
   logger.info(`${req.method} ${req.path}`)
   next()
 })
-
-import swaggerUi from 'swagger-ui-express'
-import { specs } from './config/swagger.js'
-
-// ... existing code ...
-
-import { apiLimiter } from './middleware/rateLimit.js'
 
 // Mount all routes under /api with rate limiting
 app.use('/api', apiLimiter, routes)

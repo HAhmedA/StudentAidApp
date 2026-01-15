@@ -39,7 +39,8 @@ router.get('/session', async (req, res) => {
 
 /**
  * GET /api/chat/initial
- * Get the initial greeting message (summarizes data, gives recommendations)
+ * Get the initial greeting message OR existing session messages if available
+ * This handles page refreshes gracefully by returning existing conversation
  */
 router.get('/initial', async (req, res) => {
     try {
@@ -48,10 +49,32 @@ router.get('/initial', async (req, res) => {
             return res.status(401).json({ error: 'unauthorized' })
         }
 
+        // Check if there's an existing active session with messages
+        const { sessionId, isNew } = await getOrCreateSession(userId)
+
+        if (!isNew) {
+            // Existing session - check for recent messages
+            const recentMessages = await getSessionHistory(sessionId, 10)
+
+            if (recentMessages.length > 0) {
+                // Return existing messages instead of generating new greeting
+                return res.json({
+                    greeting: null,
+                    messages: recentMessages,
+                    sessionId,
+                    hasExistingSession: true,
+                    success: true
+                })
+            }
+        }
+
+        // New session or empty session - generate greeting
         const result = await generateInitialGreeting(userId)
         res.json({
             greeting: result.greeting,
+            messages: null,
             sessionId: result.sessionId,
+            hasExistingSession: false,
             success: result.success
         })
     } catch (error) {

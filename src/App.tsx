@@ -12,7 +12,7 @@ const AppContent = () => {
   const isAuthPage = location.pathname === '/login' || location.pathname === '/register';
   const user = useReduxSelector(state => state.auth.user);
   const isLoggedIn = !!user;
-  const isStudent = isLoggedIn && user?.role !== 'admin' && user?.email !== 'admin@example.com';
+  const isStudent = isLoggedIn && user?.role !== 'admin';
 
   return (
     <div className="sjs-app">

@@ -20,8 +20,11 @@ const SYSTEM_PROMPT_PATH = path.join(__dirname, '..', 'prompts', 'system_prompt.
 const ALIGNMENT_PROMPT_PATH = path.join(__dirname, '..', 'prompts', 'alignment_prompt.txt')
 
 // Maximum token budget for context (leaving room for response)
-const MAX_CONTEXT_TOKENS = 6000
-const MAX_SESSION_MESSAGES = 20
+// Defaults to 32k for production, can be overridden in .env (e.g. 4096 for local testing)
+const LLM_CONTEXT_LIMIT = parseInt(process.env.LLM_CONTEXT_LIMIT) || 32768
+const RESPONSE_RESERVE = parseInt(process.env.LLM_RESPONSE_RESERVE) || 2000
+const MAX_CONTEXT_TOKENS = LLM_CONTEXT_LIMIT - RESPONSE_RESERVE
+const MAX_SESSION_MESSAGES = 50 // Increased for high-context models, but subject to token limit
 
 /**
  * Seed a prompt from file if it doesn't exist in DB
@@ -163,7 +166,7 @@ async function getSessionMessages(sessionId, limit = MAX_SESSION_MESSAGES) {
  * @returns {Promise<Array<{role: string, content: string}>>} - Messages array for LLM
  */
 async function assemblePrompt(userId, sessionId, userMessage = null) {
-    logger.info(`Assembling prompt for user ${userId}, session ${sessionId}`)
+    logger.prompt(`Assembling prompt for user ${userId}, session ${sessionId}`)
 
     // Gather all data sources in parallel
     const [systemPrompt, userContext, annotations, summaries] = await Promise.all([
@@ -173,8 +176,18 @@ async function assemblePrompt(userId, sessionId, userMessage = null) {
         getSummariesForChatbot(userId)
     ])
 
+    // Log what data we have
+    logger.prompt(`Prompt data gathered`, {
+        userId,
+        sessionId,
+        userContextLength: userContext.length,
+        annotationsLength: annotations.length,
+        annotationsPreview: annotations.substring(0, 200),
+        summariesLength: summaries.length
+    })
+
     // Get current session messages
-    const sessionMessages = await getSessionMessages(sessionId)
+    const sessionMessages = await getSessionMessages(sessionId, MAX_SESSION_MESSAGES)
 
     // Check if this is a first-time or returning user
     const userHasHistory = await hasHistory(userId)
@@ -182,56 +195,96 @@ async function assemblePrompt(userId, sessionId, userMessage = null) {
         ? 'This is a returning student.'
         : 'This is a new student.'
 
-    // Build the assembled system content
-    // Note: All behavioral instructions are in the system prompt file
-    const assembledSystem = `${systemPrompt}
+    // PRIORITY-BASED TRUNCATION STRATEGY
+    // 1. Base System Prompt (Highest Priority - Never Truncate)
+    const baseSystemPrompt = `${systemPrompt}\n\n---\n\nDATA PRIORITY (IMPORTANT):\nThe USER CONTEXT & PREFERENCES section below contains the CURRENT, AUTHORITATIVE information about this student.\nIf any previous messages in the chat history contradict or differ from the USER CONTEXT section, ALWAYS use the USER CONTEXT section as the source of truth.\nThe student's profile may have been updated since previous messages were sent.\n\n---\n`
 
----
+    let currentTokens = estimateTokens(baseSystemPrompt)
+    let assembledContext = baseSystemPrompt
 
-USER CONTEXT & PREFERENCES:
-${userContext}
-
-ANNOTATED QUESTIONNAIRE INSIGHTS:
-${annotations}
-
-PREVIOUS CHATS (SUMMARIZED):
-${summaries}
-
-CURRENT SESSION:
-${userType}
-`
-
-    // Check token budget
-    let contextTokens = estimateTokens(assembledSystem)
-
-    // Build messages array
-    const messages = [
-        { role: 'system', content: assembledSystem }
+    // 2. Context Sections (Prioritized: User Context > Annotations > Summaries)
+    const contextSections = [
+        { name: 'USER CONTEXT & PREFERENCES', content: userContext, priority: 1 },
+        { name: 'ANNOTATED QUESTIONNAIRE INSIGHTS', content: annotations, priority: 2 },
+        { name: 'PREVIOUS CHATS (SUMMARIZED)', content: summaries, priority: 3 },
+        { name: 'CURRENT SESSION', content: userType, priority: 1 } // High priority for session type
     ]
 
-    // Add session messages, potentially truncating older ones if needed
-    let messagesToAdd = [...sessionMessages]
+    // Sort by priority (1 is highest)
+    const sortedSections = contextSections.sort((a, b) => a.priority - b.priority)
 
-    while (messagesToAdd.length > 0 && contextTokens < MAX_CONTEXT_TOKENS) {
-        const msg = messagesToAdd.shift()
-        const msgTokens = estimateTokens(msg.content)
+    // Reserve 30% of remaining budget for session messages
+    const messageReserve = Math.floor(MAX_CONTEXT_TOKENS * 0.3)
+    const staticContentBudget = MAX_CONTEXT_TOKENS - messageReserve
 
-        if (contextTokens + msgTokens > MAX_CONTEXT_TOKENS) {
-            // Truncate - keep the most recent messages
-            logger.warn(`Truncating session messages, token budget exceeded`)
-            break
+    for (const section of sortedSections) {
+        const sectionContent = `\n${section.name}:\n${section.content}\n`
+        const sectionTokens = estimateTokens(sectionContent)
+
+        // Allow slightly more than static budget if total is still safe, 
+        // but try to leave room for messages
+        if (currentTokens + sectionTokens <= MAX_CONTEXT_TOKENS - 500) {
+            assembledContext += sectionContent
+            currentTokens += sectionTokens
+        } else {
+            logger.warn(`Context truncation: ${section.name} excluded (${sectionTokens} tokens)`)
+            // For lower priority items, we might add a placeholder
+            if (section.priority > 2) {
+                assembledContext += `\n${section.name}:\n[Truncated due to length limits]\n`
+            }
         }
-
-        messages.push(msg)
-        contextTokens += msgTokens
     }
 
-    // Add the current user message if provided
+    // 3. User Message (Next Highest Priority - shouldn't drop current query)
+    let userMessageContent = ''
+    if (userMessage) {
+        userMessageContent = userMessage
+        currentTokens += estimateTokens(userMessageContent) // Add user token cost
+    }
+
+    // 4. Session History (Newest First)
+    const messages = []
+
+    // Add system prompt first
+    messages.push({ role: 'system', content: assembledContext })
+
+    // Add session messages, prioritizing RECENT messages
+    // Messages came in reverse chronological (newest first) from getSessionMessages if we used that query,
+    // BUT getSessionMessages currently returns chronological (oldest first) due to .reverse()
+
+    // Let's optimize: work backwards from newest to oldest
+    // We strictly check token budget here
+    const messagesToInclude = []
+
+    // Convert back to newest-first to interact with them
+    const reversedSessionMessages = [...sessionMessages].reverse()
+
+    for (const msg of reversedSessionMessages) {
+        const msgTokens = estimateTokens(msg.content)
+
+        if (currentTokens + msgTokens <= MAX_CONTEXT_TOKENS) {
+            messagesToInclude.unshift(msg) // Add to front (so they end up chronological)
+            currentTokens += msgTokens
+        } else {
+            logger.warn(`Session history truncated: kept ${messagesToInclude.length}/${sessionMessages.length} messages`)
+            break // Stop adding older messages
+        }
+    }
+
+    // Add included messages to final array
+    messages.push(...messagesToInclude)
+
+    // Add current user message last
     if (userMessage) {
         messages.push({ role: 'user', content: userMessage })
     }
 
-    logger.info(`Assembled prompt: ${messages.length} messages, ~${contextTokens} tokens`)
+    logger.info(`Assembled prompt: ${messages.length} messages, ~${currentTokens}/${MAX_CONTEXT_TOKENS} tokens (Limit: ${LLM_CONTEXT_LIMIT})`)
+
+    if (currentTokens > MAX_CONTEXT_TOKENS) {
+        logger.warn(`Prompt exceeds target budget! (${currentTokens} > ${MAX_CONTEXT_TOKENS}) - this shouldn't happen with logic above`)
+    }
+
     return messages
 }
 
@@ -243,6 +296,8 @@ ${userType}
  * @returns {Promise<Array<{role: string, content: string}>>}
  */
 async function assembleInitialGreetingPrompt(userId) {
+    logger.prompt(`Assembling initial greeting prompt`, { userId })
+
     const [systemPrompt, userContext, annotations, summaries] = await Promise.all([
         getSystemPrompt(),
         getUserContext(userId),
@@ -253,9 +308,17 @@ async function assembleInitialGreetingPrompt(userId) {
     const userHasHistory = await hasHistory(userId)
     const userType = userHasHistory ? 'returning student' : 'new student'
 
-    // Log what data we have for debugging
-    logger.info(`Initial greeting data - userContext: ${userContext.substring(0, 100)}...`)
-    logger.info(`Initial greeting data - annotations length: ${annotations.length} chars`)
+    // Log detailed data for debugging
+    logger.prompt(`Initial greeting data assembled`, {
+        userId,
+        userType,
+        userContextLength: userContext.length,
+        userContextPreview: userContext.substring(0, 150),
+        annotationsLength: annotations.length,
+        annotationsPreview: annotations.substring(0, 300),
+        summariesLength: summaries.length,
+        hasNoData: annotations.includes('No questionnaire data')
+    })
 
     // Note: Greeting behavior is defined in system_prompt.txt under GREETING BEHAVIOR
     const assembledSystem = `${systemPrompt}

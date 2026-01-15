@@ -9,9 +9,12 @@ import { assemblePrompt, assembleInitialGreetingPrompt, getSystemInstructionsFor
 import { getAlignedResponse, quickValidation, SERVICE_UNAVAILABLE_MESSAGE, ALIGNMENT_FAILED_MESSAGE } from './alignmentService.js'
 import { invalidateSummary } from './summarizationService.js'
 import { hasSRLData } from './annotationService.js'
-
-// Configuration
-const SESSION_TIMEOUT_SECONDS = 1800 // 30 minutes
+import {
+    GREETING_NO_DATA_WITH_PROFILE,
+    GREETING_NO_DATA_NO_PROFILE,
+    GREETING_FALLBACK,
+    SESSION_TIMEOUT_SECONDS
+} from '../constants.js'
 
 /**
  * Get or create an active session for a user
@@ -159,6 +162,12 @@ async function sendMessage(userId, userMessage) {
         // Assemble prompt with all context
         const messages = await assemblePrompt(userId, sessionId, userMessage)
 
+        // Pre-flight validation: check if context was overly truncated or empty
+        if (!messages || messages.length <= 1) { // 1 means only system prompt (or even less)
+            logger.warn(`Prompt assembly returned insufficient context (length ${messages?.length}). Context may be too large.`)
+            // We proceed, but the LLM might struggle. This warning helps debugging.
+        }
+
         // Get system instructions for alignment check
         const systemInstructions = await getSystemInstructionsForAlignment()
 
@@ -219,9 +228,12 @@ async function sendMessage(userId, userMessage) {
  * @returns {Promise<{success: boolean, greeting: string, sessionId: string}>}
  */
 async function generateInitialGreeting(userId) {
+    logger.chat(`generateInitialGreeting called`, { userId })
+
     try {
         // Get or create session
         const { sessionId, isNew } = await getOrCreateSession(userId)
+        logger.chat(`Session retrieved`, { userId, sessionId, isNew })
 
         // Check if we already have a cached greeting for this session
         const { rows } = await pool.query(
@@ -230,6 +242,12 @@ async function generateInitialGreeting(userId) {
         )
 
         if (rows[0].initial_greeting && !isNew) {
+            logger.chat(`Returning cached greeting`, {
+                userId,
+                sessionId,
+                greetingLength: rows[0].initial_greeting.length,
+                greetingPreview: rows[0].initial_greeting.substring(0, 100) + '...'
+            })
             return {
                 success: true,
                 greeting: rows[0].initial_greeting,
@@ -240,29 +258,20 @@ async function generateInitialGreeting(userId) {
         // Check if user has SRL data - if not, return hardcoded message
         // This prevents LLM from hallucinating questionnaire results
         const userHasSRLData = await hasSRLData(pool, userId)
+        logger.chat(`SRL data check`, { userId, userHasSRLData })
 
         if (!userHasSRLData) {
             // Check specifically for student profile data (not just username)
             const hasProfileData = await hasStudentProfile(userId)
+            logger.chat(`No SRL data - returning hardcoded greeting`, { userId, hasProfileData })
 
             let noDataGreeting
             if (hasProfileData) {
                 // Has profile but no SRL data
-                noDataGreeting = "Hello! Welcome to your learning support assistant. " +
-                    "I see you've set up your profile - that's great! " +
-                    "To provide you with personalized learning recommendations, " +
-                    "please complete the Self-Regulated Learning (SRL) questionnaire. " +
-                    "Once you've submitted your responses, I'll be able to analyze your learning patterns " +
-                    "and offer tailored advice. How can I help you in the meantime?"
+                noDataGreeting = GREETING_NO_DATA_WITH_PROFILE
             } else {
                 // No profile and no SRL data
-                noDataGreeting = "Hello! Welcome to your learning support assistant. " +
-                    "I'm here to help you on your learning journey. " +
-                    "To get started with personalized recommendations, please: \n" +
-                    "1. Complete your profile with your educational background and preferences\n" +
-                    "2. Fill out the Self-Regulated Learning (SRL) questionnaire\n\n" +
-                    "Once you've done that, I'll be able to analyze your learning patterns " +
-                    "and provide tailored advice. Feel free to ask me any questions in the meantime!"
+                noDataGreeting = GREETING_NO_DATA_NO_PROFILE
             }
 
             // Cache the greeting
@@ -283,16 +292,21 @@ async function generateInitialGreeting(userId) {
         }
 
         // User has SRL data - proceed with LLM-generated greeting
+        logger.chat(`User has SRL data, proceeding with LLM greeting`, { userId })
+
         // Check LLM availability
         const { available } = await checkAvailability()
         if (!available) {
-            const fallbackGreeting = "Hello! I'm here to help you with your learning journey. How can I assist you today?"
-            return { success: true, greeting: fallbackGreeting, sessionId }
+            logger.chat(`LLM unavailable for greeting`, { userId })
+            return { success: true, greeting: GREETING_FALLBACK, sessionId }
         }
 
         // Generate new greeting using LLM (only when we have actual data)
+        logger.chat(`Assembling initial greeting prompt`, { userId })
         const messages = await assembleInitialGreetingPrompt(userId)
+        logger.chat(`Prompt assembled, calling LLM`, { userId, messageCount: messages.length })
         const greeting = await chatCompletionWithRetry(messages)
+        logger.chat(`LLM greeting received`, { userId, greetingLength: greeting.length })
 
         // Cache the greeting
         await pool.query(
@@ -311,8 +325,7 @@ async function generateInitialGreeting(userId) {
 
     } catch (error) {
         logger.error('Error generating initial greeting:', error.message)
-        const fallbackGreeting = "Hello! I'm here to help you with your learning journey. How can I assist you today?"
-        return { success: false, greeting: fallbackGreeting, sessionId: null }
+        return { success: false, greeting: GREETING_FALLBACK, sessionId: null }
     }
 }
 

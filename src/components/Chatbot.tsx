@@ -6,11 +6,21 @@ interface Message {
     role: 'user' | 'assistant' | 'system'
     content: string
     created_at: string
+    isError?: boolean
+    failedMessage?: string
 }
 
 interface ChatbotProps {
     isLoggedIn: boolean
 }
+
+// Data-source related suggested prompts
+const SUGGESTED_PROMPTS = [
+    "Interpret my SRL data",
+    "Tailor advice based on my profile",
+    "What are my learning trends?",
+    "How can I improve based on my history?"
+]
 
 const Chatbot = ({ isLoggedIn }: ChatbotProps) => {
     const [isOpen, setIsOpen] = useState(false)
@@ -22,26 +32,76 @@ const Chatbot = ({ isLoggedIn }: ChatbotProps) => {
     const [isLoadingMore, setIsLoadingMore] = useState(false)
     const [cooldown, setCooldown] = useState(false)
 
+    // Enhancement states
+    const [hasUnread, setHasUnread] = useState(false)
+    const [cachedGreeting, setCachedGreeting] = useState<{ greeting: string | null, sessionId: string, messages: Message[] | null } | null>(null)
+    const [isPrefetching, setIsPrefetching] = useState(false)
+
+    // New UX improvement states
+    const [showResetConfirm, setShowResetConfirm] = useState(false)
+    const [isAwaitingResponse, setIsAwaitingResponse] = useState(false)
+    const [isResetting, setIsResetting] = useState(false)
+
     const messagesEndRef = useRef<HTMLDivElement>(null)
     const messagesContainerRef = useRef<HTMLDivElement>(null)
     const inputRef = useRef<HTMLInputElement>(null)
+
+    // Ref to prevent race conditions on greeting fetch
+    const isFetchingRef = useRef(false)
 
     // Scroll to bottom of messages
     const scrollToBottom = useCallback(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
     }, [])
 
-    // Load initial greeting when opened
+    // Pre-fetch greeting on login (before chat is opened)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    useEffect(() => {
+        if (isLoggedIn && !cachedGreeting && !isPrefetching && !isFetchingRef.current) {
+            prefetchGreeting()
+        }
+    }, [isLoggedIn]) // Only trigger on login state change
+
+    // When chat opens, use cached greeting if available
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     useEffect(() => {
         if (isOpen && isLoggedIn && messages.length === 0) {
-            loadInitialGreeting()
-        }
-    }, [isOpen, isLoggedIn])
+            if (cachedGreeting) {
+                setSessionId(cachedGreeting.sessionId)
 
-    // Scroll to bottom when messages change
+                if (cachedGreeting.messages && cachedGreeting.messages.length > 0) {
+                    // Existing session - restore cached messages
+                    setMessages(cachedGreeting.messages)
+                } else if (cachedGreeting.greeting) {
+                    // New session - use greeting
+                    setMessages([{
+                        id: 'initial',
+                        role: 'assistant',
+                        content: cachedGreeting.greeting,
+                        created_at: new Date().toISOString()
+                    }])
+                }
+                setHasUnread(false) // Clear badge when chat is opened
+            } else if (!isFetchingRef.current) {
+                // Fetch if not already fetching
+                loadInitialGreeting()
+            }
+        }
+    }, [isOpen, isLoggedIn, cachedGreeting]) // Only trigger when chat opens or greeting is cached
+
+    // Clear unread badge when chat is opened
     useEffect(() => {
-        scrollToBottom()
-    }, [messages, scrollToBottom])
+        if (isOpen) {
+            setHasUnread(false)
+        }
+    }, [isOpen])
+
+    // Scroll to bottom when messages change or when chat opens
+    useEffect(() => {
+        if (isOpen && messages.length > 0) {
+            scrollToBottom()
+        }
+    }, [messages, isOpen, scrollToBottom])
 
     // Focus input when opened
     useEffect(() => {
@@ -50,7 +110,47 @@ const Chatbot = ({ isLoggedIn }: ChatbotProps) => {
         }
     }, [isOpen])
 
+    // Pre-fetch greeting in background (on login) with race condition protection
+    const prefetchGreeting = async () => {
+        if (isFetchingRef.current) return
+        isFetchingRef.current = true
+        setIsPrefetching(true)
+        try {
+            const response = await fetch('/api/chat/initial', {
+                credentials: 'include'
+            })
+            const data = await response.json()
+
+            if (data.hasExistingSession && data.messages) {
+                // Existing session with messages - cache them, no badge (user already saw them)
+                setCachedGreeting({
+                    greeting: null,
+                    sessionId: data.sessionId,
+                    messages: data.messages
+                })
+                // Don't show badge for existing session (user already saw these messages)
+            } else if (data.greeting) {
+                // New session with fresh greeting - show badge
+                setCachedGreeting({
+                    greeting: data.greeting,
+                    sessionId: data.sessionId,
+                    messages: null
+                })
+                // Show unread badge since we have a NEW message ready
+                setHasUnread(true)
+            }
+        } catch (error) {
+            console.error('Failed to prefetch greeting:', error)
+            // Will fall back to loading on open
+        } finally {
+            setIsPrefetching(false)
+            isFetchingRef.current = false
+        }
+    }
+
     const loadInitialGreeting = async () => {
+        if (isFetchingRef.current) return
+        isFetchingRef.current = true
         setIsLoading(true)
         try {
             const response = await fetch('/api/chat/initial', {
@@ -58,8 +158,18 @@ const Chatbot = ({ isLoggedIn }: ChatbotProps) => {
             })
             const data = await response.json()
 
-            if (data.greeting) {
-                setSessionId(data.sessionId)
+            setSessionId(data.sessionId)
+
+            if (data.hasExistingSession && data.messages) {
+                // Existing session - restore messages
+                setMessages(data.messages.map((msg: { id: string; role: string; content: string; created_at: string }) => ({
+                    id: msg.id,
+                    role: msg.role as 'user' | 'assistant' | 'system',
+                    content: msg.content,
+                    created_at: msg.created_at
+                })))
+            } else if (data.greeting) {
+                // New session with greeting
                 setMessages([{
                     id: 'initial',
                     role: 'assistant',
@@ -77,6 +187,7 @@ const Chatbot = ({ isLoggedIn }: ChatbotProps) => {
             }])
         } finally {
             setIsLoading(false)
+            isFetchingRef.current = false
         }
     }
 
@@ -133,6 +244,7 @@ const Chatbot = ({ isLoggedIn }: ChatbotProps) => {
         setTimeout(() => setCooldown(false), 1500)
 
         setIsLoading(true)
+        setIsAwaitingResponse(true) // Always trigger await, regardless of chat state
 
         try {
             const response = await fetch('/api/chat/message', {
@@ -153,17 +265,47 @@ const Chatbot = ({ isLoggedIn }: ChatbotProps) => {
                 content: data.response || "I couldn't process that. Please try again.",
                 created_at: new Date().toISOString()
             }])
+
+            // If chat is closed, show unread badge
+            if (!isOpen) {
+                setHasUnread(true)
+            }
         } catch (error) {
             console.error('Failed to send message:', error)
             setMessages(prev => [...prev, {
                 id: `error-${Date.now()}`,
                 role: 'assistant',
-                content: "Please, try again later.",
-                created_at: new Date().toISOString()
+                content: "Something went wrong. Please try again.",
+                created_at: new Date().toISOString(),
+                isError: true,
+                failedMessage: userMessage
             }])
         } finally {
             setIsLoading(false)
+            setIsAwaitingResponse(false)
         }
+    }
+
+    // Retry failed message
+    const handleRetry = (msg: Message) => {
+        if (!msg.failedMessage) return
+        // Remove the error message
+        setMessages(prev => prev.filter(m => m.id !== msg.id))
+        // Set input and send
+        setInputValue(msg.failedMessage)
+        setTimeout(() => {
+            const input = inputRef.current
+            if (input) {
+                // Manually trigger send since state update is async
+                sendMessage()
+            }
+        }, 50)
+    }
+
+    // Handle suggested prompt click
+    const handleSuggestedPrompt = (prompt: string) => {
+        setInputValue(prompt)
+        setTimeout(sendMessage, 50)
     }
 
     const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -173,10 +315,21 @@ const Chatbot = ({ isLoggedIn }: ChatbotProps) => {
         }
     }
 
-    const handleReset = async () => {
-        if (isLoading) return
+    // Reset button click - show confirmation if messages exist
+    const handleResetClick = () => {
+        if (messages.length > 1) {
+            setShowResetConfirm(true)
+        } else {
+            handleReset()
+        }
+    }
 
+    const handleReset = async () => {
+        if (isLoading || isResetting) return
+        setShowResetConfirm(false)
+        setIsResetting(true)
         setIsLoading(true)
+
         try {
             const response = await fetch('/api/chat/reset', {
                 method: 'POST',
@@ -193,11 +346,14 @@ const Chatbot = ({ isLoggedIn }: ChatbotProps) => {
                     created_at: new Date().toISOString()
                 }])
                 setHasMore(false)
+                // Clear cached greeting so we get fresh one next time
+                setCachedGreeting(null)
             }
         } catch (error) {
             console.error('Failed to reset session:', error)
         } finally {
             setIsLoading(false)
+            setIsResetting(false)
         }
     }
 
@@ -216,6 +372,12 @@ const Chatbot = ({ isLoggedIn }: ChatbotProps) => {
                 onClick={toggleChat}
                 aria-label={isOpen ? 'Close chat' : 'Open chat'}
             >
+                {hasUnread && !isOpen && (
+                    <span className="chatbot-badge" aria-label="New message" />
+                )}
+                {isAwaitingResponse && !isOpen && (
+                    <span className="chatbot-processing-indicator" aria-label="Processing" />
+                )}
                 {isOpen ? (
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                         <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -240,8 +402,8 @@ const Chatbot = ({ isLoggedIn }: ChatbotProps) => {
                         </div>
                         <button
                             className="chatbot-reset-btn"
-                            onClick={handleReset}
-                            disabled={isLoading}
+                            onClick={handleResetClick}
+                            disabled={isLoading || isResetting}
                             title="New conversation"
                         >
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -255,6 +417,29 @@ const Chatbot = ({ isLoggedIn }: ChatbotProps) => {
                         ref={messagesContainerRef}
                         onScroll={handleScroll}
                     >
+                        {/* Initial loading spinner */}
+                        {messages.length === 0 && (isPrefetching || isLoading) && !isResetting && (
+                            <div className="chatbot-initial-loading">
+                                <div className="chatbot-spinner" />
+                                <p>Loading your assistant...</p>
+                            </div>
+                        )}
+
+                        {/* Reset loading spinner */}
+                        {isResetting && (
+                            <div className="chatbot-reset-loading">
+                                <div className="chatbot-spinner" />
+                                <p>Starting fresh conversation...</p>
+                            </div>
+                        )}
+
+                        {/* Pagination affordance */}
+                        {hasMore && !isLoadingMore && (
+                            <button className="chatbot-load-more" onClick={loadMoreHistory}>
+                                ↑ Load earlier messages
+                            </button>
+                        )}
+
                         {isLoadingMore && (
                             <div className="chatbot-loading-more">Loading older messages...</div>
                         )}
@@ -262,15 +447,42 @@ const Chatbot = ({ isLoggedIn }: ChatbotProps) => {
                         {messages.map((msg) => (
                             <div
                                 key={msg.id}
-                                className={`chatbot-message ${msg.role}`}
+                                className={`chatbot-message ${msg.role}${msg.isError ? ' error' : ''}`}
                             >
                                 <div className="chatbot-message-content">
                                     {msg.content}
                                 </div>
+                                {/* Retry button for error messages */}
+                                {msg.isError && msg.failedMessage && (
+                                    <button
+                                        className="chatbot-retry-btn"
+                                        onClick={() => handleRetry(msg)}
+                                    >
+                                        ↻ Retry
+                                    </button>
+                                )}
                             </div>
                         ))}
 
-                        {isLoading && messages.length > 0 && messages[messages.length - 1].role === 'user' && (
+                        {/* Suggested prompts - shows when input is empty and not loading */}
+                        {!isLoading && !inputValue.trim() && messages.length > 0 && messages[messages.length - 1].role === 'assistant' && (
+                            <div className="chatbot-suggestions">
+                                <p className="suggestions-label">Try asking:</p>
+                                <div className="suggestions-list">
+                                    {SUGGESTED_PROMPTS.map((prompt, idx) => (
+                                        <button
+                                            key={idx}
+                                            className="suggestion-chip"
+                                            onClick={() => handleSuggestedPrompt(prompt)}
+                                        >
+                                            {prompt}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {isLoading && !isResetting && messages.length > 0 && messages[messages.length - 1].role === 'user' && (
                             <div className="chatbot-message assistant">
                                 <div className="chatbot-message-content typing">
                                     <span className="typing-dot"></span>
@@ -292,19 +504,33 @@ const Chatbot = ({ isLoggedIn }: ChatbotProps) => {
                             value={inputValue}
                             onChange={(e) => setInputValue(e.target.value)}
                             onKeyPress={handleKeyPress}
-                            disabled={isLoading}
+                            disabled={isLoading || isResetting}
                             maxLength={5000}
                         />
                         <button
                             className="chatbot-send-btn"
                             onClick={sendMessage}
-                            disabled={isLoading || !inputValue.trim() || cooldown}
+                            disabled={isLoading || isResetting || !inputValue.trim() || cooldown}
                         >
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                                 <path d="M22 2L11 13M22 2L15 22L11 13M22 2L2 9L11 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                             </svg>
                         </button>
                     </div>
+
+                    {/* Reset confirmation dialog */}
+                    {showResetConfirm && (
+                        <div className="chatbot-confirm-overlay">
+                            <div className="chatbot-confirm-dialog">
+                                <p>Start a new conversation?</p>
+                                <span className="confirm-subtitle">Your current chat will be cleared.</span>
+                                <div className="chatbot-confirm-buttons">
+                                    <button onClick={() => setShowResetConfirm(false)}>Cancel</button>
+                                    <button onClick={handleReset} className="confirm-btn">Reset</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
         </div>

@@ -17,7 +17,7 @@ export const requireAdmin = (req, res, next) => {
         return res.status(401).json({ error: 'not_authenticated' })
     }
     const user = req.session.user
-    const isAdmin = user.role === 'admin' || user.email === 'admin@example.com'
+    const isAdmin = user.role === 'admin'
     if (!isAdmin) {
         logger.warn(`Non-admin user ${user.email} attempted to access ${req.path}`)
         return res.status(403).json({ error: 'forbidden', message: 'Admin access required' })

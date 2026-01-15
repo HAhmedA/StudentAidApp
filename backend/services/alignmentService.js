@@ -10,13 +10,35 @@ import logger from '../utils/logger.js'
 import { chatCompletion, llmConfig } from './apiConnectorService.js'
 
 // Configuration
-const MAX_ALIGNMENT_RETRIES = 2
+const MAX_ALIGNMENT_RETRIES = 1
+
+// Contextual alignment failure messages based on failure category
+const ALIGNMENT_MESSAGES = {
+    default: "I couldn't generate an appropriate response. Could you try rephrasing your question?",
+    safety: "I can't help with that particular request. Is there something else about your learning I can assist with?",
+    scope: "That topic is outside my expertise. I focus on self-regulated learning strategies and study skills.",
+    unclear: "I'm having trouble understanding your request. Could you provide more details or rephrase?"
+}
 
 // Message when alignment check fails (LLM available but response didn't pass)
-const ALIGNMENT_FAILED_MESSAGE = "Unfortunately I cannot assist with this query. Please try rephrasing your request."
+const ALIGNMENT_FAILED_MESSAGE = ALIGNMENT_MESSAGES.default
 
 // Message when service is unavailable (LLM down, timeout, etc.)
 const SERVICE_UNAVAILABLE_MESSAGE = "I'm having trouble responding right now. Please try again later."
+
+/**
+ * Categorize alignment failure based on judge's reason
+ * @param {string} reason - The failure reason from the judge
+ * @returns {string} - Category key for ALIGNMENT_MESSAGES
+ */
+function categorizeFailure(reason) {
+    if (!reason) return 'default'
+    const r = reason.toLowerCase()
+    if (r.includes('safety') || r.includes('harmful') || r.includes('inappropriate')) return 'safety'
+    if (r.includes('scope') || r.includes('instruction') || r.includes('outside')) return 'scope'
+    if (r.includes('unclear') || r.includes('ambiguous') || r.includes('understand')) return 'unclear'
+    return 'default'
+}
 
 // Load default alignment prompt from file
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -175,13 +197,15 @@ async function getAlignedResponse(generateResponse, userQuery, systemInstruction
         }
     }
 
-    // All retries exhausted - return alignment failed message
-    logger.error(`All alignment retries exhausted. Last reason: ${lastReason}`)
+    // All retries exhausted - return contextual alignment failed message
+    const failureCategory = categorizeFailure(lastReason)
+    logger.error(`All alignment retries exhausted. Category: ${failureCategory}, Reason: ${lastReason}`)
     return {
-        content: ALIGNMENT_FAILED_MESSAGE,
+        content: ALIGNMENT_MESSAGES[failureCategory],
         passed: false,
         retries: retries,
-        failureType: 'alignment'
+        failureType: 'alignment',
+        failureCategory
     }
 }
 
