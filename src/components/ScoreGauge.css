@@ -1,4 +1,4 @@
-/* Score Gauge Component Styles */
+/* Score Gauge Component Styles - 3-Category Green */
 
 .score-gauge {
     display: flex;
@@ -15,7 +15,7 @@
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
 }
 
-/* Size variants - Adjusted for larger display */
+/* Size variants */
 .score-gauge-small {
     padding: 16px;
 }
@@ -36,7 +36,6 @@
 .score-gauge-medium .gauge-container {
     width: 260px;
     height: 155px;
-    /* Aspect 1.6-1.7ish */
 }
 
 .score-gauge-medium .gauge-label {
@@ -85,35 +84,30 @@
     letter-spacing: 0.5px;
 }
 
-/* Score display below gauge */
+/* Category label below gauge (replaces numeric score) */
 .gauge-score-display {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     justify-content: center;
-    gap: 4px;
-    margin-top: -15px;
-    /* Pull up to overlap bottom of arc slightly */
+    gap: 8px;
+    margin-top: -10px;
     z-index: 10;
     position: relative;
 }
 
-.gauge-score-value {
-    font-size: 36px;
-    font-weight: 800;
+.gauge-category-label {
+    font-size: 18px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
     line-height: 1;
-}
-
-.gauge-score-max {
-    font-size: 16px;
-    color: #9ca3af;
-    font-weight: 600;
 }
 
 /* Trend indicators */
 .gauge-trend {
     font-size: 20px;
     font-weight: 800;
-    margin-left: 8px;
+    margin-left: 4px;
 }
 
 .gauge-trend-up {
@@ -128,21 +122,101 @@
     color: #9ca3af;
 }
 
-/* Score level label */
-.gauge-score-level {
-    font-size: 14px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    margin-top: 8px;
-    text-align: center;
+/* Legend for dual needles */
+.gauge-legend {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    margin-top: 4px;
+    padding-top: 4px;
 }
 
-/* Grid layout for multiple gauges */
+.gauge-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.gauge-legend-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.gauge-legend-text {
+    font-size: 11px;
+    color: #6b7280;
+    font-weight: 500;
+}
+
+/* Info icon and tooltip */
+.gauge-info-wrapper {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    margin-left: 4px;
+}
+
+.gauge-info-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background-color: #e5e7eb;
+    color: #6b7280;
+    font-size: 10px;
+    font-weight: 700;
+    cursor: help;
+    transition: background-color 0.2s, color 0.2s;
+    line-height: 1;
+    font-style: normal;
+}
+
+.gauge-info-icon:hover {
+    background-color: #d1d5db;
+    color: #374151;
+}
+
+.gauge-info-tooltip {
+    display: none;
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    width: 220px;
+    padding: 10px 12px;
+    background-color: #1f2937;
+    color: #f9fafb;
+    font-size: 11px;
+    line-height: 1.5;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    z-index: 100;
+    pointer-events: none;
+}
+
+.gauge-info-tooltip::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border-width: 5px;
+    border-style: solid;
+    border-color: #1f2937 transparent transparent transparent;
+}
+
+.gauge-info-wrapper:hover .gauge-info-tooltip {
+    display: block;
+}
+
 .score-gauges-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    /* Increased min width */
     gap: 24px;
     margin-top: 16px;
 }

@@ -161,12 +161,14 @@ async function computeAndStoreScore(userId, conceptId, aspects, strategy = DEFAU
 }
 
 /**
- * Compute and store a concept score from raw 0-100 scores (NEW - preserves granularity)
- * Simply averages the aspect scores to get the final score
+ * Compute and store a concept score from raw scores (supports both legacy 0-100 and peer-comparison categories)
+ * 
+ * For peer-comparison: rawScores have { domain, category, categoryLabel, numericScore, label }
+ * For legacy: rawScores have { domain, score, label }
  * 
  * @param {string} userId - User ID
  * @param {string} conceptId - Concept ID
- * @param {Array<{domain: string, score: number}>} rawScores - Array of domain/score pairs (0-100)
+ * @param {Array} rawScores - Array of domain/score pairs
  * @returns {Promise<{score: number, trend: string, breakdown: Object}>}
  */
 async function computeAndStoreRawScore(userId, conceptId, rawScores) {
@@ -174,18 +176,25 @@ async function computeAndStoreRawScore(userId, conceptId, rawScores) {
         return { score: 0, trend: 'stable', breakdown: {} };
     }
 
+    // Use numericScore (from peer comparison) if available, otherwise use score (legacy)
+    const getScore = (r) => r.numericScore != null ? r.numericScore : (r.score || 0);
+
     // Compute average of all raw scores
-    const total = rawScores.reduce((sum, r) => sum + r.score, 0);
+    const total = rawScores.reduce((sum, r) => sum + getScore(r), 0);
     const score = Math.round((total / rawScores.length) * 100) / 100;
 
-    // Build breakdown for debugging
+    // Build breakdown for frontend consumption
     const breakdown = {};
     for (const r of rawScores) {
         breakdown[r.domain] = {
-            score: r.score,
+            score: getScore(r),
             weight: 1 / rawScores.length,
-            contribution: r.score / rawScores.length,
-            label: r.label
+            contribution: getScore(r) / rawScores.length,
+            label: r.label,
+            // Peer comparison fields (if present)
+            ...(r.category && { category: r.category }),
+            ...(r.categoryLabel && { categoryLabel: r.categoryLabel }),
+            ...(r.zScore != null && { zScore: r.zScore })
         };
     }
 

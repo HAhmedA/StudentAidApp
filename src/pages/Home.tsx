@@ -19,7 +19,15 @@ interface ConceptScore {
     score: number
     trend: string
     avg7d: number | null
-    breakdown?: Record<string, { score: number, weight: number, label?: string }>
+    peerAverageScore?: number | null
+    breakdown?: Record<string, {
+        score: number
+        weight: number
+        label?: string
+        category?: string
+        categoryLabel?: string
+        zScore?: number
+    }>
 }
 
 // ... (rest of file until render)
@@ -116,22 +124,22 @@ const Home = () => {
             .join(' ')
     }
 
-    // Helper to get score logic (excellent/poor) - duplicated from component for now
-    const getScoreLabel = (score: number) => {
-        if (score >= 80) return 'Excellent'
-        if (score >= 60) return 'Good'
-        if (score >= 40) return 'Fair'
-        if (score >= 20) return 'Poor'
-        return 'Very Poor'
+    // Category colors (all green shades)
+    const CATEGORY_COLORS: Record<string, string> = {
+        requires_improvement: '#86efac',
+        good: '#22c55e',
+        very_good: '#15803d'
     }
 
-    // Helper to get color based on score
-    const getScoreColor = (score: number): string => {
-        if (score >= 80) return '#22c55e' // Green
-        if (score >= 60) return '#84cc16' // Light green
-        if (score >= 40) return '#fbbf24' // Yellow
-        if (score >= 20) return '#f97316' // Orange
-        return '#ef4444' // Red
+    const getCategoryColor = (category?: string): string => {
+        return CATEGORY_COLORS[category || 'good'] || '#22c55e'
+    }
+
+    const getCategoryLabel = (data: { category?: string, categoryLabel?: string, score: number }): string => {
+        if (data.categoryLabel) return data.categoryLabel
+        if (data.category === 'very_good') return 'Very Good'
+        if (data.category === 'requires_improvement') return 'Could Improve'
+        return 'Good'
     }
 
     // Toggle expansion
@@ -324,10 +332,20 @@ const Home = () => {
 
                 {/* Score Gauges Section */}
                 <div className='mood-card'>
-                    <h2 className='mood-card-title'>Your Performance Scores</h2>
-                    <p className='mood-card-description'>
-                        Click on a gauge to see a detailed breakdown of your habits
-                    </p>
+                    <div className='mood-card-header-row'>
+                        <div>
+                            <h2 className='mood-card-title'>Your Performance Scores</h2>
+                            <p className='mood-card-description'>
+                                Click on a gauge to see a detailed breakdown of your habits
+                            </p>
+                        </div>
+                        <div className="gauge-info-wrapper">
+                            <span className="gauge-info-icon">ℹ</span>
+                            <div className="gauge-info-tooltip">
+                                Your score is calculated by comparing your data against all other students using statistical peer comparison (Z-scores). The peer average needle shows where the average student stands, so you can see how you compare.
+                            </div>
+                        </div>
+                    </div>
                     <div className='mood-card-content'>
                         {scoresLoading ? (
                             <div className='mood-loading'>Loading scores...</div>
@@ -346,30 +364,28 @@ const Home = () => {
                                             label={score.conceptName}
                                             trend={score.trend}
                                             size="medium"
+                                            peerAverageScore={score.peerAverageScore}
                                         />
                                         {expandedConceptId === score.conceptId && score.breakdown && (
                                             <div className='score-details-list'>
                                                 <div className='score-details-title'>Detailed Breakdown</div>
                                                 <ul>
                                                     {Object.entries(score.breakdown).map(([key, data]) => {
-                                                        const label = getScoreLabel(data.score)
-                                                        const color = getScoreColor(data.score)
+                                                        const catLabel = getCategoryLabel(data)
+                                                        const color = getCategoryColor(data.category)
                                                         return (
                                                             <li key={key} style={{ flexDirection: 'column', alignItems: 'stretch' }}>
                                                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
                                                                     <span className='detail-label'>{formatAspectName(key)}</span>
-                                                                    <div style={{ display: 'flex', alignItems: 'center' }}>
-                                                                        <span className='detail-value'>{data.score.toFixed(0)}/100</span>
-                                                                        <span
-                                                                            className='detail-score-tag'
-                                                                            style={{
-                                                                                backgroundColor: `${color}20`,
-                                                                                color: color
-                                                                            }}
-                                                                        >
-                                                                            {label}
-                                                                        </span>
-                                                                    </div>
+                                                                    <span
+                                                                        className='detail-score-tag'
+                                                                        style={{
+                                                                            backgroundColor: `${color}20`,
+                                                                            color: color
+                                                                        }}
+                                                                    >
+                                                                        {catLabel}
+                                                                    </span>
                                                                 </div>
                                                                 {data.label && (
                                                                     <div className='detail-text' style={{

@@ -2,45 +2,61 @@ import React from 'react'
 import './ScoreGauge.css'
 
 interface ScoreGaugeProps {
-    score: number          // 0-100
+    score: number          // numericScore from categories: 25, 50, or 85
     label: string          // Concept name
     trend?: string         // 'improving', 'declining', 'stable'
     size?: 'small' | 'medium' | 'large'
+    category?: string      // 'requires_improvement', 'good', 'very_good'
+    categoryLabel?: string // Human-readable: 'Could Improve', 'Good', 'Very Good'
+    peerAverageScore?: number | null  // Peer average score (0-100)
+}
+
+// Category definitions with green shades
+const CATEGORIES = [
+    { key: 'requires_improvement', label: 'Could Improve', color: '#86efac', startAngle: 180, endAngle: 120 },
+    { key: 'good', label: 'Good', color: '#22c55e', startAngle: 120, endAngle: 60 },
+    { key: 'very_good', label: 'Very Good', color: '#15803d', startAngle: 60, endAngle: 0 }
+]
+
+// Map numeric score to category
+const scoreToCategory = (score: number) => {
+    if (score >= 70) return 'very_good'
+    if (score >= 40) return 'good'
+    return 'requires_improvement'
+}
+
+const getCategoryInfo = (cat: string) => {
+    return CATEGORIES.find(c => c.key === cat) || CATEGORIES[1]
 }
 
 /**
- * ScoreGauge - A semicircular gauge component that displays a score
- * Features continuous colored arc segments and curved labels outside the arc
+ * ScoreGauge - A 3-segment green-only semicircular gauge
+ * Shows peer-comparison categories: Could Improve, Good, Very Good
+ * Supports dual needles: student (dark) and peer average (blue-gray)
  */
 const ScoreGauge: React.FC<ScoreGaugeProps> = ({
     score,
     label,
     trend = 'stable',
-    size = 'medium'
+    size = 'medium',
+    category,
+    categoryLabel,
+    peerAverageScore
 }) => {
-    // Clamp score to 0-100
-    const clampedScore = Math.max(0, Math.min(100, score))
+    // Determine category from props or score
+    const resolvedCategory = category || scoreToCategory(score)
+    const catInfo = getCategoryInfo(resolvedCategory)
+    const displayLabel = categoryLabel || catInfo.label
 
     // Calculate needle rotation: -90° (left) to 90° (right)
+    // Map score to rotation: 25 → left section, 50 → middle, 85 → right section
+    const clampedScore = Math.max(0, Math.min(100, score))
     const needleRotation = (clampedScore / 100) * 180 - 90
 
-    // Determine score level for label
-    const getScoreLevel = (score: number): string => {
-        if (score >= 80) return 'Excellent'
-        if (score >= 60) return 'Good'
-        if (score >= 40) return 'Fair'
-        if (score >= 20) return 'Poor'
-        return 'Very Poor'
-    }
-
-    // Get color based on score
-    const getScoreColor = (score: number): string => {
-        if (score >= 80) return '#22c55e' // Green
-        if (score >= 60) return '#84cc16' // Light green
-        if (score >= 40) return '#fbbf24' // Yellow
-        if (score >= 20) return '#f97316' // Orange
-        return '#ef4444' // Red
-    }
+    // Peer average needle rotation
+    const hasPeerAverage = peerAverageScore != null && peerAverageScore >= 0
+    const clampedPeerScore = hasPeerAverage ? Math.max(0, Math.min(100, peerAverageScore!)) : 0
+    const peerNeedleRotation = (clampedPeerScore / 100) * 180 - 90
 
     const getTrendIcon = () => {
         switch (trend) {
@@ -55,11 +71,10 @@ const ScoreGauge: React.FC<ScoreGaugeProps> = ({
 
     // SVG Geometry Constants
     const CX = 100
-    const CY = 105 // Lowered center to make room for top labels
-    const R = 70   // Reduced radius to fit in viewBox
+    const CY = 105
+    const R = 70
     const STROKE = 14
 
-    // Helper to calculate arc points
     const pol2cart = (cx: number, cy: number, r: number, angleDeg: number) => {
         const rad = (angleDeg * Math.PI) / 180
         return {
@@ -68,26 +83,34 @@ const ScoreGauge: React.FC<ScoreGaugeProps> = ({
         }
     }
 
-    // Segments: 180-144, 144-108, 108-72, 72-36, 36-0
-    const createSegment = (startAngle: number, endAngle: number, color: string) => {
+    const createSegment = (startAngle: number, endAngle: number, color: string, isActive: boolean) => {
         const start = pol2cart(CX, CY, R, startAngle)
         const end = pol2cart(CX, CY, R, endAngle)
-        // Large arc flag is 0 for <180
         const d = `M ${start.x} ${start.y} A ${R} ${R} 0 0 1 ${end.x} ${end.y}`
-        return <path d={d} fill="none" stroke={color} strokeWidth={STROKE} key={color} />
+        return (
+            <path
+                d={d}
+                fill="none"
+                stroke={color}
+                strokeWidth={STROKE}
+                opacity={isActive ? 1 : 0.3}
+                key={`${startAngle}-${endAngle}`}
+            />
+        )
     }
 
-    // Labels: Radius slightly larger than arc to place text outside
+    // Labels outside the arc
     const LabelRadius = R + 18
-    const createLabel = (angle: number, text: string) => {
+    const createArcLabel = (angle: number, text: string, isActive: boolean) => {
         const pos = pol2cart(CX, CY, LabelRadius, angle)
         return (
             <text
                 x={pos.x}
                 y={pos.y}
                 className="gauge-segment-label"
-                fontSize="8"
-                fill="#6b7280"
+                fontSize="7"
+                fill={isActive ? '#15803d' : '#9ca3af'}
+                fontWeight={isActive ? 700 : 500}
                 textAnchor="middle"
                 dominantBaseline="middle"
                 key={text}
@@ -97,58 +120,79 @@ const ScoreGauge: React.FC<ScoreGaugeProps> = ({
         )
     }
 
+    // Needle colors
+    const STUDENT_NEEDLE_COLOR = '#1f2937'
+    const PEER_NEEDLE_COLOR = '#6b7280'
+
     return (
         <div className={`score-gauge score-gauge-${size}`}>
             <div className="gauge-label">{label}</div>
 
             <div className="gauge-container">
-                {/* SVG Gauge */}
                 <svg viewBox="0 0 200 120" className="gauge-svg">
-                    {/* Segments - Continuous, no gaps */}
-                    {createSegment(180, 144, '#ef4444')}
-                    {createSegment(144, 108, '#f97316')}
-                    {createSegment(108, 72, '#fbbf24')}
-                    {createSegment(72, 36, '#84cc16')}
-                    {createSegment(36, 0, '#22c55e')}
+                    {/* 3 green segments */}
+                    {CATEGORIES.map(seg =>
+                        createSegment(seg.startAngle, seg.endAngle, seg.color, seg.key === resolvedCategory)
+                    )}
+
+                    {/* Peer average needle (rendered first so it's behind student needle) */}
+                    {hasPeerAverage && (
+                        <g transform={`rotate(${peerNeedleRotation} ${CX} ${CY})`}>
+                            <polygon
+                                points={`${CX},${CY - R + 10} ${CX - 3},${CY} ${CX + 3},${CY}`}
+                                fill={PEER_NEEDLE_COLOR}
+                                opacity={0.7}
+                            />
+                        </g>
+                    )}
 
                     {/* Center point */}
                     <circle cx={CX} cy={CY} r="6" fill="#374151" />
 
-                    {/* Needle */}
+                    {/* Student needle (on top) */}
                     <g transform={`rotate(${needleRotation} ${CX} ${CY})`}>
                         <polygon
                             points={`${CX},${CY - R + 5} ${CX - 4},${CY} ${CX + 4},${CY}`}
-                            fill="#1f2937"
+                            fill={STUDENT_NEEDLE_COLOR}
                         />
                     </g>
 
-                    {/* Labels - Outside the arc */}
-                    {createLabel(162, 'Very Poor')}
-                    {createLabel(126, 'Poor')}
-                    {createLabel(90, 'Fair')}
-                    {createLabel(54, 'Good')}
-                    {createLabel(18, 'Excellent')}
+                    {/* Peer average center dot */}
+                    {hasPeerAverage && (
+                        <circle cx={CX} cy={CY} r="3.5" fill={PEER_NEEDLE_COLOR} opacity={0.7} />
+                    )}
+
+                    {/* Labels */}
+                    {createArcLabel(150, 'Needs Work', resolvedCategory === 'requires_improvement')}
+                    {createArcLabel(90, 'Good', resolvedCategory === 'good')}
+                    {createArcLabel(30, 'Very Good', resolvedCategory === 'very_good')}
                 </svg>
             </div>
 
-            {/* Score display */}
+            {/* Category label display (no numeric score) */}
             <div className="gauge-score-display">
                 <span
-                    className="gauge-score-value"
-                    style={{ color: getScoreColor(clampedScore) }}
+                    className="gauge-category-label"
+                    style={{ color: catInfo.color }}
                 >
-                    {Math.round(clampedScore)}
+                    {displayLabel}
                 </span>
-                <span className="gauge-score-max">/100</span>
                 {getTrendIcon()}
             </div>
 
-            <div
-                className="gauge-score-level"
-                style={{ color: getScoreColor(clampedScore) }}
-            >
-                {getScoreLevel(clampedScore)}
-            </div>
+            {/* Legend for dual needles */}
+            {hasPeerAverage && (
+                <div className="gauge-legend">
+                    <div className="gauge-legend-item">
+                        <span className="gauge-legend-dot" style={{ backgroundColor: STUDENT_NEEDLE_COLOR }}></span>
+                        <span className="gauge-legend-text">You</span>
+                    </div>
+                    <div className="gauge-legend-item">
+                        <span className="gauge-legend-dot" style={{ backgroundColor: PEER_NEEDLE_COLOR }}></span>
+                        <span className="gauge-legend-text">Peer Average</span>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }

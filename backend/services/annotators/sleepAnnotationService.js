@@ -440,80 +440,31 @@ async function hasSleepData(pool, userId) {
 // =============================================================================
 
 /**
- * Get raw scores for scoring aggregation (0-100 per aspect)
- * Uses actual session data to calculate continuous scores
- * 
- * @param {Object} pool - Database connection pool
- * @param {string} userId - User ID
- * @returns {Promise<Array<{domain: string, score: number}>>}
+ * Get peer-comparison scores for scoring aggregation
+ * Uses Z-scores against the peer population instead of absolute 0-100 scores
  */
 async function getRawScoresForScoring(pool, userId) {
-    // Get the most recent session with its baseline
+    const { computePeerZScores } = await import('../scoring/peerStatsService.js');
+    const peerResults = await computePeerZScores(pool, 'sleep', userId);
+
+    if (peerResults.length === 0) return [];
+
+    // Fetch judgment labels for the most recent session
     const { rows } = await pool.query(
-        `SELECT ss.id as session_id, ss.total_sleep_minutes, ss.awakenings_count, ss.awake_minutes,
-                ss.bedtime, ss.wake_time, sb.avg_total_sleep_minutes,
-                sb.avg_bedtime_hour, sb.avg_wake_time_hour
-         FROM public.sleep_sessions ss
-         JOIN public.sleep_baselines sb ON ss.user_id = sb.user_id
-         WHERE ss.user_id = $1
-         ORDER BY ss.session_date DESC
-         LIMIT 1`,
+        `SELECT sj.domain, sj.explanation
+         FROM public.sleep_judgments sj
+         JOIN public.sleep_sessions ss ON sj.session_id = ss.id
+         WHERE sj.user_id = $1
+         ORDER BY ss.session_date DESC LIMIT 3`,
         [userId]
     );
-
-    if (rows.length === 0) return [];
-
-    const session = rows[0];
-    const baseline = session.avg_total_sleep_minutes || 420; // 7h default
-
-    // Duration score: 100 = exactly at baseline, scales down for deviations
-    // Ideal range: 90-110% of baseline = 100 points
-    // Below 75% = 0 points, above 120% = slight penalty
-    const durationRatio = session.total_sleep_minutes / baseline;
-    let durationScore;
-    if (durationRatio >= 0.9 && durationRatio <= 1.1) {
-        durationScore = 100;
-    } else if (durationRatio < 0.9) {
-        // Scale from 0-100 as ratio goes from 0.5 to 0.9
-        durationScore = Math.max(0, (durationRatio - 0.5) / 0.4 * 100);
-    } else {
-        // Slight penalty for oversleep (1.1 to 1.4 range)
-        durationScore = Math.max(50, 100 - (durationRatio - 1.1) / 0.3 * 50);
-    }
-
-    // Continuity score: Based on awakenings and awake minutes
-    // 0 awakenings = 100, 1-2 = 90, 3-4 = 70, 5+ = penalty
-    // Also factor in awake_minutes: 0 = 100, 10+ = penalty
-    const awakeningsScore = Math.max(0, 100 - session.awakenings_count * 15);
-    const awakeMinutesScore = Math.max(0, 100 - session.awake_minutes * 2);
-    const continuityScore = (awakeningsScore * 0.6 + awakeMinutesScore * 0.4);
-
-    // Timing score: Based on deviation from baseline
-    // Extract hour from bedtime for comparison
-    const bedtimeHour = new Date(session.bedtime).getHours() +
-        new Date(session.bedtime).getMinutes() / 60;
-    const baselineBedtimeHour = parseFloat(session.avg_bedtime_hour) || 23;
-
-    // Calculate deviation in hours (handle midnight crossing)
-    let timingDeviation = Math.abs(bedtimeHour - baselineBedtimeHour);
-    if (timingDeviation > 12) timingDeviation = 24 - timingDeviation;
-
-    // 0 deviation = 100, 1h = 80, 2h = 60, 5h+ = 0
-    const timingScore = Math.max(0, 100 - timingDeviation * 20);
-
-    // Fetch judgments for labels
-    const { rows: judgments } = await pool.query(
-        `SELECT domain, explanation FROM public.sleep_judgments WHERE session_id = $1`,
-        [session.session_id]
-    );
     const judgmentMap = {};
-    judgments.forEach(j => judgmentMap[j.domain] = j.explanation);
+    rows.forEach(j => judgmentMap[j.domain] = j.explanation);
 
-    return [
-        { domain: 'duration', score: Math.round(durationScore * 100) / 100, label: judgmentMap['duration'] },
-        { domain: 'continuity', score: Math.round(continuityScore * 100) / 100, label: judgmentMap['continuity'] },
-        { domain: 'timing', score: Math.round(timingScore * 100) / 100, label: judgmentMap['timing'] }
-    ];
+    return peerResults.map(r => ({
+        ...r,
+        label: judgmentMap[r.domain] || r.categoryLabel
+    }));
 }
 
 // Keep old function for backwards compatibility
@@ -521,7 +472,7 @@ async function getSeveritiesForScoring(pool, userId) {
     const rawScores = await getRawScoresForScoring(pool, userId);
     return rawScores.map(r => ({
         domain: r.domain,
-        severity: r.score >= 75 ? 'ok' : r.score >= 40 ? 'warning' : 'poor'
+        severity: r.category === 'very_good' ? 'ok' : r.category === 'good' ? 'warning' : 'poor'
     }));
 }
 

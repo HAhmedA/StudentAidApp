@@ -11,6 +11,7 @@ import logger from './utils/logger.js'
 import routes from './routes/index.js'
 import { ensureFixedSurvey } from './routes/surveys.js'
 import { initializeSystemPrompt } from './services/promptAssemblerService.js'
+import { seedTestAccountData } from './services/seedDataService.js'
 import { specs } from './config/swagger.js'
 import { apiLimiter } from './middleware/rateLimit.js'
 import { validateEnvironment } from './config/envValidation.js'
@@ -110,4 +111,9 @@ app.listen(PORT, async () => {
   } catch (e) {
     logger.error('Failed to initialize fixed survey:', e.message)
   }
+
+  // Generate simulated data for seed test accounts (runs in background)
+  seedTestAccountData().catch(e => {
+    logger.error('Failed to seed test account data:', e.message)
+  })
 })

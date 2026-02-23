@@ -381,95 +381,31 @@ async function hasScreenTimeData(pool, userId) {
 // =============================================================================
 
 /**
- * Get raw scores for scoring aggregation (0-100 per aspect)
- * Uses actual session data to calculate continuous scores
- * Lower screen time = higher score (inverted - less is better)
- * 
- * @param {Object} pool - Database connection pool
- * @param {string} userId - User ID
- * @returns {Promise<Array<{domain: string, score: number}>>}
+ * Get peer-comparison scores for scoring aggregation
+ * Uses Z-scores against the peer population instead of absolute 0-100 scores
  */
 async function getRawScoresForScoring(pool, userId) {
+    const { computePeerZScores } = await import('../scoring/peerStatsService.js');
+    const peerResults = await computePeerZScores(pool, 'screen_time', userId);
+
+    if (peerResults.length === 0) return [];
+
+    // Fetch judgment labels for the most recent session
     const { rows } = await pool.query(
-        `SELECT sts.id as session_id, sts.total_screen_minutes, sts.baseline_screen_minutes,
-                sts.longest_continuous_session, sts.late_night_screen_minutes,
-                sts.number_of_screen_sessions
-         FROM public.screen_time_sessions sts
-         WHERE sts.user_id = $1
-         ORDER BY sts.session_date DESC
-         LIMIT 1`,
+        `SELECT stj.domain, stj.explanation
+         FROM public.screen_time_judgments stj
+         JOIN public.screen_time_sessions sts ON stj.session_id = sts.id
+         WHERE stj.user_id = $1
+         ORDER BY sts.session_date DESC LIMIT 3`,
         [userId]
     );
-
-    if (rows.length === 0) return [];
-
-    const session = rows[0];
-
-
-    // 1. Volume Score (Absolute Thresholds)
-    // < 120m (2h) = Excellent (90-100)
-    // < 240m (4h) = Good (75-90)
-    // < 360m (6h) = Fair (60-75)
-    // < 480m (8h) = Poor (40-60)
-    // > 480m = Very Poor (< 40)
-    const minutes = session.total_screen_minutes;
-    let volumeScore;
-    if (minutes <= 120) {
-        volumeScore = 100 - (minutes / 120) * 10; // 100 -> 90
-    } else if (minutes <= 240) {
-        volumeScore = 90 - ((minutes - 120) / 120) * 15; // 90 -> 75
-    } else if (minutes <= 360) {
-        volumeScore = 75 - ((minutes - 240) / 120) * 15; // 75 -> 60
-    } else if (minutes <= 480) {
-        volumeScore = 60 - ((minutes - 360) / 120) * 20; // 60 -> 40
-    } else {
-        volumeScore = Math.max(0, 40 - ((minutes - 480) / 120) * 20); // 40 -> 0
-    }
-
-    // 2. Distribution Score (Session Length)
-    // < 30m = Excellent (100)
-    // 30-45m = Good (85-100)
-    // 45-90m = Fair (60-85)
-    // > 90m = Poor (< 60)
-    const longestSession = session.longest_continuous_session;
-    let distributionScore;
-    if (longestSession <= 30) {
-        distributionScore = 100;
-    } else if (longestSession <= 45) {
-        distributionScore = 100 - ((longestSession - 30) / 15) * 15; // 100 -> 85
-    } else if (longestSession <= 90) {
-        distributionScore = 85 - ((longestSession - 45) / 45) * 25; // 85 -> 60
-    } else {
-        distributionScore = Math.max(0, 60 - ((longestSession - 90) / 60) * 30); // 60 -> 30 at 150m
-    }
-
-    // 3. Late Night Score (Absolute Thresholds)
-    // < 15m = Excellent (90-100)
-    // 15-45m = Fair/Good (60-90)
-    // > 45m = Poor (< 60)
-    const lateNightMinutes = session.late_night_screen_minutes;
-    let lateNightScore;
-    if (lateNightMinutes <= 15) {
-        lateNightScore = 100 - (lateNightMinutes / 15) * 10; // 100 -> 90
-    } else if (lateNightMinutes <= 45) {
-        lateNightScore = 90 - ((lateNightMinutes - 15) / 30) * 30; // 90 -> 60
-    } else {
-        lateNightScore = Math.max(0, 60 - ((lateNightMinutes - 45) / 60) * 40); // 60 -> 20 at 105m
-    }
-
-    // Fetch judgments for labels
-    const { rows: judgments } = await pool.query(
-        `SELECT domain, explanation FROM public.screen_time_judgments WHERE session_id = $1`,
-        [session.session_id]
-    );
     const judgmentMap = {};
-    judgments.forEach(j => judgmentMap[j.domain] = j.explanation);
+    rows.forEach(j => judgmentMap[j.domain] = j.explanation);
 
-    return [
-        { domain: 'volume', score: Math.round(volumeScore * 100) / 100, label: judgmentMap['volume'] },
-        { domain: 'distribution', score: Math.round(distributionScore * 100) / 100, label: judgmentMap['distribution'] },
-        { domain: 'late_night', score: Math.round(lateNightScore * 100) / 100, label: judgmentMap['late_night'] }
-    ];
+    return peerResults.map(r => ({
+        ...r,
+        label: judgmentMap[r.domain] || r.categoryLabel
+    }));
 }
 
 // Keep old function for backwards compatibility
@@ -477,7 +413,7 @@ async function getSeveritiesForScoring(pool, userId) {
     const rawScores = await getRawScoresForScoring(pool, userId);
     return rawScores.map(r => ({
         domain: r.domain,
-        severity: r.score >= 75 ? 'ok' : r.score >= 40 ? 'warning' : 'poor'
+        severity: r.category === 'very_good' ? 'ok' : r.category === 'good' ? 'warning' : 'poor'
     }));
 }
 

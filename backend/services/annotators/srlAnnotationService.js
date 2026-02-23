@@ -532,42 +532,30 @@ async function hasSRLData(pool, userId) {
 // =============================================================================
 
 /**
- * Get raw scores for scoring aggregation (0-100 per concept)
- * SRL has 14 concepts, each with avg_score (1-5 scale)
- * We convert directly: (avg_score - 1) / 4 * 100 = 0-100 score
- * For inverted concepts (anxiety), we invert: (5 - avg_score) / 4 * 100
- * 
- * @param {Object} pool - Database connection pool
- * @param {string} userId - User ID
- * @returns {Promise<Array<{domain: string, score: number}>>}
+ * Get peer-comparison scores for scoring aggregation
+ * Uses Z-scores against the peer population instead of absolute 0-100 scores
  */
 async function getRawScoresForScoring(pool, userId) {
+    const { computePeerZScores } = await import('../scoring/peerStatsService.js');
+    const peerResults = await computePeerZScores(pool, 'srl', userId);
+
+    if (peerResults.length === 0) return [];
+
+    // Fetch annotation labels
     const { rows } = await pool.query(
-        `SELECT concept_key, avg_score, is_inverted, annotation_text
+        `SELECT concept_key, annotation_text
          FROM public.srl_annotations
          WHERE user_id = $1 AND time_window = '7d' AND response_count > 0
          ORDER BY concept_key`,
         [userId]
     );
+    const labelMap = {};
+    rows.forEach(r => labelMap[r.concept_key] = r.annotation_text);
 
-    return rows.map(r => {
-        const rawScore = parseFloat(r.avg_score);
-        let score;
-
-        if (r.is_inverted) {
-            // For anxiety: low score (1) is best (100), high score (5) is worst (0)
-            score = ((5 - rawScore) / 4) * 100;
-        } else {
-            // For normal concepts: high score (5) is best (100), low score (1) is worst (0)
-            score = ((rawScore - 1) / 4) * 100;
-        }
-
-        return {
-            domain: r.concept_key,
-            score: Math.round(score * 100) / 100, // Round to 2 decimals
-            label: r.annotation_text // Include qualitative text
-        };
-    });
+    return peerResults.map(r => ({
+        ...r,
+        label: labelMap[r.domain] || r.categoryLabel
+    }));
 }
 
 // Keep old function for backwards compatibility, but mark deprecated
@@ -576,7 +564,7 @@ async function getSeveritiesForScoring(pool, userId) {
     const rawScores = await getRawScoresForScoring(pool, userId);
     return rawScores.map(r => ({
         domain: r.domain,
-        severity: r.score >= 75 ? 'ok' : r.score >= 40 ? 'warning' : 'poor'
+        severity: r.category === 'very_good' ? 'ok' : r.category === 'good' ? 'warning' : 'poor'
     }));
 }
 

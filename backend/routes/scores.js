@@ -29,6 +29,17 @@ router.get('/', async (req, res) => {
             [userId]
         )
 
+        // Compute peer average score per concept (across all users)
+        const { rows: peerRows } = await pool.query(
+            `SELECT concept_id, AVG(score) as avg_score
+             FROM public.concept_scores
+             GROUP BY concept_id`
+        )
+        const peerAverages = {}
+        for (const r of peerRows) {
+            peerAverages[r.concept_id] = Math.round(parseFloat(r.avg_score) * 100) / 100
+        }
+
         // Map concept_id to friendly names
         const conceptNames = {
             sleep: 'Sleep Quality',
@@ -45,6 +56,7 @@ router.get('/', async (req, res) => {
             trend: row.trend,
             avg7d: row.avg_7d ? parseFloat(row.avg_7d) : null,
             breakdown: row.aspect_breakdown,
+            peerAverageScore: peerAverages[row.concept_id] || null,
             computedAt: row.computed_at
         }))
 

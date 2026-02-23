@@ -378,79 +378,31 @@ async function hasSocialMediaData(pool, userId) {
 // =============================================================================
 
 /**
- * Get raw scores for scoring aggregation (0-100 per aspect)
- * Uses actual session data to calculate continuous scores
- * Lower social media = higher score (inverted - less is better)
- * 
- * @param {Object} pool - Database connection pool
- * @param {string} userId - User ID
- * @returns {Promise<Array<{domain: string, score: number}>>}
+ * Get peer-comparison scores for scoring aggregation
+ * Uses Z-scores against the peer population instead of absolute 0-100 scores
  */
 async function getRawScoresForScoring(pool, userId) {
+    const { computePeerZScores } = await import('../scoring/peerStatsService.js');
+    const peerResults = await computePeerZScores(pool, 'social_media', userId);
+
+    if (peerResults.length === 0) return [];
+
+    // Fetch judgment labels for the most recent session
     const { rows } = await pool.query(
-        `SELECT sms.id as session_id, sms.total_social_minutes, 
-                COALESCE(smb.avg_total_minutes, 60) as baseline_social_minutes,
-                sms.number_of_social_sessions as number_of_checks, 
-                sms.average_session_length as avg_session_length
-         FROM public.social_media_sessions sms
-         LEFT JOIN public.social_media_baselines smb ON sms.user_id = smb.user_id
-         WHERE sms.user_id = $1
-         ORDER BY sms.session_date DESC
-         LIMIT 1`,
+        `SELECT smj.domain, smj.explanation
+         FROM public.social_media_judgments smj
+         JOIN public.social_media_sessions sms ON smj.session_id = sms.id
+         WHERE smj.user_id = $1
+         ORDER BY sms.session_date DESC LIMIT 3`,
         [userId]
     );
-
-    if (rows.length === 0) return [];
-
-    const session = rows[0];
-    const baseline = session.baseline_social_minutes; // Already defaulted in query
-
-    // Volume score: Inverted - at/below baseline = 100, above = decreasing
-    const volumeRatio = session.total_social_minutes / baseline;
-    let volumeScore;
-    if (volumeRatio <= 1.0) {
-        volumeScore = 100;
-    } else {
-        volumeScore = Math.max(0, 100 - (volumeRatio - 1) * 100);
-    }
-
-    // Frequency score: Fewer checks = better
-    // 5 or fewer = 100, 10 = 75, 20 = 50, 30+ = low
-    const checks = session.number_of_checks;
-    let frequencyScore;
-    if (checks <= 5) {
-        frequencyScore = 100;
-    } else if (checks <= 30) {
-        frequencyScore = 100 - (checks - 5) * (60 / 25); // Scale from 100 to 40
-    } else {
-        frequencyScore = Math.max(0, 40 - (checks - 30) * 2);
-    }
-
-    // Session style score: Shorter average sessions = more mindful
-    // 5 min avg = 100, 10 min = 80, 20 min = 50, 30+ = low
-    const avgSession = session.avg_session_length;
-    let sessionStyleScore;
-    if (avgSession <= 5) {
-        sessionStyleScore = 100;
-    } else if (avgSession <= 30) {
-        sessionStyleScore = 100 - (avgSession - 5) * (60 / 25);
-    } else {
-        sessionStyleScore = Math.max(0, 40 - (avgSession - 30) * 2);
-    }
-
-    // Fetch judgments for labels
-    const { rows: judgments } = await pool.query(
-        `SELECT domain, explanation FROM public.social_media_judgments WHERE session_id = $1`,
-        [session.session_id]
-    );
     const judgmentMap = {};
-    judgments.forEach(j => judgmentMap[j.domain] = j.explanation);
+    rows.forEach(j => judgmentMap[j.domain] = j.explanation);
 
-    return [
-        { domain: 'volume', score: Math.round(volumeScore * 100) / 100, label: judgmentMap['volume'] },
-        { domain: 'frequency', score: Math.round(frequencyScore * 100) / 100, label: judgmentMap['frequency'] },
-        { domain: 'session_style', score: Math.round(sessionStyleScore * 100) / 100, label: judgmentMap['session_style'] }
-    ];
+    return peerResults.map(r => ({
+        ...r,
+        label: judgmentMap[r.domain] || r.categoryLabel
+    }));
 }
 
 // Keep old function for backwards compatibility
@@ -458,7 +410,7 @@ async function getSeveritiesForScoring(pool, userId) {
     const rawScores = await getRawScoresForScoring(pool, userId);
     return rawScores.map(r => ({
         domain: r.domain,
-        severity: r.score >= 75 ? 'ok' : r.score >= 40 ? 'warning' : 'poor'
+        severity: r.category === 'very_good' ? 'ok' : r.category === 'good' ? 'warning' : 'poor'
     }));
 }
 

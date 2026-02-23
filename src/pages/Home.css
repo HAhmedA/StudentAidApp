@@ -154,6 +154,12 @@
   color: #111827;
 }
 
+.mood-card-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
 .mood-card-description {
   margin: 0 0 20px 0;
   font-size: 14px;
