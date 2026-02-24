@@ -122,8 +122,11 @@ async function generateStudentData(pool, userId) {
         ]);
 
         // 3. Compute Concept Scores (after all data is generated)
-        await computeAllScores(userId);
+        const scores = await computeAllScores(userId);
         logger.info(`Concept scores computed for user ${userId}`);
+
+        // 4. Seed historical scores for past 6 days (so Yesterday needle has data)
+        await seedScoreHistory(pool, userId, scores);
 
         logger.info(`All data simulation complete for user ${userId}`);
         return profile;
@@ -131,6 +134,43 @@ async function generateStudentData(pool, userId) {
     } catch (err) {
         logger.error(`Orchestrator simulation error: ${err.message}`);
         throw err;
+    }
+}
+
+/**
+ * Seed concept_score_history with daily entries for the past 6 days.
+ * Uses the currently computed scores and adds small daily variations
+ * to simulate realistic day-over-day score changes.
+ */
+async function seedScoreHistory(pool, userId, scores) {
+    try {
+        const concepts = Object.keys(scores);
+        if (concepts.length === 0) return;
+
+        for (const conceptId of concepts) {
+            const baseScore = scores[conceptId]?.score;
+            if (baseScore == null) continue;
+
+            // Generate scores for the past 6 days (today is already stored by computeAllScores)
+            for (let daysAgo = 1; daysAgo <= 6; daysAgo++) {
+                // Add +/- random variation (up to 8 points) for realistic daily fluctuation
+                const variation = (Math.random() - 0.5) * 16;
+                const dayScore = Math.max(0, Math.min(100,
+                    Math.round((baseScore + variation) * 100) / 100
+                ));
+
+                await pool.query(
+                    `INSERT INTO public.concept_score_history
+                     (user_id, concept_id, score, score_date, computed_at)
+                     VALUES ($1, $2, $3, CURRENT_DATE - CAST($4 || ' days' AS INTERVAL), NOW())
+                     ON CONFLICT (user_id, concept_id, score_date) DO NOTHING`,
+                    [userId, conceptId, dayScore, daysAgo]
+                );
+            }
+        }
+        logger.info(`Seeded 6-day score history for user ${userId}`);
+    } catch (err) {
+        logger.error(`Error seeding score history: ${err.message}`);
     }
 }
 

@@ -4,6 +4,7 @@ import pool from '../config/database.js'
 import logger from '../utils/logger.js'
 import { requireAdmin } from '../middleware/auth.js'
 import { DEFAULT_ALIGNMENT_PROMPT } from '../services/alignmentService.js'
+import { getAnnotations } from '../services/annotators/srlAnnotationService.js'
 
 const router = Router()
 
@@ -108,6 +109,110 @@ router.put('/prompt', async (req, res) => {
     }
 })
 
+// ── Student viewer endpoints ──────────────────────────────────────
+
+// List all student users
+router.get('/students', async (req, res) => {
+    try {
+        const { rows } = await pool.query(
+            `SELECT id, name, email FROM public.users WHERE role = 'student' ORDER BY created_at DESC`
+        )
+        res.json({ students: rows })
+    } catch (e) {
+        logger.error('List students error:', e)
+        res.status(500).json({ error: 'db_error', details: String(e) })
+    }
+})
+
+// Get concept scores for a specific student (mirrors /api/scores logic)
+router.get('/students/:studentId/scores', async (req, res) => {
+    try {
+        const { studentId } = req.params
+
+        const { rows } = await pool.query(
+            `SELECT concept_id, score, trend, avg_7d, aspect_breakdown, computed_at
+             FROM public.concept_scores
+             WHERE user_id = $1
+             ORDER BY concept_id`,
+            [studentId]
+        )
+
+        // Yesterday scores
+        const { rows: yesterdayRows } = await pool.query(
+            `SELECT concept_id, score
+             FROM public.concept_score_history
+             WHERE user_id = $1 AND score_date = CURRENT_DATE - 1`,
+            [studentId]
+        )
+        const yesterdayScores = {}
+        for (const r of yesterdayRows) {
+            yesterdayScores[r.concept_id] = Math.round(parseFloat(r.score) * 100) / 100
+        }
+
+        // Cluster info
+        const { rows: clusterRows } = await pool.query(
+            `SELECT uca.concept_id, uca.cluster_label, uca.percentile_position,
+                    pc.p5, pc.p50, pc.p95
+             FROM public.user_cluster_assignments uca
+             JOIN public.peer_clusters pc
+               ON pc.concept_id = uca.concept_id AND pc.cluster_index = uca.cluster_index
+             WHERE uca.user_id = $1`,
+            [studentId]
+        )
+        const clusterInfo = {}
+        for (const r of clusterRows) {
+            clusterInfo[r.concept_id] = {
+                clusterLabel: r.cluster_label,
+                percentilePosition: parseFloat(r.percentile_position) || 50,
+                dialMin: Math.round(parseFloat(r.p5) * 100) / 100,
+                dialCenter: Math.round(parseFloat(r.p50) * 100) / 100,
+                dialMax: Math.round(parseFloat(r.p95) * 100) / 100
+            }
+        }
+
+        const conceptNames = {
+            sleep: 'Sleep Quality',
+            srl: 'Self-Regulated Learning',
+            lms: 'LMS Engagement',
+            screen_time: 'Screen Time',
+            social_media: 'Social Media'
+        }
+
+        const scores = rows.map(row => ({
+            conceptId: row.concept_id,
+            conceptName: conceptNames[row.concept_id] || row.concept_id,
+            score: parseFloat(row.score),
+            trend: row.trend,
+            avg7d: row.avg_7d ? parseFloat(row.avg_7d) : null,
+            breakdown: row.aspect_breakdown,
+            yesterdayScore: yesterdayScores[row.concept_id] || null,
+            clusterLabel: clusterInfo[row.concept_id]?.clusterLabel || null,
+            dialMin: clusterInfo[row.concept_id]?.dialMin || 0,
+            dialCenter: clusterInfo[row.concept_id]?.dialCenter || 50,
+            dialMax: clusterInfo[row.concept_id]?.dialMax || 100,
+            computedAt: row.computed_at
+        }))
+
+        res.json({ scores })
+    } catch (e) {
+        logger.error('Get student scores error:', e)
+        res.status(500).json({ error: 'db_error', details: String(e) })
+    }
+})
+
+// Get annotations for a specific student
+router.get('/students/:studentId/annotations', async (req, res) => {
+    try {
+        const { studentId } = req.params
+        const { timeWindow } = req.query
+        const annotations = await getAnnotations(pool, studentId, timeWindow, false)
+        res.json({ annotations })
+    } catch (e) {
+        logger.error('Get student annotations error:', e)
+        res.status(500).json({ error: 'db_error', details: String(e) })
+    }
+})
+
 // Legacy routes for backwards compatibility
 router.get('/system-prompt', async (req, res) => {
     req.query.type = 'system'
@@ -120,4 +225,3 @@ router.put('/system-prompt', async (req, res) => {
 })
 
 export default router
-

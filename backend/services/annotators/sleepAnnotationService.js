@@ -440,14 +440,14 @@ async function hasSleepData(pool, userId) {
 // =============================================================================
 
 /**
- * Get peer-comparison scores for scoring aggregation
- * Uses Z-scores against the peer population instead of absolute 0-100 scores
+ * Get cluster-based scores for scoring aggregation
+ * Uses GMM clustering + percentile scoring instead of Z-scores
  */
 async function getRawScoresForScoring(pool, userId) {
-    const { computePeerZScores } = await import('../scoring/peerStatsService.js');
-    const peerResults = await computePeerZScores(pool, 'sleep', userId);
+    const { computeClusterScores } = await import('../scoring/clusterPeerService.js');
+    const clusterResult = await computeClusterScores(pool, 'sleep', userId);
 
-    if (peerResults.length === 0) return [];
+    if (!clusterResult || !clusterResult.domains) return [];
 
     // Fetch judgment labels for the most recent session
     const { rows } = await pool.query(
@@ -461,9 +461,13 @@ async function getRawScoresForScoring(pool, userId) {
     const judgmentMap = {};
     rows.forEach(j => judgmentMap[j.domain] = j.explanation);
 
-    return peerResults.map(r => ({
+    return clusterResult.domains.map(r => ({
         ...r,
-        label: judgmentMap[r.domain] || r.categoryLabel
+        label: judgmentMap[r.domain] || r.categoryLabel,
+        clusterLabel: clusterResult.clusterLabel,
+        dialMin: clusterResult.dialMin,
+        dialCenter: clusterResult.dialCenter,
+        dialMax: clusterResult.dialMax
     }));
 }
 

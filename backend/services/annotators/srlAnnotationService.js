@@ -532,14 +532,14 @@ async function hasSRLData(pool, userId) {
 // =============================================================================
 
 /**
- * Get peer-comparison scores for scoring aggregation
- * Uses Z-scores against the peer population instead of absolute 0-100 scores
+ * Get cluster-based scores for scoring aggregation
+ * Uses GMM clustering + percentile scoring instead of Z-scores
  */
 async function getRawScoresForScoring(pool, userId) {
-    const { computePeerZScores } = await import('../scoring/peerStatsService.js');
-    const peerResults = await computePeerZScores(pool, 'srl', userId);
+    const { computeClusterScores } = await import('../scoring/clusterPeerService.js');
+    const clusterResult = await computeClusterScores(pool, 'srl', userId);
 
-    if (peerResults.length === 0) return [];
+    if (!clusterResult || !clusterResult.domains) return [];
 
     // Fetch annotation labels
     const { rows } = await pool.query(
@@ -552,9 +552,13 @@ async function getRawScoresForScoring(pool, userId) {
     const labelMap = {};
     rows.forEach(r => labelMap[r.concept_key] = r.annotation_text);
 
-    return peerResults.map(r => ({
+    return clusterResult.domains.map(r => ({
         ...r,
-        label: labelMap[r.domain] || r.categoryLabel
+        label: labelMap[r.domain] || r.categoryLabel,
+        clusterLabel: clusterResult.clusterLabel,
+        dialMin: clusterResult.dialMin,
+        dialCenter: clusterResult.dialCenter,
+        dialMax: clusterResult.dialMax
     }));
 }
 

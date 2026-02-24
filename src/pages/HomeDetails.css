@@ -83,3 +83,67 @@
         transform: translateY(0);
     }
 }
+
+/* Domain info tooltip */
+.domain-info-wrapper {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    cursor: help;
+}
+
+.domain-info-icon {
+    font-size: 11px;
+    color: #9ca3af;
+    width: 16px;
+    height: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    border: 1px solid #d1d5db;
+    transition: color 0.2s, border-color 0.2s;
+    flex-shrink: 0;
+}
+
+.domain-info-wrapper:hover .domain-info-icon {
+    color: #374151;
+    border-color: #9ca3af;
+}
+
+.domain-info-tooltip {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1f2937;
+    color: white;
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 400;
+    font-style: normal;
+    line-height: 1.4;
+    white-space: normal;
+    width: 220px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s;
+    z-index: 50;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.domain-info-tooltip::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 5px solid transparent;
+    border-top-color: #1f2937;
+}
+
+.domain-info-wrapper:hover .domain-info-tooltip {
+    opacity: 1;
+    pointer-events: auto;
+}

@@ -29,15 +29,37 @@ router.get('/', async (req, res) => {
             [userId]
         )
 
-        // Compute peer average score per concept (across all users)
-        const { rows: peerRows } = await pool.query(
-            `SELECT concept_id, AVG(score) as avg_score
-             FROM public.concept_scores
-             GROUP BY concept_id`
+        // Get yesterday's score for each concept (for Yesterday/Today needle comparison)
+        const { rows: yesterdayRows } = await pool.query(
+            `SELECT concept_id, score
+             FROM public.concept_score_history
+             WHERE user_id = $1 AND score_date = CURRENT_DATE - 1`,
+            [userId]
         )
-        const peerAverages = {}
-        for (const r of peerRows) {
-            peerAverages[r.concept_id] = Math.round(parseFloat(r.avg_score) * 100) / 100
+        const yesterdayScores = {}
+        for (const r of yesterdayRows) {
+            yesterdayScores[r.concept_id] = Math.round(parseFloat(r.score) * 100) / 100
+        }
+
+        // Get cluster info for each concept
+        const { rows: clusterRows } = await pool.query(
+            `SELECT uca.concept_id, uca.cluster_label, uca.percentile_position,
+                    pc.p5, pc.p50, pc.p95
+             FROM public.user_cluster_assignments uca
+             JOIN public.peer_clusters pc
+               ON pc.concept_id = uca.concept_id AND pc.cluster_index = uca.cluster_index
+             WHERE uca.user_id = $1`,
+            [userId]
+        )
+        const clusterInfo = {}
+        for (const r of clusterRows) {
+            clusterInfo[r.concept_id] = {
+                clusterLabel: r.cluster_label,
+                percentilePosition: parseFloat(r.percentile_position) || 50,
+                dialMin: Math.round(parseFloat(r.p5) * 100) / 100,
+                dialCenter: Math.round(parseFloat(r.p50) * 100) / 100,
+                dialMax: Math.round(parseFloat(r.p95) * 100) / 100
+            }
         }
 
         // Map concept_id to friendly names
@@ -56,7 +78,11 @@ router.get('/', async (req, res) => {
             trend: row.trend,
             avg7d: row.avg_7d ? parseFloat(row.avg_7d) : null,
             breakdown: row.aspect_breakdown,
-            peerAverageScore: peerAverages[row.concept_id] || null,
+            yesterdayScore: yesterdayScores[row.concept_id] || null,
+            clusterLabel: clusterInfo[row.concept_id]?.clusterLabel || null,
+            dialMin: clusterInfo[row.concept_id]?.dialMin || 0,
+            dialCenter: clusterInfo[row.concept_id]?.dialCenter || 50,
+            dialMax: clusterInfo[row.concept_id]?.dialMax || 100,
             computedAt: row.computed_at
         }))
 

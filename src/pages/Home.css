@@ -301,3 +301,71 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ── Admin Student Selector ──────────────────────────────── */
+
+.admin-student-selector {
+  background: white;
+  border-radius: 12px;
+  padding: 24px 28px;
+  margin-bottom: 24px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.admin-selector-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+  color: #111827;
+}
+
+.admin-selector-header h2 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.admin-selector-description {
+  margin: 0 0 16px 0;
+  font-size: 14px;
+  color: #6B7280;
+}
+
+.admin-student-select {
+  width: 100%;
+  max-width: 480px;
+  padding: 10px 14px;
+  font-size: 15px;
+  border: 1.5px solid #D1D5DB;
+  border-radius: 8px;
+  background: #F9FAFB;
+  color: #111827;
+  appearance: auto;
+  cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.admin-student-select:hover {
+  border-color: #9CA3AF;
+}
+
+.admin-student-select:focus {
+  outline: none;
+  border-color: #0891B2;
+  box-shadow: 0 0 0 3px rgba(8, 145, 178, 0.15);
+}
+
+.admin-viewing-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  background: linear-gradient(135deg, #E0F2FE, #BAE6FD);
+  border-left: 4px solid #0891B2;
+  border-radius: 8px;
+  margin-bottom: 24px;
+  font-size: 15px;
+  color: #0C4A6E;
+  font-weight: 500;
+}

@@ -405,14 +405,14 @@ async function getJudgmentsForChatbot(pool, userId) {
 }
 
 /**
- * Get peer-comparison scores for scoring aggregation
- * Uses Z-scores against the peer population instead of absolute 0-100 scores
+ * Get cluster-based scores for scoring aggregation
+ * Uses GMM clustering + percentile scoring instead of Z-scores
  */
 async function getRawScoresForScoring(pool, userId) {
-    const { computePeerZScores } = await import('../scoring/peerStatsService.js');
-    const peerResults = await computePeerZScores(pool, 'lms', userId);
+    const { computeClusterScores } = await import('../scoring/clusterPeerService.js');
+    const clusterResult = await computeClusterScores(pool, 'lms', userId);
 
-    if (peerResults.length === 0) return [];
+    if (!clusterResult || !clusterResult.domains) return [];
 
     // Fetch judgment labels to attach to each domain
     const { rows } = await pool.query(
@@ -422,7 +422,6 @@ async function getRawScoresForScoring(pool, userId) {
     );
     const details = rows.length > 0 ? rows[0].judgment_details : {};
 
-    // Map domain labels from judgment details
     const labelMap = {
         volume: details.volume?.label,
         consistency: details.consistency?.label,
@@ -430,9 +429,13 @@ async function getRawScoresForScoring(pool, userId) {
         session_quality: details.sessionQuality?.label
     };
 
-    return peerResults.map(r => ({
+    return clusterResult.domains.map(r => ({
         ...r,
-        label: labelMap[r.domain] || r.categoryLabel
+        label: labelMap[r.domain] || r.categoryLabel,
+        clusterLabel: clusterResult.clusterLabel,
+        dialMin: clusterResult.dialMin,
+        dialCenter: clusterResult.dialCenter,
+        dialMax: clusterResult.dialMax
     }));
 }
 
