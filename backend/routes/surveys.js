@@ -3,6 +3,7 @@ import { Router } from 'express'
 import { v4 as uuidv4 } from 'uuid'
 import pool from '../config/database.js'
 import logger from '../utils/logger.js'
+import { asyncRoute, Errors } from '../utils/errors.js'
 
 const router = Router()
 
@@ -76,31 +77,20 @@ export const ensureFixedSurvey = async () => {
 }
 
 // Get all surveys
-router.get('/getActive', async (req, res) => {
-    try {
+router.get('/getActive', asyncRoute(async (req, res) => {
         const { rows } = await pool.query('SELECT id, name, json FROM public.surveys ORDER BY name NULLS LAST')
         res.json(rows.map(mapSurveyRow))
-    } catch (e) {
-        logger.error(`Get surveys error: ${e.message}`)
-        res.status(500).json({ error: 'db_error', details: String(e) })
-    }
-})
+}))
 
 // Get single survey
-router.get('/getSurvey', async (req, res) => {
-    try {
+router.get('/getSurvey', asyncRoute(async (req, res) => {
         const id = req.query.surveyId
         const { rows } = await pool.query('SELECT id, name, json FROM public.surveys WHERE id = $1', [id])
         res.json(rows[0] ? mapSurveyRow(rows[0]) : null)
-    } catch (e) {
-        logger.error(`Get survey error: ${e.message}`)
-        res.status(500).json({ error: 'db_error', details: String(e) })
-    }
-})
+}))
 
 // Update survey JSON (admin can still edit the survey content)
-router.post('/changeJson', async (req, res) => {
-    try {
+router.post('/changeJson', asyncRoute(async (req, res) => {
         const { id, json } = req.body || {}
         // Ensure the title is always preserved
         if (json && !json.title) {
@@ -110,13 +100,9 @@ router.post('/changeJson', async (req, res) => {
             'UPDATE public.surveys SET json = $2::jsonb WHERE id = $1 RETURNING id, name, json',
             [id, JSON.stringify(json)]
         )
-        if (!rows[0]) return res.status(404).json({ error: 'not found' })
+        if (!rows[0]) throw Errors.NOT_FOUND('Survey')
         logger.info(`Survey updated: ${id}`)
         res.json(mapSurveyRow(rows[0]))
-    } catch (e) {
-        logger.error(`Update survey error: ${e.message}`)
-        res.status(500).json({ error: 'db_error', details: String(e) })
-    }
-})
+}))
 
 export default router

@@ -2,7 +2,8 @@ import { createAsyncThunk, createSlice } from '@reduxjs/toolkit'
 // axios with credentials configured in src/index.tsx
 import axios from 'axios'
 // All API calls use the shared base URL
-import { apiBaseAddress, ISurveyDefinition } from '../models/survey'
+import { API_BASE as apiBaseAddress, } from '../api/client'
+import { ISurveyDefinition } from '../models/survey'
 
 const initialState: { surveys: Array<ISurveyDefinition>, status: string, error: any } = {
   surveys: [],

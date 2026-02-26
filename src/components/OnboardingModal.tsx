@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import './OnboardingModal.css'
-
-const API_BASE = '/api'
+import { getProfile, completeOnboarding } from '../api/profile'
+import { ApiError } from '../api/client'
 
 const STEPS = [
     {
@@ -59,30 +59,25 @@ const OnboardingModal = () => {
     const [completing, setCompleting] = useState(false)
 
     useEffect(() => {
-        fetch(`${API_BASE}/profile`, { credentials: 'include' })
-            .then(r => {
-                if (r.status === 404) {
-                    // No profile row yet — brand new user, show onboarding
-                    setVisible(true)
-                    return null
-                }
-                return r.json()
-            })
+        getProfile()
             .then(data => {
                 if (data && data.onboarding_completed === false) {
                     setVisible(true)
                 }
             })
-            .catch(() => { /* network error — skip modal rather than blocking */ })
+            .catch((err) => {
+                if (err instanceof ApiError && err.status === 404) {
+                    // No profile row yet — brand new user, show onboarding
+                    setVisible(true)
+                }
+                /* other errors — skip modal rather than blocking */
+            })
     }, [])
 
     const markComplete = async () => {
         setCompleting(true)
         try {
-            await fetch(`${API_BASE}/profile/onboarding-complete`, {
-                method: 'POST',
-                credentials: 'include',
-            })
+            await completeOnboarding()
         } catch (_) {
             // silently ignore — don't block the user
         }

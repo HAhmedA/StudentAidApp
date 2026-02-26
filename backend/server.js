@@ -114,9 +114,12 @@ app.listen(PORT, async () => {
   }
 
   // Generate simulated data for seed test accounts (skipped when SIMULATION_MODE=false)
-  seedTestAccountData().catch(e => {
+  // Awaited so that the score recomputation pass finishes before the first client request
+  try {
+    await seedTestAccountData()
+  } catch (e) {
     logger.error('Failed to seed test account data:', e.message)
-  })
+  }
 
   // Start nightly background jobs
   startCronJobs()

@@ -2,9 +2,33 @@
 // Aggregates per-domain scores into single concept scores
 // Supports both legacy severity-based and PGMoE cluster-based raw scoring
 
+/**
+ * @typedef {Object} AspectScore
+ * @property {number} score
+ * @property {number} weight
+ * @property {number} contribution
+ * @property {string} [label]
+ * @property {string} [category]
+ * @property {string} [categoryLabel]
+ * @property {number} [zScore]
+ */
+
+/**
+ * @typedef {Object} ConceptScore
+ * @property {string} conceptId
+ * @property {string} conceptName
+ * @property {number} score
+ * @property {'improving'|'declining'|'stable'} trend
+ * @property {number|null} avg7d
+ * @property {string} computedAt
+ * @property {Record<string, AspectScore>} [breakdown]
+ */
+
 import pool from '../../config/database.js';
 import logger from '../../utils/logger.js';
 import { severityToScore, EqualWeightStrategy } from './scoringStrategies.js';
+import { CONCEPT_NAMES } from '../../config/concepts.js';
+import { withTransaction } from '../../utils/withTransaction.js';
 
 // Default strategy (can be swapped for custom strategies later)
 const DEFAULT_STRATEGY = new EqualWeightStrategy();
@@ -107,30 +131,34 @@ async function get7DayAverage(userId, conceptId) {
  * @param {number|null} avg7d - 7-day average
  */
 async function storeScore(userId, conceptId, score, trend, breakdown, avg7d) {
-    // Upsert current score
-    await pool.query(
-        `INSERT INTO public.concept_scores 
-         (user_id, concept_id, score, trend, aspect_breakdown, avg_7d, computed_at)
-         VALUES ($1, $2, $3, $4, $5, $6, NOW())
-         ON CONFLICT (user_id, concept_id) DO UPDATE SET
-           score = EXCLUDED.score,
-           trend = EXCLUDED.trend,
-           aspect_breakdown = EXCLUDED.aspect_breakdown,
-           avg_7d = EXCLUDED.avg_7d,
-           computed_at = NOW()`,
-        [userId, conceptId, score, trend, JSON.stringify(breakdown), avg7d]
-    );
+    await withTransaction(pool, async (client) => {
+        // Upsert current score; preserve previous breakdown for self-comparison in UI
+        await client.query(
+            `INSERT INTO public.concept_scores
+             (user_id, concept_id, score, trend, aspect_breakdown, avg_7d, computed_at)
+             VALUES ($1, $2, $3, $4, $5, $6, NOW())
+             ON CONFLICT (user_id, concept_id) DO UPDATE SET
+               score = EXCLUDED.score,
+               trend = EXCLUDED.trend,
+               previous_aspect_breakdown = concept_scores.aspect_breakdown,
+               aspect_breakdown = EXCLUDED.aspect_breakdown,
+               avg_7d = EXCLUDED.avg_7d,
+               computed_at = NOW()`,
+            [userId, conceptId, score, trend, JSON.stringify(breakdown), avg7d]
+        );
 
-    // Also store in history (for future trend calculations)
-    await pool.query(
-        `INSERT INTO public.concept_score_history 
-         (user_id, concept_id, score, score_date, computed_at)
-         VALUES ($1, $2, $3, CURRENT_DATE, NOW())
-         ON CONFLICT (user_id, concept_id, score_date) DO UPDATE SET
-           score = EXCLUDED.score,
-           computed_at = NOW()`,
-        [userId, conceptId, score]
-    );
+        // Also store in history (for future trend calculations and self-comparison)
+        await client.query(
+            `INSERT INTO public.concept_score_history
+             (user_id, concept_id, score, aspect_breakdown, score_date, computed_at)
+             VALUES ($1, $2, $3, $4, CURRENT_DATE, NOW())
+             ON CONFLICT (user_id, concept_id, score_date) DO UPDATE SET
+               score = EXCLUDED.score,
+               aspect_breakdown = EXCLUDED.aspect_breakdown,
+               computed_at = NOW()`,
+            [userId, conceptId, score, JSON.stringify(breakdown)]
+        );
+    });
 
     logger.info(`Stored ${conceptId} score: ${score}/100 (${trend}) for user ${userId}`);
 }
@@ -223,20 +251,13 @@ async function computeAndStoreRawScore(userId, conceptId, rawScores) {
  * @returns {string} - Formatted string
  */
 function formatScoreForChatbot(conceptId, score, trend) {
-    const conceptNames = {
-        sleep: 'Sleep quality',
-        srl: 'Self-Regulated Learning',
-        lms: 'LMS Engagement',
-        screen_time: 'Screen Time habits'
-    };
-
     const trendDescriptions = {
         improving: 'improving from last week',
         declining: 'declining from last week',
         stable: 'stable'
     };
 
-    const name = conceptNames[conceptId] || conceptId;
+    const name = CONCEPT_NAMES[conceptId] || conceptId;
     const trendDesc = trendDescriptions[trend] || trend;
 
     return `${name}: ${score}/100 (${trendDesc})`;

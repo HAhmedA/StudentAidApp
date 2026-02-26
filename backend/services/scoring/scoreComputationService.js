@@ -5,6 +5,7 @@
 import pool from '../../config/database.js';
 import logger from '../../utils/logger.js';
 import { computeAndStoreRawScore, getAllScoresForChatbot } from './conceptScoreService.js';
+import { CONCEPT_IDS } from '../../config/concepts.js';
 
 // Import raw score adapters from each annotation service
 import { getRawScoresForScoring as getSleepRawScores } from '../annotators/sleepAnnotationService.js';
@@ -76,7 +77,7 @@ async function computeConceptScore(userId, conceptId) {
 async function computeAllScores(userId) {
     logger.info(`Computing all concept scores for user ${userId}`);
 
-    const concepts = ['sleep', 'screen_time', 'lms', 'srl'];
+    const concepts = CONCEPT_IDS;
     const results = {};
 
     for (const conceptId of concepts) {

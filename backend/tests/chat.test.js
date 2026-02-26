@@ -1,196 +1,212 @@
-// Chat Routes Integration Tests
-// Tests actual routes with real database, mocking only external LLM services
+/**
+ * Integration tests for chat routes
+ * GET  /api/chat/initial
+ * POST /api/chat/message
+ * GET  /api/chat/history
+ * GET  /api/chat/session
+ * POST /api/chat/reset
+ *
+ * Uses jest.unstable_mockModule to mock the service layer.
+ * No real database connection is required.
+ */
 
+import { jest } from '@jest/globals'
 import request from 'supertest'
 import express from 'express'
 import session from 'express-session'
-import {
-    cleanupTestData,
-    getOrCreateTestUser,
-    closeTestDb,
-    testPool
-} from './setup/testDb.js'
 
-// For ESM, we need to use unstable_mockModule before importing the modules
-// Since Jest ESM mocking is complex, we'll use a simpler approach:
-// Create a test app that imports the actual routes but with service layer mocking via dependency injection
+// ── Mock functions ─────────────────────────────────────────────────────────────
+const mockSendMessage          = jest.fn()
+const mockGenerateGreeting     = jest.fn()
+const mockGetSessionHistory    = jest.fn()
+const mockGetUserSessions      = jest.fn()
+const mockGetOrCreateSession   = jest.fn()
+const mockResetSession         = jest.fn()
+const mockLogError             = jest.fn()
+const mockLogInfo              = jest.fn()
 
-/**
- * Create a test Express app with actual chat routes
- * Uses session middleware to inject mock users
- */
-function createTestApp(userId = null) {
+// ── ESM module mocks ──────────────────────────────────────────────────────────
+jest.unstable_mockModule('../services/contextManagerService.js', () => ({
+    sendMessage:             mockSendMessage,
+    generateInitialGreeting: mockGenerateGreeting,
+    getSessionHistory:       mockGetSessionHistory,
+    getUserSessions:         mockGetUserSessions,
+    getOrCreateSession:      mockGetOrCreateSession,
+    resetSession:            mockResetSession
+}))
+jest.unstable_mockModule('../utils/logger.js', () => ({
+    default: { info: mockLogInfo, error: mockLogError, warn: jest.fn(), debug: jest.fn() }
+}))
+
+// ── Dynamic import after mocks ─────────────────────────────────────────────────
+const { default: chatRouter } = await import('../routes/chat.js')
+
+// ── Test app factories ─────────────────────────────────────────────────────────
+function buildApp(userId = null) {
     const app = express()
     app.use(express.json())
-
-    app.use(session({
-        secret: 'test-secret',
-        resave: false,
-        saveUninitialized: true
-    }))
-
-    // Inject mock session user
-    app.use((req, res, next) => {
-        if (userId) {
-            req.session.user = {
-                id: userId,
-                email: 'testuser@test.com',
-                role: 'student'
-            }
-        }
-        next()
-    })
-
+    app.use(session({ secret: 'test', resave: false, saveUninitialized: true }))
+    if (userId) {
+        app.use((req, _res, next) => {
+            req.session.user = { id: userId, email: 'test@test.com', role: 'student' }
+            next()
+        })
+    }
+    app.use('/api/chat', chatRouter)
     return app
 }
 
-describe('Chat Routes Integration Tests', () => {
-    let testUserId
-    let chatRouter
+const authApp   = buildApp('user-123')
+const unauthApp = buildApp()
 
-    beforeAll(async () => {
-        // Get or create test user
-        testUserId = await getOrCreateTestUser('chat-test@test.com')
+beforeEach(() => {
+    mockSendMessage.mockReset()
+    mockGenerateGreeting.mockReset()
+    mockGetSessionHistory.mockReset()
+    mockGetOrCreateSession.mockReset()
+    mockResetSession.mockReset()
+    mockLogError.mockReset()
+})
 
-        // Dynamically import the router after test setup
-        const chatModule = await import('../routes/chat.js')
-        chatRouter = chatModule.default
+// ── Authentication tests ───────────────────────────────────────────────────────
+describe('Authentication — all routes return 401 when not logged in', () => {
+    test('GET /initial returns 401', async () => {
+        const res = await request(unauthApp).get('/api/chat/initial')
+        expect(res.status).toBe(401)
+        expect(res.body.error).toBe('not_authenticated')
     })
 
-    beforeEach(async () => {
-        await cleanupTestData()
+    test('POST /message returns 401', async () => {
+        const res = await request(unauthApp).post('/api/chat/message').send({ message: 'Hello' })
+        expect(res.status).toBe(401)
+        expect(res.body.error).toBe('not_authenticated')
     })
 
-    afterAll(async () => {
-        await cleanupTestData()
-        await closeTestDb()
+    test('POST /reset returns 401', async () => {
+        const res = await request(unauthApp).post('/api/chat/reset')
+        expect(res.status).toBe(401)
+        expect(res.body.error).toBe('not_authenticated')
     })
 
-    describe('Authentication Tests', () => {
-        test('GET /api/chat/initial returns 401 when not authenticated', async () => {
-            const app = createTestApp(null)
-            app.use('/api/chat', chatRouter)
-
-            const response = await request(app)
-                .get('/api/chat/initial')
-
-            expect(response.status).toBe(401)
-            expect(response.body.error).toBe('not_authenticated')
-        })
-
-        test('POST /api/chat/message returns 401 when not authenticated', async () => {
-            const app = createTestApp(null)
-            app.use('/api/chat', chatRouter)
-
-            const response = await request(app)
-                .post('/api/chat/message')
-                .send({ message: 'Hello' })
-
-            expect(response.status).toBe(401)
-            expect(response.body.error).toBe('not_authenticated')
-        })
-
-        test('POST /api/chat/reset returns 401 when not authenticated', async () => {
-            const app = createTestApp(null)
-            app.use('/api/chat', chatRouter)
-
-            const response = await request(app)
-                .post('/api/chat/reset')
-
-            expect(response.status).toBe(401)
-            expect(response.body.error).toBe('not_authenticated')
-        })
-
-        test('GET /api/chat/session returns 401 when not authenticated', async () => {
-            const app = createTestApp(null)
-            app.use('/api/chat', chatRouter)
-
-            const response = await request(app)
-                .get('/api/chat/session')
-
-            expect(response.status).toBe(401)
-            expect(response.body.error).toBe('not_authenticated')
-        })
-
-        test('GET /api/chat/history returns 401 when not authenticated', async () => {
-            const app = createTestApp(null)
-            app.use('/api/chat', chatRouter)
-
-            const response = await request(app)
-                .get('/api/chat/history?sessionId=test')
-
-            expect(response.status).toBe(401)
-            expect(response.body.error).toBe('not_authenticated')
-        })
+    test('GET /session returns 401', async () => {
+        const res = await request(unauthApp).get('/api/chat/session')
+        expect(res.status).toBe(401)
+        expect(res.body.error).toBe('not_authenticated')
     })
 
-    describe('Input Validation Tests', () => {
-        test('POST /api/chat/message returns 400 for empty message', async () => {
-            const app = createTestApp(testUserId)
-            app.use('/api/chat', chatRouter)
+    test('GET /history returns 401', async () => {
+        const res = await request(unauthApp).get('/api/chat/history?sessionId=test')
+        expect(res.status).toBe(401)
+        expect(res.body.error).toBe('not_authenticated')
+    })
+})
 
-            const response = await request(app)
-                .post('/api/chat/message')
-                .send({ message: '' })
-
-            expect(response.status).toBe(400)
-            expect(response.body.error).toBe('message is required')
-        })
-
-        test('POST /api/chat/message returns 400 for missing message', async () => {
-            const app = createTestApp(testUserId)
-            app.use('/api/chat', chatRouter)
-
-            const response = await request(app)
-                .post('/api/chat/message')
-                .send({})
-
-            expect(response.status).toBe(400)
-            expect(response.body.error).toBe('message is required')
-        })
-
-        test('POST /api/chat/message returns 400 for whitespace-only message', async () => {
-            const app = createTestApp(testUserId)
-            app.use('/api/chat', chatRouter)
-
-            const response = await request(app)
-                .post('/api/chat/message')
-                .send({ message: '   ' })
-
-            expect(response.status).toBe(400)
-            expect(response.body.error).toBe('message is required')
-        })
-
-        test('POST /api/chat/message returns 400 for message exceeding max length', async () => {
-            const app = createTestApp(testUserId)
-            app.use('/api/chat', chatRouter)
-
-            const longMessage = 'a'.repeat(5001)
-            const response = await request(app)
-                .post('/api/chat/message')
-                .send({ message: longMessage })
-
-            expect(response.status).toBe(400)
-            expect(response.body.error).toContain('too long')
-        })
-
-        test('GET /api/chat/history returns 400 without sessionId', async () => {
-            const app = createTestApp(testUserId)
-            app.use('/api/chat', chatRouter)
-
-            const response = await request(app)
-                .get('/api/chat/history')
-
-            expect(response.status).toBe(400)
-            expect(response.body.error).toBe('sessionId is required')
-        })
+// ── Input validation tests ─────────────────────────────────────────────────────
+describe('POST /api/chat/message — input validation', () => {
+    test('returns 400 for empty message', async () => {
+        const res = await request(authApp).post('/api/chat/message').send({ message: '' })
+        expect(res.status).toBe(400)
+        expect(res.body.error).toBe('message is required')
     })
 
-    // NOTE: Session management and message sending tests require full integration
-    // with the LLM service layer. These are better suited as E2E tests or require
-    // Jest ESM module mocking which is currently experimental.
-    // The authentication and input validation tests above verify that:
-    // 1. Routes properly enforce authentication
-    // 2. Input validation works correctly
-    // 3. The actual router is being tested (not mock implementations)
+    test('returns 400 when message field is missing', async () => {
+        const res = await request(authApp).post('/api/chat/message').send({})
+        expect(res.status).toBe(400)
+        expect(res.body.error).toBe('message is required')
+    })
+
+    test('returns 400 for whitespace-only message', async () => {
+        const res = await request(authApp).post('/api/chat/message').send({ message: '   ' })
+        expect(res.status).toBe(400)
+        expect(res.body.error).toBe('message is required')
+    })
+
+    test('returns 400 for message exceeding 5000 characters', async () => {
+        const res = await request(authApp)
+            .post('/api/chat/message')
+            .send({ message: 'a'.repeat(5001) })
+        expect(res.status).toBe(400)
+        expect(res.body.error).toContain('too long')
+    })
+})
+
+describe('GET /api/chat/history — input validation', () => {
+    test('returns 400 without sessionId', async () => {
+        const res = await request(authApp).get('/api/chat/history')
+        expect(res.status).toBe(400)
+        expect(res.body.error).toBe('sessionId is required')
+    })
+})
+
+// ── Service interaction tests ──────────────────────────────────────────────────
+describe('GET /api/chat/initial', () => {
+    test('returns greeting for new session', async () => {
+        mockGetOrCreateSession.mockResolvedValue({ sessionId: 'sess-1', isNew: true })
+        mockGenerateGreeting.mockResolvedValue({
+            greeting: 'Hello!',
+            sessionId: 'sess-1',
+            suggestedPrompts: ['How am I doing?'],
+            success: true
+        })
+
+        const res = await request(authApp).get('/api/chat/initial')
+        expect(res.status).toBe(200)
+        expect(res.body.greeting).toBe('Hello!')
+        expect(res.body.hasExistingSession).toBe(false)
+    })
+
+    test('returns existing messages for returning session', async () => {
+        mockGetOrCreateSession.mockResolvedValue({ sessionId: 'sess-1', isNew: false })
+        mockGetSessionHistory.mockResolvedValue([
+            { id: 'm1', role: 'assistant', content: 'Welcome back!', created_at: '2026-01-01' }
+        ])
+
+        const res = await request(authApp).get('/api/chat/initial')
+        expect(res.status).toBe(200)
+        expect(res.body.hasExistingSession).toBe(true)
+        expect(res.body.messages).toHaveLength(1)
+    })
+})
+
+describe('POST /api/chat/message', () => {
+    test('returns assistant response on success', async () => {
+        mockSendMessage.mockResolvedValue({
+            response: 'Great question!',
+            sessionId: 'sess-1',
+            suggestedPrompts: [],
+            success: true
+        })
+
+        const res = await request(authApp)
+            .post('/api/chat/message')
+            .send({ message: 'How am I doing?' })
+        expect(res.status).toBe(200)
+        expect(res.body.response).toBe('Great question!')
+    })
+
+    test('returns 500 when service throws', async () => {
+        mockSendMessage.mockRejectedValue(new Error('LLM unavailable'))
+
+        const res = await request(authApp)
+            .post('/api/chat/message')
+            .send({ message: 'Hello' })
+        expect(res.status).toBe(500)
+    })
+})
+
+describe('POST /api/chat/reset', () => {
+    test('returns new session greeting on successful reset', async () => {
+        mockResetSession.mockResolvedValue({ success: true, newSessionId: 'sess-2' })
+        mockGenerateGreeting.mockResolvedValue({
+            greeting: 'Fresh start!',
+            sessionId: 'sess-2',
+            suggestedPrompts: [],
+            success: true
+        })
+
+        const res = await request(authApp).post('/api/chat/reset')
+        expect(res.status).toBe(200)
+        expect(res.body.greeting).toBe('Fresh start!')
+        expect(res.body.success).toBe(true)
+    })
 })

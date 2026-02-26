@@ -5,6 +5,8 @@ import logger from '../utils/logger.js'
 import { requireAdmin } from '../middleware/auth.js'
 import { DEFAULT_ALIGNMENT_PROMPT } from '../services/alignmentService.js'
 import { getAnnotations } from '../services/annotators/srlAnnotationService.js'
+import { asyncRoute, Errors } from '../utils/errors.js'
+import { CONCEPT_NAMES } from '../config/concepts.js'
 
 const router = Router()
 
@@ -15,118 +17,90 @@ router.use(requireAdmin)
 const VALID_PROMPT_TYPES = ['system', 'alignment']
 
 // Get prompt by type (default: system)
-router.get('/prompt', async (req, res) => {
-    try {
+router.get('/prompt', asyncRoute(async (req, res) => {
         const promptType = req.query.type || 'system'
 
         if (!VALID_PROMPT_TYPES.includes(promptType)) {
-            return res.status(400).json({ error: 'invalid_prompt_type', valid: VALID_PROMPT_TYPES })
+            throw Errors.VALIDATION(`invalid_prompt_type — valid: ${VALID_PROMPT_TYPES.join(', ')}`)
         }
 
         const { rows } = await pool.query(
-            `SELECT prompt, prompt_type, updated_at 
-             FROM public.system_prompts 
-             WHERE prompt_type = $1 
+            `SELECT prompt, prompt_type, updated_at
+             FROM public.system_prompts
+             WHERE prompt_type = $1
              ORDER BY updated_at DESC LIMIT 1`,
             [promptType]
         )
 
         if (rows.length === 0) {
-            // Return default if no prompt exists
-            const defaultPrompt = promptType === 'system'
-                ? 'Be Ethical'
-                : DEFAULT_ALIGNMENT_PROMPT
+            const defaultPrompt = promptType === 'system' ? 'Be Ethical' : DEFAULT_ALIGNMENT_PROMPT
             return res.json({ prompt: defaultPrompt, prompt_type: promptType, updated_at: null })
         }
 
         res.json(rows[0])
-    } catch (e) {
-        logger.error('Get prompt error:', e)
-        res.status(500).json({ error: 'db_error', details: String(e) })
-    }
-})
+}))
 
 // Get all prompts (both types)
-router.get('/prompts', async (req, res) => {
-    try {
+router.get('/prompts', asyncRoute(async (req, res) => {
         const prompts = {}
 
         for (const type of VALID_PROMPT_TYPES) {
             const { rows } = await pool.query(
-                `SELECT prompt, prompt_type, updated_at 
-                 FROM public.system_prompts 
-                 WHERE prompt_type = $1 
+                `SELECT prompt, prompt_type, updated_at
+                 FROM public.system_prompts
+                 WHERE prompt_type = $1
                  ORDER BY updated_at DESC LIMIT 1`,
                 [type]
             )
 
-            if (rows.length > 0) {
-                prompts[type] = rows[0]
-            } else {
-                prompts[type] = {
-                    prompt: type === 'system' ? 'Be Ethical' : DEFAULT_ALIGNMENT_PROMPT,
-                    prompt_type: type,
-                    updated_at: null
-                }
+            prompts[type] = rows.length > 0 ? rows[0] : {
+                prompt: type === 'system' ? 'Be Ethical' : DEFAULT_ALIGNMENT_PROMPT,
+                prompt_type: type,
+                updated_at: null
             }
         }
 
         res.json(prompts)
-    } catch (e) {
-        logger.error('Get all prompts error:', e)
-        res.status(500).json({ error: 'db_error', details: String(e) })
-    }
-})
+}))
 
 // Update prompt by type
-router.put('/prompt', async (req, res) => {
-    try {
+router.put('/prompt', asyncRoute(async (req, res) => {
         const { prompt, type } = req.body
         const promptType = type || 'system'
         const userId = req.session.user?.id
 
         if (!VALID_PROMPT_TYPES.includes(promptType)) {
-            return res.status(400).json({ error: 'invalid_prompt_type', valid: VALID_PROMPT_TYPES })
+            throw Errors.VALIDATION(`invalid_prompt_type — valid: ${VALID_PROMPT_TYPES.join(', ')}`)
         }
 
         if (!prompt || typeof prompt !== 'string') {
-            return res.status(400).json({ error: 'prompt is required' })
+            throw Errors.VALIDATION('prompt is required')
         }
 
         // Insert new prompt (keep history)
         const { rows } = await pool.query(
-            `INSERT INTO public.system_prompts (prompt, prompt_type, created_by, updated_at) 
-             VALUES ($1, $2, $3, NOW()) 
+            `INSERT INTO public.system_prompts (prompt, prompt_type, created_by, updated_at)
+             VALUES ($1, $2, $3, NOW())
              RETURNING prompt, prompt_type, updated_at`,
             [prompt, promptType, userId]
         )
 
         logger.info(`${promptType} prompt updated by admin: ${userId}`)
         res.json(rows[0])
-    } catch (e) {
-        logger.error('Update prompt error:', e)
-        res.status(500).json({ error: 'db_error', details: String(e) })
-    }
-})
+}))
 
 // ── Student viewer endpoints ──────────────────────────────────────
 
 // List all student users
-router.get('/students', async (req, res) => {
-    try {
+router.get('/students', asyncRoute(async (req, res) => {
         const { rows } = await pool.query(
             `SELECT id, name, email FROM public.users WHERE role = 'student' ORDER BY created_at DESC`
         )
         res.json({ students: rows })
-    } catch (e) {
-        logger.error('List students error:', e)
-        res.status(500).json({ error: 'db_error', details: String(e) })
-    }
-})
+}))
 
 // Get concept scores for a specific student (mirrors /api/scores logic)
-router.get('/students/:studentId/scores', async (req, res) => {
-    try {
+router.get('/students/:studentId/scores', asyncRoute(async (req, res) => {
         const { studentId } = req.params
 
         const { rows } = await pool.query(
@@ -170,16 +144,9 @@ router.get('/students/:studentId/scores', async (req, res) => {
             }
         }
 
-        const conceptNames = {
-            sleep: 'Sleep Quality',
-            srl: 'Self-Regulated Learning',
-            lms: 'LMS Engagement',
-            screen_time: 'Screen Time'
-        }
-
         const scores = rows.map(row => ({
             conceptId: row.concept_id,
-            conceptName: conceptNames[row.concept_id] || row.concept_id,
+            conceptName: CONCEPT_NAMES[row.concept_id] || row.concept_id,
             score: parseFloat(row.score),
             trend: row.trend,
             avg7d: row.avg_7d ? parseFloat(row.avg_7d) : null,
@@ -193,24 +160,15 @@ router.get('/students/:studentId/scores', async (req, res) => {
         }))
 
         res.json({ scores })
-    } catch (e) {
-        logger.error('Get student scores error:', e)
-        res.status(500).json({ error: 'db_error', details: String(e) })
-    }
-})
+}))
 
 // Get annotations for a specific student
-router.get('/students/:studentId/annotations', async (req, res) => {
-    try {
+router.get('/students/:studentId/annotations', asyncRoute(async (req, res) => {
         const { studentId } = req.params
         const { timeWindow } = req.query
         const annotations = await getAnnotations(pool, studentId, timeWindow, false)
         res.json({ annotations })
-    } catch (e) {
-        logger.error('Get student annotations error:', e)
-        res.status(500).json({ error: 'db_error', details: String(e) })
-    }
-})
+}))
 
 // Legacy routes for backwards compatibility
 router.get('/system-prompt', async (req, res) => {

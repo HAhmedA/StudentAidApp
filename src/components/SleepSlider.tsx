@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import './SleepSlider.css'
+import { getTodaySleep, saveSleep } from '../api/sleep'
 
 // ── Constants ────────────────────────────────────────────────
 // The track spans 24 hours: 12 PM (noon) → 12 PM next day
@@ -7,8 +8,6 @@ import './SleepSlider.css'
 const TRACK_MINUTES = 1440
 const MIDNIGHT_OFFSET = 720 // minutes from track start to midnight
 const SNAP_MINUTES = 5      // snap to 5-minute increments
-
-const API_BASE = '/api'
 
 // ── Helpers ──────────────────────────────────────────────────
 interface Interval {
@@ -107,10 +106,9 @@ const SleepSlider = ({ onSaved }: SleepSliderProps) => {
 
     // ── Fetch today's entry on mount ──
     useEffect(() => {
-        fetch(`${API_BASE}/sleep/today`, { credentials: 'include' })
-            .then(res => res.json())
-            .then(data => {
-                if (data.entry) setSavedEntry(data.entry)
+        getTodaySleep()
+            .then(entry => {
+                if (entry) setSavedEntry(entry)
                 setLoading(false)
             })
             .catch(() => setLoading(false))
@@ -255,20 +253,10 @@ const SleepSlider = ({ onSaved }: SleepSliderProps) => {
         }))
 
         try {
-            const res = await fetch(`${API_BASE}/sleep`, {
-                method: 'POST',
-                credentials: 'include',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ intervals: apiIntervals })
-            })
-            const data = await res.json()
-            if (res.ok) {
-                setSavedEntry(data.entry)
-                setSubmitMsg({ text: 'Sleep log saved!', type: 'success' })
-                onSaved?.()
-            } else {
-                setSubmitMsg({ text: data.error || 'Failed to save', type: 'error' })
-            }
+            const entry = await saveSleep(apiIntervals)
+            setSavedEntry(entry)
+            setSubmitMsg({ text: 'Sleep log saved!', type: 'success' })
+            onSaved?.()
         } catch {
             setSubmitMsg({ text: 'Network error', type: 'error' })
         } finally {

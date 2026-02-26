@@ -10,6 +10,7 @@ import {
     generateLMSData
 } from './simulators/index.js';
 import { computeAllScores } from './scoring/index.js';
+import { withTransaction } from '../utils/withTransaction.js';
 
 // =============================================================================
 // PROFILE MANAGEMENT
@@ -92,29 +93,21 @@ async function generateStudentData(pool, userId) {
         const profile = await getOrAssignProfile(pool, userId);
         logger.info(`Simulation profile: ${profile}`);
 
-        // 2. Run Simulators (Parallel execution)
-        // We pass the profile explicitly where possible to avoid redundant DB lookups
-        await Promise.all([
-            // Sleep Simulator (Pass profile directly)
-            generateSleepData(pool, userId, 7, profile)
-                .then(() => logger.info(`Sleep simulation complete for ${userId}`))
-                .catch(err => logger.error(`Sleep simulation failed: ${err.message}`)),
+        // 2. Run Simulators inside a single transaction (sequential for atomicity).
+        // Each simulator accepts a pool-compatible client via its first argument.
+        await withTransaction(pool, async (client) => {
+            await generateSleepData(client, userId, 7, profile);
+            logger.info(`Sleep simulation complete for ${userId}`);
 
-            // SRL Simulator (We pass the profile explicitly)
-            generateSRLData(pool, userId, profile)
-                .then(() => logger.info(`SRL simulation complete for ${userId}`))
-                .catch(err => logger.error(`SRL simulation failed: ${err.message}`)),
+            await generateSRLData(client, userId, profile);
+            logger.info(`SRL simulation complete for ${userId}`);
 
-            // Screen Time Simulator
-            generateScreenTimeData(pool, userId, 7, profile)
-                .then(() => logger.info(`Screen time simulation complete for ${userId}`))
-                .catch(err => logger.error(`Screen time simulation failed: ${err.message}`)),
+            await generateScreenTimeData(client, userId, 7, profile);
+            logger.info(`Screen time simulation complete for ${userId}`);
 
-            // LMS Data Simulator
-            generateLMSData(pool, userId, 7, profile)
-                .then(() => logger.info(`LMS simulation complete for ${userId}`))
-                .catch(err => logger.error(`LMS simulation failed: ${err.message}`))
-        ]);
+            await generateLMSData(client, userId, 7, profile);
+            logger.info(`LMS simulation complete for ${userId}`);
+        });
 
         // 3. Compute Concept Scores (after all data is generated)
         const scores = await computeAllScores(userId);
@@ -145,6 +138,7 @@ async function seedScoreHistory(pool, userId, scores) {
         for (const conceptId of concepts) {
             const baseScore = scores[conceptId]?.score;
             if (baseScore == null) continue;
+            const breakdown = scores[conceptId]?.breakdown ?? null;
 
             // Generate scores for the past 6 days (today is already stored by computeAllScores)
             for (let daysAgo = 1; daysAgo <= 6; daysAgo++) {
@@ -156,10 +150,10 @@ async function seedScoreHistory(pool, userId, scores) {
 
                 await pool.query(
                     `INSERT INTO public.concept_score_history
-                     (user_id, concept_id, score, score_date, computed_at)
-                     VALUES ($1, $2, $3, CURRENT_DATE - CAST($4 || ' days' AS INTERVAL), NOW())
+                     (user_id, concept_id, score, aspect_breakdown, score_date, computed_at)
+                     VALUES ($1, $2, $3, $4, CURRENT_DATE - CAST($5 || ' days' AS INTERVAL), NOW())
                      ON CONFLICT (user_id, concept_id, score_date) DO NOTHING`,
-                    [userId, conceptId, dayScore, daysAgo]
+                    [userId, conceptId, dayScore, breakdown ? JSON.stringify(breakdown) : null, daysAgo]
                 );
             }
         }

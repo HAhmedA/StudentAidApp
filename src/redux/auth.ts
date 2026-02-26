@@ -2,7 +2,7 @@ import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit'
 // axios is configured to send credentials in src/index.tsx
 import axios from 'axios'
 // Base API URL comes from REACT_APP_API_BASE or defaults to /api
-import { apiBaseAddress } from '../models/survey'
+import { API_BASE as apiBaseAddress } from '../api/client'
 
 export type UserRole = 'admin' | 'student'
 

@@ -4,6 +4,7 @@ import pool from '../config/database.js'
 import logger from '../utils/logger.js'
 import { requireAuth } from '../middleware/auth.js'
 import { computeAllScores } from '../services/scoring/scoreComputationService.js'
+import { asyncRoute, Errors } from '../utils/errors.js'
 
 const router = Router()
 
@@ -11,10 +12,9 @@ router.use(requireAuth)
 
 // ── GET /api/screen-time/today ──────────────────────────────
 // Returns yesterday's screen time session for the logged-in user (if any real entry exists).
-router.get('/today', async (req, res) => {
-    try {
+router.get('/today', asyncRoute(async (req, res) => {
         const userId = req.session.user?.id
-        if (!userId) return res.status(401).json({ error: 'unauthorized' })
+        if (!userId) throw Errors.UNAUTHORIZED()
 
         const result = await pool.query(
             `SELECT session_date, total_screen_minutes,
@@ -27,29 +27,20 @@ router.get('/today', async (req, res) => {
             [userId]
         )
 
-        if (result.rows.length === 0) {
-            return res.json({ entry: null })
-        }
-
-        return res.json({ entry: result.rows[0] })
-    } catch (e) {
-        logger.error('GET /screen-time/today error:', e)
-        res.status(500).json({ error: 'db_error', details: String(e) })
-    }
-})
+        return res.json({ entry: result.rows[0] || null })
+}))
 
 // ── POST /api/screen-time ───────────────────────────────────
 // Accepts: { totalMinutes, longestSession, preSleepMinutes }
 // Upserts into screen_time_sessions for yesterday's date.
-router.post('/', async (req, res) => {
-    try {
+router.post('/', asyncRoute(async (req, res) => {
         const userId = req.session.user?.id
-        if (!userId) return res.status(401).json({ error: 'unauthorized' })
+        if (!userId) throw Errors.UNAUTHORIZED()
 
         const { totalMinutes, longestSession, preSleepMinutes } = req.body
 
         if (totalMinutes == null || longestSession == null || preSleepMinutes == null) {
-            return res.status(400).json({ error: 'All three fields are required: totalMinutes, longestSession, preSleepMinutes' })
+            throw Errors.VALIDATION('All three fields are required: totalMinutes, longestSession, preSleepMinutes')
         }
 
         const yesterday = new Date()
@@ -87,10 +78,6 @@ router.post('/', async (req, res) => {
         computeAllScores(userId).catch(err => logger.error('Score recomputation error after screen-time submit:', err))
 
         return res.json({ entry: upsertResult.rows[0] })
-    } catch (e) {
-        logger.error('POST /screen-time error:', e)
-        res.status(500).json({ error: 'db_error', details: String(e) })
-    }
-})
+}))
 
 export default router

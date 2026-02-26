@@ -3,6 +3,7 @@ import { Router } from 'express'
 import pool from '../config/database.js'
 import logger from '../utils/logger.js'
 import { requireAuth } from '../middleware/auth.js'
+import { asyncRoute, Errors } from '../utils/errors.js'
 
 const router = Router()
 
@@ -10,36 +11,24 @@ const router = Router()
 router.use(requireAuth)
 
 // Get profile
-router.get('/', async (req, res) => {
-    try {
+router.get('/', asyncRoute(async (req, res) => {
         const userId = req.session.user?.id
-        if (!userId) {
-            return res.status(401).json({ error: 'unauthorized' })
-        }
+        if (!userId) throw Errors.UNAUTHORIZED()
 
         const { rows } = await pool.query(
             'SELECT user_id, edu_level, field_of_study, major, learning_formats, disabilities, onboarding_completed, updated_at FROM public.student_profiles WHERE user_id = $1',
             [userId]
         )
 
-        if (rows.length === 0) {
-            return res.status(404).json({ error: 'profile_not_found' })
-        }
+        if (rows.length === 0) throw Errors.NOT_FOUND('Profile')
 
         res.json(rows[0])
-    } catch (e) {
-        logger.error('Get profile error:', e)
-        res.status(500).json({ error: 'db_error', details: String(e) })
-    }
-})
+}))
 
 // Update profile
-router.put('/', async (req, res) => {
-    try {
+router.put('/', asyncRoute(async (req, res) => {
         const userId = req.session.user?.id
-        if (!userId) {
-            return res.status(401).json({ error: 'unauthorized' })
-        }
+        if (!userId) throw Errors.UNAUTHORIZED()
 
         const { edu_level, field_of_study, major, learning_formats, disabilities } = req.body
 
@@ -47,8 +36,8 @@ router.put('/', async (req, res) => {
         const { rows } = await pool.query(
             `INSERT INTO public.student_profiles (user_id, edu_level, field_of_study, major, learning_formats, disabilities, updated_at)
        VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, NOW())
-       ON CONFLICT (user_id) 
-       DO UPDATE SET 
+       ON CONFLICT (user_id)
+       DO UPDATE SET
          edu_level = EXCLUDED.edu_level,
          field_of_study = EXCLUDED.field_of_study,
          major = EXCLUDED.major,
@@ -61,19 +50,12 @@ router.put('/', async (req, res) => {
 
         logger.info(`Profile updated for user: ${userId}`)
         res.json(rows[0])
-    } catch (e) {
-        logger.error('Update profile error:', e)
-        res.status(500).json({ error: 'db_error', details: String(e) })
-    }
-})
+}))
 
 // Mark onboarding as complete
-router.post('/onboarding-complete', async (req, res) => {
-    try {
+router.post('/onboarding-complete', asyncRoute(async (req, res) => {
         const userId = req.session.user?.id
-        if (!userId) {
-            return res.status(401).json({ error: 'unauthorized' })
-        }
+        if (!userId) throw Errors.UNAUTHORIZED()
 
         await pool.query(
             `INSERT INTO public.student_profiles (user_id, onboarding_completed, updated_at)
@@ -85,10 +67,6 @@ router.post('/onboarding-complete', async (req, res) => {
 
         logger.info(`Onboarding completed for user: ${userId}`)
         res.json({ success: true })
-    } catch (e) {
-        logger.error('Onboarding complete error:', e)
-        res.status(500).json({ error: 'db_error', details: String(e) })
-    }
-})
+}))
 
 export default router

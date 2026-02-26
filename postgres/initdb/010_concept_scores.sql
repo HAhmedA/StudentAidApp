@@ -18,8 +18,11 @@ CREATE TABLE IF NOT EXISTS public.concept_scores (
   -- Trend compared to 7-day average
   trend varchar(20) CHECK (trend IN ('improving', 'declining', 'stable')),
   
-  -- Individual aspect scores for debugging (e.g., {duration: {severity: 'ok', score: 1.0}, ...})
+  -- Individual aspect scores for the current scoring run
   aspect_breakdown jsonb NOT NULL DEFAULT '{}',
+
+  -- Aspect breakdown from the previous scoring run (for self-comparison in the UI)
+  previous_aspect_breakdown jsonb,
   
   -- Historical 7-day average for trend calculation
   avg_7d numeric(5,2),
@@ -43,9 +46,10 @@ CREATE TABLE IF NOT EXISTS public.concept_score_history (
   user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
   concept_id varchar(30) NOT NULL,
   score numeric(5,2) NOT NULL CHECK (score >= 0 AND score <= 100),
+  aspect_breakdown jsonb,
   score_date date NOT NULL,
   computed_at timestamptz NOT NULL DEFAULT now(),
-  
+
   -- One score per user per concept per date
   CONSTRAINT unique_concept_score_history UNIQUE (user_id, concept_id, score_date)
 );

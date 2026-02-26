@@ -1,6 +1,6 @@
 import { createAsyncThunk, createSlice } from '@reduxjs/toolkit'
 import axios from 'axios'
-import { apiBaseAddress } from '../models/survey'
+import { API_BASE as apiBaseAddress } from '../api/client'
 
 interface PromptData {
     prompt: string

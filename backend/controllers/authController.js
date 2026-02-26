@@ -1,26 +1,22 @@
-// Auth controller 
+// Auth controller
 import bcrypt from 'bcrypt'
 import pool from '../config/database.js'
 import logger from '../utils/logger.js'
 import { generateStudentData } from '../services/simulationOrchestratorService.js'
+import { asyncRoute, AppError } from '../utils/errors.js'
 
-export const login = async (req, res) => {
-    try {
+export const login = asyncRoute(async (req, res) => {
         const { email, password } = req.body
         const { rows } = await pool.query('SELECT id, email, name, password_hash, role FROM public.users WHERE email = $1', [email])
         const row = rows[0]
-        if (!row) return res.status(401).json({ error: 'invalid_credentials' })
+        if (!row) throw new AppError('INVALID_CREDENTIALS', 'Invalid email or password', 401)
         const ok = await bcrypt.compare(password, row.password_hash)
-        if (!ok) return res.status(401).json({ error: 'invalid_credentials' })
+        if (!ok) throw new AppError('INVALID_CREDENTIALS', 'Invalid email or password', 401)
         const user = { id: row.id, email: row.email, name: row.name, role: row.role }
         req.session.user = user
         logger.info(`User logged in: ${email}`)
         res.json(user)
-    } catch (e) {
-        logger.error(`Login error: ${e.message}`)
-        res.status(500).json({ error: 'server_error', details: String(e) })
-    }
-}
+})
 
 export const logout = (req, res) => {
     const email = req.session.user?.email || 'unknown'
@@ -39,11 +35,10 @@ export const getMe = (req, res) => {
     res.json(req.session.user || null)
 }
 
-export const register = async (req, res) => {
-    try {
+export const register = asyncRoute(async (req, res) => {
         const { email, name, password } = req.body
         const existing = await pool.query('SELECT id FROM public.users WHERE email = $1', [email])
-        if (existing.rowCount) return res.status(409).json({ error: 'email_in_use' })
+        if (existing.rowCount) throw new AppError('EMAIL_IN_USE', 'Email already registered', 409)
         const passwordHash = await bcrypt.hash(password, 10)
         const insert = await pool.query(
             'INSERT INTO public.users (email, name, password_hash) VALUES ($1, $2, $3) RETURNING id, email, name',
@@ -64,8 +59,4 @@ export const register = async (req, res) => {
         }
 
         res.status(201).json(user)
-    } catch (e) {
-        logger.error(`Registration error: ${e.message}`)
-        res.status(500).json({ error: 'server_error', details: String(e) })
-    }
-}
+})

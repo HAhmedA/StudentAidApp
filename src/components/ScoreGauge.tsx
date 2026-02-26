@@ -37,16 +37,16 @@ const scoreToRotation = (score: number, dialMin: number, dialMax: number): numbe
 }
 
 /**
- * ScoreGauge - Cluster-based semicircular gauge with Yesterday/Today needles
- * 
+ * ScoreGauge - Cluster-based semicircular gauge with Current/Previous needles
+ *
  * The dial range is defined by the student's cluster percentiles:
  *   - Left edge = P5 (5th percentile)
  *   - Center = P50 (median)
  *   - Right edge = P95 (95th percentile)
  * 
  * Two needles show personal progress:
- *   - Yesterday (gray) — where the student was
- *   - Today (dark) — where they are now
+ *   - Previous (gray) — where the student was
+ *   - Current (dark) — where they are now
  */
 const ScoreGauge: React.FC<ScoreGaugeProps> = ({
     score,
@@ -149,9 +149,7 @@ const ScoreGauge: React.FC<ScoreGaugeProps> = ({
     const HEAD_WIDTH = 8              // Arrowhead base width
     const HEAD_LENGTH = 10            // Arrowhead length
 
-    // If no yesterday data, show the yesterday arrow at the center (faded)
-    const effectiveYesterdayRotation = hasYesterday ? yesterdayRotation : scoreToRotation(dialCenter, dialMin, dialMax)
-    const yesterdayOpacity = hasYesterday ? 0.65 : 0.25
+    const yesterdayOpacity = 0.65
 
     return (
         <div className={`score-gauge score-gauge-${size}`}>
@@ -162,8 +160,8 @@ const ScoreGauge: React.FC<ScoreGaugeProps> = ({
                     {/* Continuous gradient arc */}
                     {createGradientArc()}
 
-                    {/* Yesterday arrow (rendered first so it's behind today) */}
-                    <g transform={`rotate(${effectiveYesterdayRotation} ${CX} ${CY})`} opacity={yesterdayOpacity}>
+                    {/* Previous arrow (only rendered when data exists) */}
+                    {hasYesterday && <g transform={`rotate(${yesterdayRotation} ${CX} ${CY})`} opacity={yesterdayOpacity}>
                         {/* Shaft */}
                         <rect
                             x={CX - SHAFT_WIDTH / 2}
@@ -178,7 +176,7 @@ const ScoreGauge: React.FC<ScoreGaugeProps> = ({
                             points={`${CX},${CY - NEEDLE_LENGTH} ${CX - HEAD_WIDTH / 2},${CY - NEEDLE_LENGTH + HEAD_LENGTH} ${CX + HEAD_WIDTH / 2},${CY - NEEDLE_LENGTH + HEAD_LENGTH}`}
                             fill={YESTERDAY_NEEDLE_COLOR}
                         />
-                    </g>
+                    </g>}
 
                     {/* Center pivot */}
                     <circle cx={CX} cy={CY} r="6" fill="#374151" />
@@ -229,13 +227,13 @@ const ScoreGauge: React.FC<ScoreGaugeProps> = ({
                     <svg width="14" height="10" viewBox="0 0 14 10" className="gauge-legend-arrow">
                         <polygon points="7,0 2,5 5,5 5,10 9,10 9,5 12,5" fill={TODAY_NEEDLE_COLOR} />
                     </svg>
-                    <span className="gauge-legend-text">Today</span>
+                    <span className="gauge-legend-text">Current</span>
                 </div>
                 <div className="gauge-legend-item">
                     <svg width="14" height="10" viewBox="0 0 14 10" className="gauge-legend-arrow">
                         <polygon points="7,0 2,5 5,5 5,10 9,10 9,5 12,5" fill={YESTERDAY_NEEDLE_COLOR} />
                     </svg>
-                    <span className="gauge-legend-text">{hasYesterday ? 'Yesterday' : 'Yesterday (no data)'}</span>
+                    <span className="gauge-legend-text">{hasYesterday ? 'Previous' : 'Previous (no data)'}</span>
                 </div>
             </div>
         </div>

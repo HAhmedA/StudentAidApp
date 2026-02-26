@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import './Chatbot.css'
+import { getInitialChat, getHistory, sendMessage as sendMessageApi, resetChat } from '../api/chat'
 
 interface Message {
     id: string
@@ -117,10 +118,7 @@ const Chatbot = ({ isLoggedIn }: ChatbotProps) => {
         isFetchingRef.current = true
         setIsPrefetching(true)
         try {
-            const response = await fetch('/api/chat/initial', {
-                credentials: 'include'
-            })
-            const data = await response.json()
+            const data = await getInitialChat()
 
             if (data.hasExistingSession && data.messages) {
                 // Existing session with messages - cache them, no badge (user already saw them)
@@ -158,10 +156,7 @@ const Chatbot = ({ isLoggedIn }: ChatbotProps) => {
         isFetchingRef.current = true
         setIsLoading(true)
         try {
-            const response = await fetch('/api/chat/initial', {
-                credentials: 'include'
-            })
-            const data = await response.json()
+            const data = await getInitialChat()
 
             setSessionId(data.sessionId)
 
@@ -207,11 +202,7 @@ const Chatbot = ({ isLoggedIn }: ChatbotProps) => {
         const oldestMessage = messages[0]
 
         try {
-            const response = await fetch(
-                `/api/chat/history?sessionId=${sessionId}&limit=20&before=${oldestMessage?.id}`,
-                { credentials: 'include' }
-            )
-            const data = await response.json()
+            const data = await getHistory(sessionId, 20, oldestMessage?.id)
 
             if (data.messages && data.messages.length > 0) {
                 setMessages(prev => [...data.messages, ...prev])
@@ -256,13 +247,7 @@ const Chatbot = ({ isLoggedIn }: ChatbotProps) => {
         setIsAwaitingResponse(true) // Always trigger await, regardless of chat state
 
         try {
-            const response = await fetch('/api/chat/message', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify({ message: userMessage })
-            })
-            const data = await response.json()
+            const data = await sendMessageApi(userMessage)
 
             if (data.sessionId) {
                 setSessionId(data.sessionId)
@@ -347,11 +332,7 @@ const Chatbot = ({ isLoggedIn }: ChatbotProps) => {
         setIsLoading(true)
 
         try {
-            const response = await fetch('/api/chat/reset', {
-                method: 'POST',
-                credentials: 'include'
-            })
-            const data = await response.json()
+            const data = await resetChat()
 
             if (data.success) {
                 setSessionId(data.sessionId)

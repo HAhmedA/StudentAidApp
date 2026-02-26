@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import './ScreenTimeForm.css'
-
-const API_BASE = '/api'
+import { getTodayScreenTime, saveScreenTime } from '../api/screenTime'
 
 // ── Option definitions ───────────────────────────────────────
 const VOLUME_OPTIONS = [
@@ -60,10 +59,9 @@ const ScreenTimeForm = () => {
 
     // Fetch today's entry on mount
     useEffect(() => {
-        fetch(`${API_BASE}/screen-time/today`, { credentials: 'include' })
-            .then(res => res.json())
-            .then(data => {
-                if (data.entry) setSavedEntry(data.entry)
+        getTodayScreenTime()
+            .then(entry => {
+                if (entry) setSavedEntry(entry)
                 setLoading(false)
             })
             .catch(() => setLoading(false))
@@ -75,23 +73,9 @@ const ScreenTimeForm = () => {
         setSubmitMsg(null)
 
         try {
-            const res = await fetch(`${API_BASE}/screen-time`, {
-                method: 'POST',
-                credentials: 'include',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    totalMinutes,
-                    longestSession,
-                    preSleepMinutes,
-                })
-            })
-            const data = await res.json()
-            if (res.ok) {
-                setSavedEntry(data.entry)
-                setSubmitMsg({ text: 'Screen time logged!', type: 'success' })
-            } else {
-                setSubmitMsg({ text: data.error || 'Failed to save', type: 'error' })
-            }
+            const entry = await saveScreenTime({ totalMinutes: totalMinutes!, longestSession: longestSession!, preSleepMinutes: preSleepMinutes! })
+            setSavedEntry(entry)
+            setSubmitMsg({ text: 'Screen time logged!', type: 'success' })
         } catch {
             setSubmitMsg({ text: 'Network error', type: 'error' })
         } finally {

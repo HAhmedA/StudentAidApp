@@ -1,18 +1,17 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import Surveys from '../components/Surveys'
-import ScoreGauge from '../components/ScoreGauge'
 import SleepSlider from '../components/SleepSlider'
+import AdminStudentViewer from '../components/AdminStudentViewer'
+import ScoreBoard from '../components/ScoreBoard'
 import { useReduxSelector, useReduxDispatch } from '../redux'
 import { load } from '../redux/surveys'
 import { loadAnnotations, Annotation } from '../redux/results'
+import { INVERTED_CONCEPTS } from '../constants/concepts'
+import { getScores } from '../api/scores'
+import { getTodaySleep } from '../api/sleep'
+import { getTodayScreenTime } from '../api/screenTime'
 import './Home.css'
-
-// Concepts that are inverted (high score = bad)
-const INVERTED_CONCEPTS = ['anxiety']
-
-// API base URL
-const API_BASE = '/api'
 
 interface ConceptScore {
     conceptId: string
@@ -37,8 +36,6 @@ interface ConceptScore {
     }>
 }
 
-// ... (rest of file until render)
-
 interface StudentInfo { id: string; name: string; email: string }
 
 const Home = () => {
@@ -47,7 +44,7 @@ const Home = () => {
     const surveysStatus = useReduxSelector(state => state.surveys.status)
     const dispatch = useReduxDispatch()
     const navigate = useNavigate()
-    const isAdmin = user?.role === 'admin' || user?.email === 'admin@example.com'
+    const isAdmin = user?.role === 'admin'
     const title = isAdmin ? 'My Surveys' : 'Available Surveys'
 
     const [annotations7d, setAnnotations7d] = useState<Annotation[]>([])
@@ -57,13 +54,10 @@ const Home = () => {
     // Concept scores state
     const [conceptScores, setConceptScores] = useState<ConceptScore[]>([])
     const [scoresLoading, setScoresLoading] = useState(false)
-    const [expandedConceptId, setExpandedConceptId] = useState<string | null>(null)
 
     // Admin student viewer state
-    const [students, setStudents] = useState<StudentInfo[]>([])
-    const [studentsLoading, setStudentsLoading] = useState(false)
     const [selectedStudentId, setSelectedStudentId] = useState<string>('')
-    const selectedStudent = students.find(s => s.id === selectedStudentId) || null
+    const [selectedStudentName, setSelectedStudentName] = useState<string>('')
 
     // Submission reminder state (only for non-admin students)
     const [missingSleepLog, setMissingSleepLog] = useState(false)
@@ -77,28 +71,12 @@ const Home = () => {
         }
     }, [surveysStatus, dispatch, surveys.length])
 
-    // Load student list for admin
-    useEffect(() => {
-        if (isAdmin) {
-            setStudentsLoading(true)
-            fetch(`${API_BASE}/admin/students`, { credentials: 'include' })
-                .then(res => res.json())
-                .then(data => {
-                    if (data.students) {
-                        setStudents(data.students)
-                    }
-                    setStudentsLoading(false)
-                })
-                .catch(() => setStudentsLoading(false))
-        }
-    }, [isAdmin])
-
     // When admin selects a student, load their scores + annotations
     useEffect(() => {
         if (isAdmin && selectedStudentId) {
             // Load scores
             setScoresLoading(true)
-            fetch(`${API_BASE}/admin/students/${selectedStudentId}/scores`, { credentials: 'include' })
+            fetch(`/api/admin/students/${selectedStudentId}/scores`, { credentials: 'include' })
                 .then(res => res.json())
                 .then(data => {
                     if (data.scores) setConceptScores(data.scores)
@@ -108,7 +86,7 @@ const Home = () => {
 
             // Load annotations
             setLoading(true)
-            fetch(`${API_BASE}/admin/students/${selectedStudentId}/annotations`, { credentials: 'include' })
+            fetch(`/api/admin/students/${selectedStudentId}/annotations`, { credentials: 'include' })
                 .then(res => res.json())
                 .then(data => {
                     const allAnnotations = data.annotations || []
@@ -155,13 +133,15 @@ const Home = () => {
     useEffect(() => {
         if (!isAdmin && user) {
             setScoresLoading(true)
-            fetch(`${API_BASE}/scores`, { credentials: 'include' })
-                .then(res => res.json())
-                .then(data => {
-                    if (data.scores) {
-                        setConceptScores(data.scores)
-                    }
+            getScores()
+                .then(scores => {
+                    setConceptScores(scores)
                     setScoresLoading(false)
+
+                    // If no scores yet (e.g. server still warming up), retry once after 5s
+                    if (!scores || scores.length === 0) {
+                        setTimeout(() => getScores().then(d => setConceptScores(d)), 5000)
+                    }
                 })
                 .catch(() => {
                     setScoresLoading(false)
@@ -173,11 +153,11 @@ const Home = () => {
     useEffect(() => {
         if (isAdmin || !user) return
         Promise.all([
-            fetch(`${API_BASE}/sleep/today`, { credentials: 'include' }).then(r => r.json()),
-            fetch(`${API_BASE}/screen-time/today`, { credentials: 'include' }).then(r => r.json())
-        ]).then(([sleepData, screenData]) => {
-            setMissingSleepLog(!sleepData.entry)
-            setMissingScreenTime(!screenData.entry)
+            getTodaySleep(),
+            getTodayScreenTime()
+        ]).then(([sleepEntry, screenEntry]) => {
+            setMissingSleepLog(!sleepEntry)
+            setMissingScreenTime(!screenEntry)
         }).catch(() => { /* ignore network errors silently */ })
     }, [isAdmin, user])
 
@@ -194,103 +174,11 @@ const Home = () => {
         }
     }, [isAdmin])
 
-    // Helper to format aspect name
-    const formatAspectName = (key: string) => {
-        return key.split('_')
-            .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-            .join(' ')
-    }
-
     // Category colors (all green shades)
     const CATEGORY_COLORS: Record<string, string> = {
         requires_improvement: '#86efac',
         good: '#22c55e',
         very_good: '#15803d'
-    }
-
-    // Domain descriptions: what each metric measures & whether more/less is better
-    const DOMAIN_DESCRIPTIONS: Record<string, string> = {
-        // LMS
-        volume: 'Total active study minutes on the LMS. More is better.',
-        consistency: 'Number of days you were active on the LMS. More is better.',
-        action_mix: 'Ratio of active learning (quizzes, assignments) vs passive (reading, watching). Higher active % is better.',
-        session_quality: 'Average duration of each study session. Longer focused sessions are better.',
-        // Sleep
-        duration: 'Average total sleep time per night. More sleep is better.',
-        continuity: 'Number of times you woke up during the night. Fewer awakenings is better.',
-        timing: 'How consistent your bedtime is each night. Lower variation is better.',
-        // Screen Time
-        distribution: 'Length of your longest continuous screen session. Shorter is better.',
-        pre_sleep: 'Screen time before going to sleep. Less pre-sleep screen time is better.',
-        // SRL
-        goal_setting: 'How well you set clear learning goals before studying. Higher is better.',
-        planning: 'How effectively you plan your study time and strategies. Higher is better.',
-        task_strategies: 'Your use of specific strategies to complete tasks. Higher is better.',
-        self_observation: 'How well you monitor your own learning progress. Higher is better.',
-        self_judgement: 'How accurately you evaluate your own performance. Higher is better.',
-        self_reaction: 'How constructively you respond to your own performance. Higher is better.',
-        self_efficacy: 'Your confidence in your ability to learn and succeed. Higher is better.',
-        intrinsic_motivation: 'Your internal drive and curiosity for learning. Higher is better.',
-        extrinsic_motivation: 'Your motivation from grades and rewards. Higher is better.',
-        elaboration: 'How deeply you process and connect new information. Higher is better.',
-        critical_thinking: 'Your ability to question and analyze what you learn. Higher is better.',
-        metacognitive_regulation: 'How well you adjust your learning strategies as needed. Higher is better.',
-        anxiety: 'Your level of test and study anxiety. Lower anxiety is better.',
-        effort_regulation: 'Your ability to persist through difficult or boring tasks. Higher is better.'
-    }
-
-    /**
-     * Format computedAt timestamp as a human-readable "last updated" string.
-     * Returns the string and whether it is considered stale (> 24h).
-     */
-    const formatLastUpdated = (computedAt?: string | null): { text: string; stale: boolean } => {
-        if (!computedAt) return { text: '', stale: false }
-        const diff = Date.now() - new Date(computedAt).getTime()
-        const hours = Math.floor(diff / (1000 * 60 * 60))
-        const days = Math.floor(hours / 24)
-        if (hours < 1) return { text: 'Updated just now', stale: false }
-        if (hours < 24) return { text: `Updated ${hours}h ago`, stale: false }
-        if (days === 1) return { text: 'Updated yesterday', stale: true }
-        return { text: `Updated ${days} days ago`, stale: true }
-    }
-
-    /**
-     * Get self-comparison badge: compare today's concept score to yesterday's
-     */
-    const getSelfComparisonBadge = (todayScore: number, yesterdayScore?: number | null): { label: string, color: string } => {
-        if (yesterdayScore == null) return { label: 'New', color: '#6b7280' }
-        const diff = todayScore - yesterdayScore
-        if (diff > 2) return { label: 'Improving', color: '#15803d' }
-        if (diff < -2) return { label: 'Declining', color: '#dc2626' }
-        return { label: 'Unchanged', color: '#6b7280' }
-    }
-
-    /**
-     * Get a textual description of where the Today arrow sits on the dial
-     */
-    const getDialPositionLabel = (todayScore: number, dialMin: number, dialCenter: number, dialMax: number): string => {
-        const range = dialMax - dialMin
-        if (range <= 0) return 'Score calculated'
-        const position = (todayScore - dialMin) / range // 0 to 1
-        if (position >= 0.85) return 'Near the top of your peer group'
-        if (position >= 0.6) return 'Above the median of your peer group'
-        if (position >= 0.4) return 'Around the median of your peer group'
-        if (position >= 0.15) return 'Below the median of your peer group'
-        return 'In the lower range of your peer group'
-    }
-
-    // Toggle expansion
-    const handleGaugeClick = (conceptId: string) => {
-        setExpandedConceptId(prev => prev === conceptId ? null : conceptId)
-    }
-
-    // Get first survey for "Fill Survey" button
-    const firstSurvey = surveys.length > 0 ? surveys[0] : null
-
-    const handleCardClick = (period: '7days') => {
-        if (firstSurvey) {
-            navigate(`/mood-history/${firstSurvey.id}?period=${period}`)
-        }
     }
 
     // Helper function to convert hex to RGB
@@ -425,156 +313,37 @@ const Home = () => {
             <div className='mood-home-wrapper'>
                 <div className='mood-home-container'>
                     {/* Student Selector Card */}
-                    <div className='admin-student-selector'>
-                        <div className='admin-selector-header'>
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                                <circle cx="9" cy="7" r="4" />
-                                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-                            </svg>
-                            <h2>View Student Dashboard</h2>
-                        </div>
-                        <p className='admin-selector-description'>Select a student to view their performance dashboard</p>
-                        <select
-                            className='admin-student-select'
-                            value={selectedStudentId}
-                            onChange={e => { setSelectedStudentId(e.target.value); setExpandedConceptId(null) }}
-                        >
-                            <option value=''>— Select a student —</option>
-                            {studentsLoading ? (
-                                <option disabled>Loading...</option>
-                            ) : (
-                                students.map(s => (
-                                    <option key={s.id} value={s.id}>{s.name} ({s.email})</option>
-                                ))
-                            )}
-                        </select>
-                    </div>
+                    <AdminStudentViewer
+                        selectedStudentId={selectedStudentId}
+                        onStudentSelect={(id, name) => {
+                            setSelectedStudentId(id)
+                            setSelectedStudentName(name)
+                        }}
+                    />
 
                     {/* Student dashboard – shown when a student is selected */}
-                    {selectedStudent && (
+                    {selectedStudentId && selectedStudentName && (
                         <>
                             <div className='admin-viewing-banner'>
-                                Viewing dashboard for <strong>{selectedStudent.name}</strong>
+                                Viewing dashboard for <strong>{selectedStudentName}</strong>
                             </div>
 
                             {/* Score Gauges Section */}
-                            <div className='mood-card'>
-                                <div className='mood-card-header-row'>
-                                    <div>
-                                        <h2 className='mood-card-title'>Performance Scores</h2>
-                                        <p className='mood-card-description'>
-                                            Click on a gauge to see a detailed breakdown
-                                        </p>
-                                    </div>
-                                    <div className="gauge-info-wrapper">
-                                        <span className="gauge-info-icon">ℹ</span>
-                                        <div className="gauge-info-tooltip">
-                                            Scores are calculated by comparing the student with peers who have similar behavioral patterns. The dial range (P5–P95) shows where most students in their group fall.
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className='mood-card-content'>
-                                    {scoresLoading ? (
-                                        <div className='mood-loading'>Loading scores...</div>
-                                    ) : conceptScores.length === 0 ? (
-                                        <div className='mood-no-data'>No scores available for this student.</div>
-                                    ) : (
-                                        <div className='score-gauges-grid'>
-                                            {conceptScores.map(score => (
-                                                <div
-                                                    className={`score-gauge-wrapper ${expandedConceptId === score.conceptId ? 'expanded' : ''}`}
-                                                    onClick={() => !score.coldStart && handleGaugeClick(score.conceptId)}
-                                                    key={score.conceptId}
-                                                >
-                                                    {score.coldStart ? (
-                                                        <div className='cold-start-placeholder'>
-                                                            <div className='cold-start-icon'>⏳</div>
-                                                            <div className='cold-start-label'>{score.conceptName}</div>
-                                                            <div className='cold-start-message'>Building your profile — check back once more students have joined.</div>
-                                                        </div>
-                                                    ) : (
-                                                    <>
-                                                    <ScoreGauge
-                                                        score={score.score!}
-                                                        label={score.conceptName}
-                                                        trend={score.trend ?? undefined}
-                                                        size="medium"
-                                                        yesterdayScore={score.yesterdayScore}
-                                                        clusterLabel={score.clusterLabel}
-                                                        dialMin={score.dialMin}
-                                                        dialCenter={score.dialCenter}
-                                                        dialMax={score.dialMax}
-                                                    />
-                                                    {(() => { const lu = formatLastUpdated(score.computedAt); return lu.text ? <div className={`gauge-last-updated${lu.stale ? ' stale' : ''}`}>{lu.text}</div> : null })()}
-                                                    </>
-                                                    )}
-                                                    {expandedConceptId === score.conceptId && score.breakdown && (() => {
-                                                        const badge = getSelfComparisonBadge(score.score!, score.yesterdayScore)
-                                                        const dialLabel = getDialPositionLabel(
-                                                            score.score!,
-                                                            score.dialMin ?? 0,
-                                                            score.dialCenter ?? 50,
-                                                            score.dialMax ?? 100
-                                                        )
-                                                        return (
-                                                            <div className='score-details-list'>
-                                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', borderBottom: '1px solid #e5e7eb', paddingBottom: '4px', marginBottom: '8px' }}>
-                                                                    <div className='score-details-title' style={{ borderBottom: 'none', marginBottom: 0, paddingBottom: 0 }}>Detailed Breakdown</div>
-                                                                    <div style={{ fontSize: '11px', color: '#9ca3af', fontStyle: 'italic', textAlign: 'right' }}>vs. yesterday</div>
-                                                                </div>
-                                                                <ul>
-                                                                    {Object.entries(score.breakdown).map(([key, data]) => (
-                                                                        <li key={key} style={{ flexDirection: 'column', alignItems: 'stretch' }}>
-                                                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-                                                                                <span className='detail-label' style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                                                                    {formatAspectName(key)}
-                                                                                    {DOMAIN_DESCRIPTIONS[key] && (
-                                                                                        <span className='domain-info-wrapper'>
-                                                                                            <span className='domain-info-icon'>ℹ</span>
-                                                                                            <span className='domain-info-tooltip'>{DOMAIN_DESCRIPTIONS[key]}</span>
-                                                                                        </span>
-                                                                                    )}
-                                                                                </span>
-                                                                                <span
-                                                                                    className='detail-score-tag'
-                                                                                    style={{
-                                                                                        backgroundColor: `${badge.color}20`,
-                                                                                        color: badge.color
-                                                                                    }}
-                                                                                >
-                                                                                    {badge.label}
-                                                                                </span>
-                                                                            </div>
-                                                                            <div className='detail-text' style={{
-                                                                                fontSize: '12px',
-                                                                                color: '#6b7280',
-                                                                                marginTop: '4px',
-                                                                                fontStyle: 'italic',
-                                                                                width: '100%'
-                                                                            }}>
-                                                                                {dialLabel}
-                                                                            </div>
-                                                                        </li>
-                                                                    ))}
-                                                                </ul>
-                                                            </div>
-                                                        )
-                                                    })()}
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
+                            <ScoreBoard
+                                scores={conceptScores}
+                                loading={scoresLoading}
+                                title='Performance Scores'
+                                description='Click on a gauge to see a detailed breakdown'
+                                emptyMessage='No scores available for this student.'
+                                infoTooltip='Scores are calculated by comparing the student with peers who have similar behavioral patterns. The dial range (P5–P95) shows where most students in their group fall.'
+                            />
 
                             {/* Mood Cards – 7-day annotations */}
                             <div className='mood-cards-container'>
                                 <div className='mood-card'>
                                     <h2 className='mood-card-title'>Mood over the last 7 days</h2>
                                     <p className='mood-card-description'>
-                                        Mood statistics for {selectedStudent.name}
+                                        Mood statistics for {selectedStudentName}
                                     </p>
                                     <div className='mood-card-content'>
                                         {loading ? (
@@ -617,6 +386,15 @@ const Home = () => {
         return desc
     }
 
+    // Get first survey for "Fill Survey" button
+    const firstSurvey = surveys.length > 0 ? surveys[0] : null
+
+    const handleCardClick = (period: '7days') => {
+        if (firstSurvey) {
+            navigate(`/mood-history/${firstSurvey.id}?period=${period}`)
+        }
+    }
+
     return (
         <div className='mood-home-wrapper'>
             <div className='mood-home-container'>
@@ -645,114 +423,10 @@ const Home = () => {
                 )}
 
                 {/* Score Gauges Section */}
-                <div className='mood-card'>
-                    <div className='mood-card-header-row'>
-                        <div>
-                            <h2 className='mood-card-title'>Your Performance Scores</h2>
-                            <p className='mood-card-description'>
-                                Click on a gauge to see a detailed breakdown of your habits
-                            </p>
-                        </div>
-                        <div className="gauge-info-wrapper">
-                            <span className="gauge-info-icon">ℹ</span>
-                            <div className="gauge-info-tooltip">
-                                Your score is calculated by comparing you with students who have similar behavioral patterns. The dial range (P5–P95) shows where most students in your group fall. The two needles show your progress from yesterday to today.
-                            </div>
-                        </div>
-                    </div>
-                    <div className='mood-card-content'>
-                        {scoresLoading ? (
-                            <div className='mood-loading'>Loading scores...</div>
-                        ) : conceptScores.length === 0 ? (
-                            <div className='mood-no-data'>No scores available yet. Complete your profile and surveys to see your performance.</div>
-                        ) : (
-                            <div className='score-gauges-grid'>
-                                {conceptScores.map(score => (
-                                    <div
-                                        className={`score-gauge-wrapper ${expandedConceptId === score.conceptId ? 'expanded' : ''}`}
-                                        onClick={() => !score.coldStart && handleGaugeClick(score.conceptId)}
-                                        key={score.conceptId}
-                                    >
-                                        {score.coldStart ? (
-                                            <div className='cold-start-placeholder'>
-                                                <div className='cold-start-icon'>⏳</div>
-                                                <div className='cold-start-label'>{score.conceptName}</div>
-                                                <div className='cold-start-message'>Building your profile — check back once more students have joined.</div>
-                                            </div>
-                                        ) : (
-                                        <>
-                                        <ScoreGauge
-                                            score={score.score!}
-                                            label={score.conceptName}
-                                            trend={score.trend ?? undefined}
-                                            size="medium"
-                                            yesterdayScore={score.yesterdayScore}
-                                            clusterLabel={score.clusterLabel}
-                                            dialMin={score.dialMin}
-                                            dialCenter={score.dialCenter}
-                                            dialMax={score.dialMax}
-                                        />
-                                        {(() => { const lu = formatLastUpdated(score.computedAt); return lu.text ? <div className={`gauge-last-updated${lu.stale ? ' stale' : ''}`}>{lu.text}</div> : null })()}
-                                        </>
-                                        )}
-                                        {expandedConceptId === score.conceptId && score.breakdown && (() => {
-                                            const badge = getSelfComparisonBadge(score.score!, score.yesterdayScore)
-                                            const dialLabel = getDialPositionLabel(
-                                                score.score!,
-                                                score.dialMin ?? 0,
-                                                score.dialCenter ?? 50,
-                                                score.dialMax ?? 100
-                                            )
-                                            return (
-                                                <div className='score-details-list'>
-                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', borderBottom: '1px solid #e5e7eb', paddingBottom: '4px', marginBottom: '8px' }}>
-                                                        <div className='score-details-title' style={{ borderBottom: 'none', marginBottom: 0, paddingBottom: 0 }}>Detailed Breakdown</div>
-                                                        <div style={{ fontSize: '11px', color: '#9ca3af', fontStyle: 'italic', textAlign: 'right' }}>vs. yesterday</div>
-                                                    </div>
-                                                    <ul>
-                                                        {Object.entries(score.breakdown).map(([key, data]) => (
-                                                            <li key={key} style={{ flexDirection: 'column', alignItems: 'stretch' }}>
-                                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-                                                                    <span className='detail-label' style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                                                        {formatAspectName(key)}
-                                                                        {DOMAIN_DESCRIPTIONS[key] && (
-                                                                            <span className='domain-info-wrapper'>
-                                                                                <span className='domain-info-icon'>ℹ</span>
-                                                                                <span className='domain-info-tooltip'>{DOMAIN_DESCRIPTIONS[key]}</span>
-                                                                            </span>
-                                                                        )}
-                                                                    </span>
-                                                                    <span
-                                                                        className='detail-score-tag'
-                                                                        style={{
-                                                                            backgroundColor: `${badge.color}20`,
-                                                                            color: badge.color
-                                                                        }}
-                                                                    >
-                                                                        {badge.label}
-                                                                    </span>
-                                                                </div>
-                                                                <div className='detail-text' style={{
-                                                                    fontSize: '12px',
-                                                                    color: '#6b7280',
-                                                                    marginTop: '4px',
-                                                                    fontStyle: 'italic',
-                                                                    width: '100%'
-                                                                }}>
-                                                                    {dialLabel}
-                                                                </div>
-                                                            </li>
-                                                        ))}
-                                                    </ul>
-                                                </div>
-                                            )
-                                        })()}
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                </div>
+                <ScoreBoard
+                    scores={conceptScores}
+                    loading={scoresLoading}
+                />
 
                 {/* Quick Action Cards */}
                 <div className='quick-actions-row'>
@@ -804,4 +478,4 @@ const Home = () => {
     )
 }
 
-export default Home;
+export default Home

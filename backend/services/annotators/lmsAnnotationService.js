@@ -405,8 +405,8 @@ async function getJudgmentsForChatbot(pool, userId) {
 
     if (sessions.length === 0) {
         return 'LMS Activity Analysis: LMS data is not yet available for this student. ' +
-               'If the student asks about their LMS activity, let them know this feature is coming soon ' +
-               'and focus the conversation on the data that is available (sleep, screen time, SRL).';
+            'If the student asks about their LMS activity, let them know this feature is coming soon ' +
+            'and focus the conversation on the data that is available (sleep, screen time, SRL).';
     }
 
     // Fetch peer cluster context (if available)

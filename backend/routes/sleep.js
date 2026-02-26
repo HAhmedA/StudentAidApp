@@ -4,6 +4,7 @@ import pool from '../config/database.js'
 import logger from '../utils/logger.js'
 import { requireAuth } from '../middleware/auth.js'
 import { computeAllScores } from '../services/scoring/scoreComputationService.js'
+import { asyncRoute, Errors } from '../utils/errors.js'
 
 const router = Router()
 
@@ -12,10 +13,9 @@ router.use(requireAuth)
 // ── GET /api/sleep/today ────────────────────────────────────
 // Returns today's sleep session for the logged-in user (if any).
 // "Today's session" means session_date = yesterday (they're logging last night's sleep).
-router.get('/today', async (req, res) => {
-    try {
+router.get('/today', asyncRoute(async (req, res) => {
         const userId = req.session.user?.id
-        if (!userId) return res.status(401).json({ error: 'unauthorized' })
+        if (!userId) throw Errors.UNAUTHORIZED()
 
         const result = await pool.query(
             `SELECT session_date, bedtime, wake_time,
@@ -29,28 +29,19 @@ router.get('/today', async (req, res) => {
             [userId]
         )
 
-        if (result.rows.length === 0) {
-            return res.json({ entry: null })
-        }
-
-        return res.json({ entry: result.rows[0] })
-    } catch (e) {
-        logger.error('GET /sleep/today error:', e)
-        res.status(500).json({ error: 'db_error', details: String(e) })
-    }
-})
+        return res.json({ entry: result.rows[0] || null })
+}))
 
 // ── POST /api/sleep ─────────────────────────────────────────
 // Accepts: { intervals: [{ start: "HH:mm", end: "HH:mm" }, ...] }
 // Computes sleep metrics and upserts into sleep_sessions for yesterday's date.
-router.post('/', async (req, res) => {
-    try {
+router.post('/', asyncRoute(async (req, res) => {
         const userId = req.session.user?.id
-        if (!userId) return res.status(401).json({ error: 'unauthorized' })
+        if (!userId) throw Errors.UNAUTHORIZED()
 
         const { intervals } = req.body
         if (!Array.isArray(intervals) || intervals.length === 0) {
-            return res.status(400).json({ error: 'intervals required (array of {start, end})' })
+            throw Errors.VALIDATION('intervals required (array of {start, end})')
         }
 
         // Parse intervals: convert HH:mm strings to minute-of-day values
@@ -141,10 +132,6 @@ router.post('/', async (req, res) => {
         computeAllScores(userId).catch(err => logger.error('Score recomputation error after sleep submit:', err))
 
         return res.json({ entry: upsertResult.rows[0] })
-    } catch (e) {
-        logger.error('POST /sleep error:', e)
-        res.status(500).json({ error: 'db_error', details: String(e) })
-    }
-})
+}))
 
 export default router
