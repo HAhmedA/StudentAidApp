@@ -19,7 +19,6 @@
  * @property {string} conceptName
  * @property {number} score
  * @property {'improving'|'declining'|'stable'} trend
- * @property {number|null} avg7d
  * @property {string} computedAt
  * @property {Record<string, AspectScore>} [breakdown]
  */
@@ -77,74 +76,70 @@ function computeScore(aspects, strategy = DEFAULT_STRATEGY) {
 }
 
 /**
- * Calculate trend by comparing today's score to 7-day average
- * 
+ * Calculate trend by comparing today's score to yesterday's score
+ *
  * @param {number} todayScore - Today's score (0-100)
- * @param {number|null} avg7d - 7-day average score (0-100)
+ * @param {number|null} yesterdayScore - Yesterday's score (0-100), or null if no history
  * @returns {string} - 'improving', 'declining', or 'stable'
  */
-function calculateTrend(todayScore, avg7d) {
-    if (avg7d === null || avg7d === undefined) {
-        return 'stable'; // Not enough data
+function calculateTrend(todayScore, yesterdayScore) {
+    if (yesterdayScore === null || yesterdayScore === undefined) {
+        return 'stable'; // No history yet
     }
 
-    const difference = todayScore - avg7d;
-    const threshold = 10; // 10 point change is significant
+    const difference = todayScore - yesterdayScore;
 
-    if (difference >= threshold) {
+    if (difference > 5) {
         return 'improving';
-    } else if (difference <= -threshold) {
+    } else if (difference < -5) {
         return 'declining';
     }
     return 'stable';
 }
 
 /**
- * Get 7-day average score for a concept
- * 
+ * Get yesterday's score for a concept (used for day-over-day trend)
+ *
  * @param {string} userId - User ID
  * @param {string} conceptId - Concept ID
- * @returns {Promise<number|null>} - Average score or null if no history
+ * @returns {Promise<number|null>} - Yesterday's score or null if no history
  */
-async function get7DayAverage(userId, conceptId) {
+async function getYesterdayScore(userId, conceptId) {
     const { rows } = await pool.query(
-        `SELECT AVG(score) as avg_score
+        `SELECT score
          FROM public.concept_score_history
-         WHERE user_id = $1 
-           AND concept_id = $2 
-           AND score_date >= CURRENT_DATE - INTERVAL '7 days'
-           AND score_date < CURRENT_DATE`,
+         WHERE user_id = $1
+           AND concept_id = $2
+           AND score_date = CURRENT_DATE - 1`,
         [userId, conceptId]
     );
 
-    return rows[0]?.avg_score ? parseFloat(rows[0].avg_score) : null;
+    return rows[0]?.score ? parseFloat(rows[0].score) : null;
 }
 
 /**
  * Store concept score in database
- * 
+ *
  * @param {string} userId - User ID
  * @param {string} conceptId - Concept ID
  * @param {number} score - Score (0-100)
  * @param {string} trend - Trend ('improving', 'declining', 'stable')
  * @param {Object} breakdown - Aspect breakdown for debugging
- * @param {number|null} avg7d - 7-day average
  */
-async function storeScore(userId, conceptId, score, trend, breakdown, avg7d) {
+async function storeScore(userId, conceptId, score, trend, breakdown) {
     await withTransaction(pool, async (client) => {
         // Upsert current score; preserve previous breakdown for self-comparison in UI
         await client.query(
             `INSERT INTO public.concept_scores
-             (user_id, concept_id, score, trend, aspect_breakdown, avg_7d, computed_at)
-             VALUES ($1, $2, $3, $4, $5, $6, NOW())
+             (user_id, concept_id, score, trend, aspect_breakdown, computed_at)
+             VALUES ($1, $2, $3, $4, $5, NOW())
              ON CONFLICT (user_id, concept_id) DO UPDATE SET
                score = EXCLUDED.score,
                trend = EXCLUDED.trend,
                previous_aspect_breakdown = concept_scores.aspect_breakdown,
                aspect_breakdown = EXCLUDED.aspect_breakdown,
-               avg_7d = EXCLUDED.avg_7d,
                computed_at = NOW()`,
-            [userId, conceptId, score, trend, JSON.stringify(breakdown), avg7d]
+            [userId, conceptId, score, trend, JSON.stringify(breakdown)]
         );
 
         // Also store in history (for future trend calculations and self-comparison)
@@ -176,16 +171,16 @@ async function computeAndStoreScore(userId, conceptId, aspects, strategy = DEFAU
     // Compute score
     const { score, breakdown } = computeScore(aspects, strategy);
 
-    // Get 7-day average for trend
-    const avg7d = await get7DayAverage(userId, conceptId);
+    // Get yesterday's score for day-over-day trend
+    const yesterdayScore = await getYesterdayScore(userId, conceptId);
 
     // Calculate trend
-    const trend = calculateTrend(score, avg7d);
+    const trend = calculateTrend(score, yesterdayScore);
 
     // Store in database
-    await storeScore(userId, conceptId, score, trend, breakdown, avg7d);
+    await storeScore(userId, conceptId, score, trend, breakdown);
 
-    return { score, trend, breakdown, avg7d };
+    return { score, trend, breakdown };
 }
 
 /**
@@ -226,16 +221,16 @@ async function computeAndStoreRawScore(userId, conceptId, rawScores) {
         };
     }
 
-    // Get 7-day average for trend
-    const avg7d = await get7DayAverage(userId, conceptId);
+    // Get yesterday's score for day-over-day trend
+    const yesterdayScore = await getYesterdayScore(userId, conceptId);
 
     // Calculate trend
-    const trend = calculateTrend(score, avg7d);
+    const trend = calculateTrend(score, yesterdayScore);
 
     // Store in database
-    await storeScore(userId, conceptId, score, trend, breakdown, avg7d);
+    await storeScore(userId, conceptId, score, trend, breakdown);
 
-    return { score, trend, breakdown, avg7d };
+    return { score, trend, breakdown };
 }
 
 // =============================================================================
@@ -322,7 +317,7 @@ export {
     computeAndStoreScore,
     computeAndStoreRawScore,
     calculateTrend,
-    get7DayAverage,
+    getYesterdayScore,
 
     // Chatbot output
     getAllScoresForChatbot,

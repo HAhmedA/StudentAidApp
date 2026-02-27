@@ -169,7 +169,7 @@ describe('GET /api/admin/students/:studentId/scores', () => {
     test('returns mapped scores for a student', async () => {
         // concept_scores
         mockQuery.mockResolvedValueOnce({ rows: [
-            { concept_id: 'sleep', score: '75.0', trend: 'stable', avg_7d: '72.0', aspect_breakdown: null, computed_at: '2026-02-26' }
+            { concept_id: 'sleep', score: '75.0', trend: 'stable', aspect_breakdown: null, computed_at: '2026-02-26' }
         ]})
         // yesterday
         mockQuery.mockResolvedValueOnce({ rows: [] })

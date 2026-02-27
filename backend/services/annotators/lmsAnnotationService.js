@@ -344,6 +344,7 @@ async function computeJudgments(pool, userId, days = 7) {
     actionMix.participationScore = Math.round(quizContrib + assignContrib + forumContrib);
 
     const sessions = metrics.number_of_sessions || 0;
+    const totalMin = metrics.total_active_minutes || 0;
     sessionQuality.avgDuration = sessions > 0 ? totalMin / sessions : 0;
 
     const judgments = { volume, distribution, consistency, actionMix, sessionQuality };

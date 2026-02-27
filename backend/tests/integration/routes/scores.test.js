@@ -57,7 +57,7 @@ describe('GET /api/scores', () => {
         // concept_scores query
         mockQuery
             .mockResolvedValueOnce({ rows: [
-                { concept_id: 'sleep', score: '72.5', trend: 'improving', avg_7d: '68.0', aspect_breakdown: null, computed_at: '2026-01-01' }
+                { concept_id: 'sleep', score: '72.5', trend: 'improving', aspect_breakdown: null, computed_at: '2026-01-01' }
             ]})
             // yesterday scores
             .mockResolvedValueOnce({ rows: [] })
@@ -95,7 +95,7 @@ describe('GET /api/scores/:conceptId', () => {
 
     test('returns 200 with score data when found', async () => {
         mockQuery.mockResolvedValue({ rows: [
-            { concept_id: 'sleep', score: '80.0', trend: 'stable', avg_7d: '75.0', aspect_breakdown: {}, computed_at: '2026-01-01' }
+            { concept_id: 'sleep', score: '80.0', trend: 'stable', aspect_breakdown: {}, computed_at: '2026-01-01' }
         ]})
 
         const res = await request(buildApp()).get('/api/scores/sleep')

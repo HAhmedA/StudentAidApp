@@ -6,7 +6,6 @@
  * @property {string} conceptName
  * @property {number|null} score
  * @property {'improving'|'declining'|'stable'|null} trend
- * @property {number|null} avg7d
  * @property {number|null} yesterdayScore
  * @property {string|null} clusterLabel
  * @property {number} dialMin
@@ -39,7 +38,7 @@ router.get('/', asyncRoute(async (req, res) => {
         if (!userId) throw Errors.UNAUTHORIZED()
 
         const { rows } = await pool.query(
-            `SELECT concept_id, score, trend, avg_7d, aspect_breakdown, previous_aspect_breakdown, computed_at
+            `SELECT concept_id, score, trend, aspect_breakdown, previous_aspect_breakdown, computed_at
              FROM public.concept_scores
              WHERE user_id = $1
              ORDER BY concept_id`,
@@ -101,7 +100,6 @@ router.get('/', asyncRoute(async (req, res) => {
             conceptName: conceptNames[row.concept_id] || row.concept_id,
             score: parseFloat(row.score),
             trend: row.trend,
-            avg7d: row.avg_7d ? parseFloat(row.avg_7d) : null,
             breakdown: row.aspect_breakdown,
             yesterdayScore: yesterdayScores[row.concept_id] || null,
             // History breakdown preferred; fall back to previous_aspect_breakdown saved on upsert
@@ -125,7 +123,6 @@ router.get('/', asyncRoute(async (req, res) => {
                         conceptName: conceptNames[conceptId],
                         score: null,
                         trend: null,
-                        avg7d: null,
                         breakdown: null,
                         yesterdayScore: null,
                         clusterLabel: null,
@@ -153,7 +150,7 @@ router.get('/:conceptId', asyncRoute(async (req, res) => {
         const { conceptId } = req.params
 
         const { rows } = await pool.query(
-            `SELECT concept_id, score, trend, avg_7d, aspect_breakdown, computed_at
+            `SELECT concept_id, score, trend, aspect_breakdown, computed_at
              FROM public.concept_scores
              WHERE user_id = $1 AND concept_id = $2`,
             [userId, conceptId]
@@ -166,7 +163,6 @@ router.get('/:conceptId', asyncRoute(async (req, res) => {
             conceptId: row.concept_id,
             score: parseFloat(row.score),
             trend: row.trend,
-            avg7d: row.avg_7d ? parseFloat(row.avg_7d) : null,
             breakdown: row.aspect_breakdown,
             computedAt: row.computed_at
         })

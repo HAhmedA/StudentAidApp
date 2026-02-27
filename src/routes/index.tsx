@@ -5,7 +5,6 @@ import Run from "../pages/Run"
 import Edit from "../pages/Edit"
 import Login from "../pages/Login"
 import Register from "../pages/Register"
-import MoodHistory from "../pages/MoodHistory"
 import Profile from "../pages/Profile"
 import ScreenTimeForm from "../pages/ScreenTimeForm"
 import RequireAdmin from "../components/RequireAdmin"
@@ -43,7 +42,6 @@ const Content = (): React.ReactElement => (
             <Route path="/" element={<RequireAuth><Home /></RequireAuth>}></Route>
             <Route path="/run/:id" element={<RequireAuth><Run /></RequireAuth>}></Route>
             <Route path="/edit/:id" element={<RequireAuth><RequireAdmin><Edit /></RequireAdmin></RequireAuth>}></Route>
-            <Route path="/mood-history/:id" element={<RequireAuth><MoodHistory /></RequireAuth>}></Route>
             <Route path="/profile" element={<RequireAuth><Profile /></RequireAuth>}></Route>
             <Route path="/screen-time" element={<RequireAuth><ScreenTimeForm /></RequireAuth>}></Route>
             <Route element={<NoMatch />}></Route>

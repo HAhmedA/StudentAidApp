@@ -8,7 +8,6 @@ interface ConceptScore {
     conceptName: string
     score: number | null
     trend: string | null
-    avg7d: number | null
     yesterdayScore?: number | null
     clusterLabel?: string | null
     dialMin?: number

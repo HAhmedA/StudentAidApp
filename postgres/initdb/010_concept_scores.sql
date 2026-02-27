@@ -23,10 +23,7 @@ CREATE TABLE IF NOT EXISTS public.concept_scores (
 
   -- Aspect breakdown from the previous scoring run (for self-comparison in the UI)
   previous_aspect_breakdown jsonb,
-  
-  -- Historical 7-day average for trend calculation
-  avg_7d numeric(5,2),
-  
+
   -- Metadata
   computed_at timestamptz NOT NULL DEFAULT now(),
   

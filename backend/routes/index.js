@@ -3,7 +3,6 @@ import { Router } from 'express'
 import authRoutes from './auth.js'
 import surveyRoutes from './surveys.js'
 import resultRoutes from './results.js'
-import moodRoutes from './mood.js'
 import annotationRoutes from './annotations.js'
 import profileRoutes from './profile.js'
 import adminRoutes from './admin.js'
@@ -29,7 +28,6 @@ router.use('/', surveyRoutes) // Mounts directly since paths are like /api/creat
 router.use('/', resultRoutes) // Mounts directly for /api/results, /api/post etc.
 
 // Namespaced routes
-router.use('/student/mood', moodRoutes)
 router.use('/annotations', annotationRoutes)
 router.use('/profile', profileRoutes)
 router.use('/admin', adminRoutes)

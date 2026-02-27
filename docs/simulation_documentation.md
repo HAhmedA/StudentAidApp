@@ -6,6 +6,8 @@ This document details the architecture of the Simulation System, explaining how 
 
 The **Simulation Orchestrator** (`simulationOrchestratorService.js`) is the central coordinator. It is responsible for assigning a consistent student profile (High, Average, or Low Achiever) and triggering parallel data generation for all domains.
 
+> **Note**: `simulateRealisticData.js` is a one-time batch script for seeding 40 days of realistic test data. It bypasses `simulationOrchestratorService.js` and calls annotation/scoring services directly. See **Section 5** for details.
+
 ```mermaid
 graph TD
     User((User/Student))
@@ -143,3 +145,26 @@ sequenceDiagram
     SC->>SC: Aggregate & Weight Scores
     SC->>DB: INSERT into concept_scores
 ```
+
+## 5. Batch Realistic Simulation
+
+`simulateRealisticData.js` is a standalone 8-phase pipeline that seeds 40 days of realistic data for all 20 named test students. It runs outside the normal registration flow and is intended for development/demo seeding.
+
+```mermaid
+flowchart TD
+    P0[Phase 0: Query surveyId + student UUIDs]
+    P1[Phase 1: Update student names]
+    P2[Phase 2: Delete old derived + raw data per student]
+    P3[Phase 3: Insert 40 days raw data per student]
+    P4[Phase 4: Recompute baselines sleep/screen/LMS]
+    P5[Phase 5: Run annotation services per student]
+    P6[Phase 6: computeAllScores for ALL students]
+    P7[Phase 7: Backfill concept_score_history 40 days]
+    P0 --> P1 --> P2 --> P3 --> P4 --> P5 --> P6 --> P7
+```
+
+**Key design decisions:**
+- Phases 2–5 run **per-student** sequentially
+- Phase 6 runs as a **second pass** over all students after all raw data is inserted — this ensures PGMoE has ≥ 10 users with data when it runs
+- Phase 7 uses **profile-based normalization formulas** (not re-running PGMoE per day) to backfill history efficiently
+- `peer_clusters` is a global table — it is **not** deleted per-user (repopulated by Phase 6)

@@ -140,9 +140,11 @@ Responses are generated for 14 concepts on a 1-5 Likert scale:
 | **Consistency** | — | `cons_consistent` | ≥5 days active |
 | | | `cons_somewhat` | 3-4 days active |
 | | | `cons_inconsistent` | ≤2 days active |
-| **Action Mix** | Type | `mix_passive` | >85% passive AND 0 practice |
-| | | `mix_active` | ≥1 practice events |
-| | | `mix_balanced` | 50-75% passive AND ≥1 practice |
+| **Participation Variety** | Type | `no_active_work` | tool_count = 0 (no quizzes/assignments/forum) |
+| | | `single_tool` | tool_count = 1 (only one activity type) |
+| | | `multi_tool` | tool_count = 2 (two activity types) |
+| | | `fully_engaged` | tool_count = 3 (all three: quizzes + assignments + forum) |
+| | | `participation_score` | `MIN(quiz,3)/3×34 + MIN(assign,2)/2×33 + MIN(forum,2)/2×33` |
 | | Practice | `prac_low` | 0 events |
 | | | `prac_moderate` | 1-3 events |
 | | | `prac_high` | ≥4 events |
@@ -204,3 +206,64 @@ Responses are generated for 14 concepts on a 1-5 Likert scale:
 ## Profile Assignment
 
 Profiles are assigned by the **Simulation Orchestrator** and stored in `student_profiles.simulated_profile`. All simulators read this profile and generate correlated data patterns.
+
+---
+
+## 5. Realistic 40-Day Simulation (`simulateRealisticData.js`)
+
+A standalone batch script that generates 40 days of realistic, varied data for all 20 named test students. Unlike the per-user simulators, this script bypasses `simulationOrchestratorService.js` and calls annotation/scoring services directly.
+
+### Student Personas
+
+| # | Name | Background | Profile | Chronotype | LMS Pattern | SRL Freq | Trend | Disability |
+|---|------|------------|---------|------------|-------------|----------|-------|------------|
+| 1 | Wei Chen | East Asian | high_achiever | early_bird | consistent | frequent | stable | — |
+| 2 | Arjun Patel | South Asian | average | normal | deadline_driven | regular | improving | — |
+| 3 | Amara Osei | West African | low_achiever | night_owl | minimal | sparse | declining | Dyslexia |
+| 4 | Sofia Reyes | Hispanic/Latina | high_achiever | early_bird | consistent | frequent | improving | — |
+| 5 | Hiroshi Tanaka | East Asian | average | normal | binge_then_rest | regular | stable | — |
+| 6 | Chidinma Eze | West African | low_achiever | night_owl | minimal | sparse | declining | ADHD |
+| 7 | Elias Bergström | Nordic/European | high_achiever | early_bird | consistent | frequent | stable | — |
+| 8 | Priya Krishnamurthy | South Asian | average | normal | deadline_driven | regular | improving | — |
+| 9 | Omar Al-Farsi | Middle Eastern | low_achiever | night_owl | minimal | frequent | stable | WMD |
+| 10 | Anika Müller | German/European | high_achiever | early_bird | consistent | frequent | improving | — |
+| 11 | Camille Dupont | French/European | average | normal | deadline_driven | regular | stable | — |
+| 12 | Tariq Mensah | West African | low_achiever | night_owl | binge_then_rest | sparse | declining | Dyslexia |
+| 13 | Yuna Kim | Korean | high_achiever | early_bird | consistent | frequent | improving | — |
+| 14 | Marcus Johnson | African-American | average | normal | deadline_driven | regular | stable | — |
+| 15 | Fatima Al-Rashidi | Middle Eastern | low_achiever | night_owl | minimal | sparse | declining | ADHD |
+| 16 | Isabela Santos | Brazilian/Hispanic | high_achiever | early_bird | consistent | frequent | stable | — |
+| 17 | Nour Hassan | Middle Eastern | average | normal | binge_then_rest | regular | improving | — |
+| 18 | Sebastian Kowalski | Eastern European | low_achiever | night_owl | minimal | frequent | declining | WMD |
+| 19 | Aaliya Sharma | South Asian | high_achiever | early_bird | consistent | frequent | stable | — |
+| 20 | Lucas Andrade | Brazilian/Hispanic | average | normal | deadline_driven | regular | stable | — |
+
+### Realism Dimensions
+
+| Dimension | Description |
+|-----------|-------------|
+| Chronotypes | 3 types (early_bird/normal/night_owl) driving bedtime/wake distributions |
+| LMS Sparsity | 4 patterns: consistent (65% active days), deadline_driven (85% near deadlines), binge_then_rest (5-on/5-off), minimal (22%) |
+| SRL Irregularity | Per-student daily submission probability: frequent=40%, regular=15%, sparse=7% |
+| Longitudinal Trend | 40-day improving/stable/declining arc (`0.85→1.15` multiplier) applied to raw metrics |
+| Exam Weeks | Days 0–4 and 35–39: LMS spike ×1.5, bedtime +1.5h, sleep −60 min, SRL paused |
+| Weekend Effects | +1.5h bedtime, +60–90 min screen time, 70% chance LMS inactive |
+| Bad-Sleep Carry-over | Poor night (<85% baseline sleep) → −20 min next night sleep, +30 min screen |
+| Disability Effects | ADHD: sleep variance ×1.4, screen variance ×1.5; Dyslexia: LMS longest session ×1.5; WMD: SRL frequency ×1.5, +0.5 anxiety |
+| Submission Timing | SRL: 8 AM–10 PM with random minutes; LMS assignments biased to Thu/Fri evenings |
+
+### Running the Script
+
+```bash
+PGHOST=localhost PGPORT=5433 PGUSER=postgres PGPASSWORD=password PGDATABASE=postgres \
+  node backend/scripts/simulateRealisticData.js
+```
+
+### Profile-Based History Normalization (Phase 7 formulas)
+
+| Concept | Formula |
+|---------|---------|
+| **Sleep** | `clamp((sleepMin − 270) / (540 − 270) × 100, 0, 100)` |
+| **Screen** (inverted) | `clamp(100 − (screenMin − 60) / (600 − 60) × 100, 0, 100)` |
+| **LMS** | `participation_score + (activeMin / 90) × 40`; inactive days decay prev score × 0.9 |
+| **SRL** | Average of last-7-days responses per concept → `(avg−1)/4×100`; anxiety inverted as `(5−avg)/4×100` |

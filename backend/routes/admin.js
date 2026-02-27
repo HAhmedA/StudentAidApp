@@ -104,7 +104,7 @@ router.get('/students/:studentId/scores', asyncRoute(async (req, res) => {
         const { studentId } = req.params
 
         const { rows } = await pool.query(
-            `SELECT concept_id, score, trend, avg_7d, aspect_breakdown, computed_at
+            `SELECT concept_id, score, trend, aspect_breakdown, computed_at
              FROM public.concept_scores
              WHERE user_id = $1
              ORDER BY concept_id`,
@@ -149,7 +149,6 @@ router.get('/students/:studentId/scores', asyncRoute(async (req, res) => {
             conceptName: CONCEPT_NAMES[row.concept_id] || row.concept_id,
             score: parseFloat(row.score),
             trend: row.trend,
-            avg7d: row.avg_7d ? parseFloat(row.avg_7d) : null,
             breakdown: row.aspect_breakdown,
             yesterdayScore: yesterdayScores[row.concept_id] || null,
             clusterLabel: clusterInfo[row.concept_id]?.clusterLabel || null,
