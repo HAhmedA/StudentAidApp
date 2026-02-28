@@ -12,6 +12,9 @@ const router = Router()
 // Post new result
 router.post('/post', asyncRoute(async (req, res) => {
     const { postId, surveyResult } = req.body || {}
+    if (!postId || surveyResult == null) {
+        return res.status(400).json({ error: 'postId and surveyResult are required' })
+    }
     const id = uuidv4()
     const userId = req.session.user?.id || null
     const submittedAt = new Date()

@@ -27,6 +27,11 @@ router.get('/', asyncRoute(async (req, res) => {
     const userId = req.session.user.id
     const { period, surveyId } = req.query
 
+    const VALID_PERIODS = new Set(['today', '7days'])
+    if (period && !VALID_PERIODS.has(period)) {
+        return res.status(400).json({ error: 'invalid period' })
+    }
+
     if (!surveyId) return res.status(400).json({ error: 'surveyId required' })
 
     const surveyResult = await pool.query('SELECT json FROM public.surveys WHERE id = $1', [surveyId])
@@ -81,6 +86,11 @@ router.get('/history', asyncRoute(async (req, res) => {
     const userId = req.session.user.id
     const { surveyId, period } = req.query
 
+    const VALID_PERIODS = new Set(['today', '7days'])
+    if (period && !VALID_PERIODS.has(period)) {
+        return res.status(400).json({ error: 'invalid period' })
+    }
+
     if (!surveyId) return res.status(400).json({ error: 'surveyId required' })
 
     const surveyResult = await pool.query('SELECT json FROM public.surveys WHERE id = $1', [surveyId])
@@ -90,6 +100,7 @@ router.get('/history', asyncRoute(async (req, res) => {
 
     let dateFilter = ''
     if (period === 'today') dateFilter = "AND DATE(created_at) = CURRENT_DATE"
+    if (period === '7days') dateFilter = "AND created_at >= NOW() - INTERVAL '7 days'"
 
     const { rows } = await pool.query(
         `SELECT id, answers, created_at FROM public.questionnaire_results
