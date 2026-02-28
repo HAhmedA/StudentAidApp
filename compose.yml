@@ -18,28 +18,29 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     environment:
-      - SESSION_SECRET=dev-secret
+      - SESSION_SECRET=${SESSION_SECRET}
       - PGHOST=postgres
       - PGPORT=5432
       - PGUSER=postgres
-      - PGPASSWORD=password
+      - PGPASSWORD=${PGPASSWORD}
       - PGDATABASE=postgres
       - DEBUG_LLM=true
       - MOODLE_BASE_URL=http://host.docker.internal:8888/moodle501
-      - MOODLE_TOKEN=c4acddbfba05950afcae5c334c74bc8e
+      - MOODLE_TOKEN=${MOODLE_TOKEN:-}
       - NODE_OPTIONS=--dns-result-order=ipv4first
     ports:
       - "8080:8080" # expose the API on localhost:8080
     depends_on:
       postgres:
         condition: service_healthy
+    restart: unless-stopped
 
   postgres:
     # Postgres 18 with init SQL; mounts at /var/lib/postgresql per 18+ images
     image: postgres:18
     environment:
       - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=password
+      - POSTGRES_PASSWORD=${PGPASSWORD}
       - POSTGRES_DB=postgres
     ports:
       - "5433:5432" # forward host 5433 to container 5432

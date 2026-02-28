@@ -24,7 +24,20 @@ const isProduction = process.env.NODE_ENV === 'production'
 validateEnvironment(isProduction)
 
 // Security headers
-app.use(helmet())
+app.use(helmet({
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: ["'self'"],
+            connectSrc: [
+                "'self'",
+                process.env.MOODLE_BASE_URL,
+                process.env.LLM_BASE_URL,
+            ].filter(Boolean),
+            frameAncestors: ["'none'"],
+        }
+    }
+}))
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -32,7 +45,7 @@ app.get('/health', (req, res) => {
 })
 
 // Let Express trust reverse proxy headers; important for cookies behind Docker
-app.set('trust proxy', 1)
+app.set('trust proxy', isProduction ? 1 : false)
 const PORT = process.env.PORT || 8080
 
 // Allow cross-origin requests from the frontend
@@ -52,7 +65,7 @@ app.use(cors(corsOptions))
 app.options('*', cors(corsOptions))
 
 // Parse JSON request bodies
-app.use(express.json())
+app.use(express.json({ limit: '50kb' }))
 
 // Postgres-backed session store
 const PgSession = connectPgSimple(session)
@@ -63,14 +76,14 @@ app.use(session({
     tableName: 'session',
     createTableIfMissing: true
   }),
-  secret: process.env.SESSION_SECRET || 'dev-secret',
+  secret: process.env.SESSION_SECRET ?? (process.env.NODE_ENV !== 'production' ? 'dev-secret' : undefined),
   resave: false,
   saveUninitialized: false,
   cookie: {
     httpOnly: true,
     sameSite: 'lax',
     secure: isProduction,
-    maxAge: 1000 * 60 * 60 * 24 * 30 // 30 days
+    maxAge: 1000 * 60 * 60 * 24 // 24 hours
   }
 }))
 
@@ -80,11 +93,16 @@ app.use((req, res, next) => {
   next()
 })
 
+// Health check — used by Docker and load balancers
+app.get('/api/health', (_req, res) => res.json({ status: 'ok' }))
+
 // Mount all routes under /api with rate limiting
 app.use('/api', apiLimiter, routes)
 
-// Swagger API Documentation
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs))
+// Swagger API Documentation (dev only)
+if (!isProduction) {
+    app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs))
+}
 
 // Global error handler
 app.use((err, req, res, next) => {
