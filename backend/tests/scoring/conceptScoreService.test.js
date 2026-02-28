@@ -29,6 +29,7 @@ const { calculateTrend, computeAndStoreRawScore } =
 beforeEach(() => {
     mockQuery.mockReset()
     mockWithTransaction.mockReset()
+    mockLogInfo.mockReset()
 })
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -108,5 +109,10 @@ describe('computeAndStoreRawScore', () => {
 
         expect(result.score).toBeCloseTo(80, 1)
         expect(result.trend).toBe('improving')
+        expect(mockQuery).toHaveBeenCalledWith(
+            expect.stringContaining('concept_score_history'),
+            ['user-1', 'sleep']
+        )
+        expect(mockWithTransaction).toHaveBeenCalledTimes(1)
     })
 })
