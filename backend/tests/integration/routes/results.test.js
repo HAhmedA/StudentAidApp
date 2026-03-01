@@ -71,10 +71,10 @@ beforeEach(() => {
 // ── POST /api/results/post ─────────────────────────────────────────────────────
 
 describe('POST /api/results/post', () => {
-    test('returns 400 when body is missing entirely', async () => {
+    test('returns 400 when body is empty', async () => {
         const res = await request(buildApp()).post('/api/results/post').send({})
         expect(res.status).toBe(400)
-        expect(res.body.error).toContain('postId')
+        expect(res.body.error).toBe('postId and surveyResult are required')
     })
 
     test('returns 400 when postId is missing', async () => {
@@ -82,6 +82,7 @@ describe('POST /api/results/post', () => {
             .post('/api/results/post')
             .send({ surveyResult: { q: 1 } })
         expect(res.status).toBe(400)
+        expect(res.body.error).toBe('postId and surveyResult are required')
     })
 
     test('returns 400 when surveyResult is missing', async () => {
@@ -89,6 +90,7 @@ describe('POST /api/results/post', () => {
             .post('/api/results/post')
             .send({ postId: 'survey-1' })
         expect(res.status).toBe(400)
+        expect(res.body.error).toBe('postId and surveyResult are required')
     })
 
     test('submits anonymously (no session user) — skips SRL and scoring', async () => {
