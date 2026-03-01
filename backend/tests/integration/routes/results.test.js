@@ -62,6 +62,7 @@ beforeEach(() => {
     mockComputeAnnotations.mockReset()
     mockComputeAllScores.mockReset()
     mockLogError.mockReset()
+    mockLogInfo.mockReset()
     // Restore default resolved values
     mockSaveResponses.mockResolvedValue(undefined)
     mockComputeAnnotations.mockResolvedValue(undefined)

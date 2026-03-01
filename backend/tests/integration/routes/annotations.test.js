@@ -61,6 +61,12 @@ describe('Authentication', () => {
         expect(res.status).toBe(401)
         expect(res.body.error).toBe('not_authenticated')
     })
+
+    test('GET /chatbot returns 401 when not logged in', async () => {
+        const res = await request(buildUnauthApp()).get('/api/annotations/chatbot')
+        expect(res.status).toBe(401)
+        expect(res.body.error).toBe('not_authenticated')
+    })
 })
 
 // ── GET / ──────────────────────────────────────────────────────────────────────
