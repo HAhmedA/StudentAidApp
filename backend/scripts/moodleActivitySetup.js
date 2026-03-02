@@ -23,22 +23,22 @@
  *   node --env-file=backend/.env backend/scripts/moodleActivitySetup.js
  */
 
-import http  from 'http'
+import http from 'http'
 import https from 'https'
 
 // =============================================================================
 // CONFIG
 // =============================================================================
 
-const BASE_URL    = 'http://localhost:8888/moodle501'
+const BASE_URL = 'http://localhost:8888/moodle501'
 const ADMIN_TOKEN = 'c4acddbfba05950afcae5c334c74bc8e'
-const PASSWORD    = 'Test@1234'
-const SERVICE     = 'moodle_mobile_app'   // built-in Moodle service; must be enabled
+const PASSWORD = 'Test@1234'
+const SERVICE = 'moodle_mobile_app'   // built-in Moodle service; must be enabled
 
 // test1 already done manually — start from test2
 const STUDENTS = Array.from({ length: 19 }, (_, i) => ({
     username: `test${i + 2}`,
-    email:    `test${i + 2}@example.com`,
+    email: `test${i + 2}@example.com`,
 }))
 
 // Participation patterns (quiz / assign / forum).
@@ -85,11 +85,11 @@ function flattenParams(obj, prefix = '', out = {}) {
 /** POST to Moodle REST web service. token defaults to ADMIN_TOKEN. */
 function moodlePost(wsfunction, params = {}, token = ADMIN_TOKEN) {
     return new Promise((resolve, reject) => {
-        const parsedUrl  = new URL(`${BASE_URL}/webservice/rest/server.php`)
-        const transport  = parsedUrl.protocol === 'https:' ? https : http
-        const flat       = flattenParams(params)
-        const bodyParts  = new URLSearchParams({
-            wstoken:            token,
+        const parsedUrl = new URL(`${BASE_URL}/webservice/rest/server.php`)
+        const transport = parsedUrl.protocol === 'https:' ? https : http
+        const flat = flattenParams(params)
+        const bodyParts = new URLSearchParams({
+            wstoken: token,
             moodlewsrestformat: 'json',
             wsfunction,
             ...flat,
@@ -98,11 +98,11 @@ function moodlePost(wsfunction, params = {}, token = ADMIN_TOKEN) {
 
         const options = {
             hostname: parsedUrl.hostname,
-            port:     parseInt(parsedUrl.port) || (parsedUrl.protocol === 'https:' ? 443 : 80),
-            path:     parsedUrl.pathname,
-            method:   'POST',
-            headers:  {
-                'Content-Type':   'application/x-www-form-urlencoded',
+            port: parseInt(parsedUrl.port) || (parsedUrl.protocol === 'https:' ? 443 : 80),
+            path: parsedUrl.pathname,
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
                 'Content-Length': Buffer.byteLength(bodyStr),
             },
         }
@@ -138,17 +138,17 @@ function moodlePost(wsfunction, params = {}, token = ADMIN_TOKEN) {
  */
 function getStudentToken(username) {
     return new Promise((resolve, reject) => {
-        const parsedUrl  = new URL(`${BASE_URL}/login/token.php`)
-        const transport  = parsedUrl.protocol === 'https:' ? https : http
-        const bodyStr    = new URLSearchParams({ username, password: PASSWORD, service: SERVICE }).toString()
+        const parsedUrl = new URL(`${BASE_URL}/login/token.php`)
+        const transport = parsedUrl.protocol === 'https:' ? https : http
+        const bodyStr = new URLSearchParams({ username, password: PASSWORD, service: SERVICE }).toString()
 
         const options = {
             hostname: parsedUrl.hostname,
-            port:     parseInt(parsedUrl.port) || (parsedUrl.protocol === 'https:' ? 443 : 80),
-            path:     parsedUrl.pathname,
-            method:   'POST',
-            headers:  {
-                'Content-Type':   'application/x-www-form-urlencoded',
+            port: parseInt(parsedUrl.port) || (parsedUrl.protocol === 'https:' ? 443 : 80),
+            path: parsedUrl.pathname,
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
                 'Content-Length': Buffer.byteLength(bodyStr),
             },
         }
@@ -195,22 +195,22 @@ async function discoverActivities() {
     // Fetch course contents to get module instance IDs
     const sections = await moodlePost('core_course_get_contents', { courseid: courseId })
 
-    let quizId   = null
+    let quizId = null
     let assignId = null
-    let forumId  = null
+    let forumId = null
 
     for (const section of (sections ?? [])) {
         for (const mod of (section.modules ?? [])) {
-            if (mod.modname === 'quiz'   && !quizId)   quizId   = mod.instance
+            if (mod.modname === 'quiz' && !quizId) quizId = mod.instance
             if (mod.modname === 'assign' && !assignId) assignId = mod.instance
-            if (mod.modname === 'forum'  && !forumId)  forumId  = mod.instance
+            if (mod.modname === 'forum' && !forumId) forumId = mod.instance
         }
     }
 
     const missing = []
-    if (!quizId)   missing.push('Quiz')
+    if (!quizId) missing.push('Quiz')
     if (!assignId) missing.push('Assignment')
-    if (!forumId)  missing.push('Forum')
+    if (!forumId) missing.push('Forum')
 
     if (missing.length > 0) {
         throw new Error(
@@ -235,10 +235,10 @@ async function attemptQuiz(token, quizId, username) {
 
     // Submit the attempt immediately (blank answers — counts as an attempt)
     await moodlePost('mod_quiz_process_attempt', {
-        attemptid:     attemptId,
-        data:          [],      // no answers (will be marked 0/wrong, but it's an attempt)
+        attemptid: attemptId,
+        data: [],      // no answers (will be marked 0/wrong, but it's an attempt)
         finishattempt: 1,
-        timeup:        0,
+        timeup: 0,
     }, token)
 
     console.log(`    [quiz]   attempt ${attemptId} submitted`)
@@ -252,15 +252,15 @@ async function submitAssignment(token, assignId, username) {
         plugindata: {
             onlinetext_editor: {
                 text,
-                format:  1,    // HTML
-                itemid:  0,
+                format: 1,    // HTML
+                itemid: 0,
             },
         },
     }, token)
     // Step 2: finalize — changes status from 'draft' → 'submitted'
     // Without this the sync ignores the submission (filter: status in ['submitted','reopened'])
     await moodlePost('mod_assign_submit_for_grading', {
-        assignmentid:              assignId,
+        assignmentid: assignId,
         acceptsubmissionstatement: 1,
     }, token)
     console.log(`    [assign] submission finalized (submitted)`)
@@ -287,7 +287,7 @@ async function postForum(token, forumId, username) {
 // Fix: add 'quiz' to every student — proven to sync reliably.
 // Keep assign+forum for participation_score variety once those functions are added to LocalTesting.
 const RETRY_STUDENTS = [
-    { username: 'test8',  activities: ['quiz', 'assign', 'forum'] },
+    { username: 'test8', activities: ['quiz', 'assign', 'forum'] },
     { username: 'test11', activities: ['quiz', 'assign', 'forum'] },
     { username: 'test14', activities: ['quiz', 'assign'] },
     { username: 'test15', activities: ['quiz', 'assign', 'forum'] },
@@ -304,7 +304,7 @@ async function main() {
     console.log()
 
     let succeeded = 0
-    let failed    = 0
+    let failed = 0
 
     for (let i = 0; i < RETRY_STUDENTS.length; i++) {
         const { username, activities } = RETRY_STUDENTS[i]
@@ -315,9 +315,9 @@ async function main() {
 
             for (const activity of activities) {
                 try {
-                    if (activity === 'quiz')   await attemptQuiz(token, quizId, username)
+                    if (activity === 'quiz') await attemptQuiz(token, quizId, username)
                     if (activity === 'assign') await submitAssignment(token, assignId, username)
-                    if (activity === 'forum')  await postForum(token, forumId, username)
+                    if (activity === 'forum') await postForum(token, forumId, username)
                 } catch (actErr) {
                     console.warn(`    ✗ ${activity} failed: ${actErr.message}`)
                 }

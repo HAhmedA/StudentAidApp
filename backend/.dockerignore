@@ -1,6 +1,22 @@
 .git
 node_modules
-npm-debug.log
+npm-debug.log*
 .DS_Store
+
+# Local environment files (the production image reads env vars from the host)
 .env
+.env.*
+
+# Test suite and coverage output — not needed at runtime
+tests/
+coverage/
+jest.config.js
+jest.config.cjs
+
+# Setup/seed scripts — used only locally, not at runtime
+scripts/
+
+# Editor artifacts
+*.swp
+*.swo
 

@@ -290,13 +290,17 @@ async function computeAnnotations(pool, userId, surveyStructure) {
     for (const timeWindow of timeWindows) {
         const interval = '7 days';
 
-        // Get all responses for this user in the time window
+        // Get all responses for this user in the time window.
+        // Use ($2 * INTERVAL '1 day') instead of interpolating `interval` directly
+        // to keep the query fully parameterized regardless of future changes to the
+        // interval value.
+        const intervalDays = 7
         const { rows: responses } = await pool.query(
             `SELECT concept_key, score, submitted_at, DATE(submitted_at) as response_date
-       FROM public.srl_responses 
-       WHERE user_id = $1 AND submitted_at >= NOW() - INTERVAL '${interval}'
+       FROM public.srl_responses
+       WHERE user_id = $1 AND submitted_at >= NOW() - ($2 * INTERVAL '1 day')
        ORDER BY concept_key, submitted_at ASC`,
-            [userId]
+            [userId, intervalDays]
         );
 
         // Group by concept and track distinct dates per concept
