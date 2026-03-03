@@ -114,48 +114,37 @@ function computeCompositeScore(userMetrics, allMetrics, dims) {
 // MAIN PUBLIC API
 // =============================================================================
 
-/**
- * Compute cluster-based peer comparison scores for a user.
- *
- * @param {Object} dbPool - Database pool (unused, we use imported pool)
- * @param {string} conceptId - 'lms', 'sleep', 'screen_time', 'srl'
- * @param {string} userId - Target user ID
- * @param {number} days - Look-back window (default 7)
- * @returns {Object} { clusterLabel, percentileScore, dialMin, dialCenter, dialMax, domains: [...] }
- */
 // Minimum number of real users required before PGMoE clustering is meaningful.
 // Below this threshold the system returns { coldStart: true } and the dashboard
 // shows a "Building your profile" placeholder instead of the gauge.
 const MIN_CLUSTER_USERS = 10;
 
-async function computeClusterScores(dbPool, conceptId, userId, days = 7) {
+// =============================================================================
+// PRIVATE HELPERS
+// =============================================================================
+
+/**
+ * Run PGMoE clustering for a concept without writing to the DB.
+ * Returns all intermediate objects so callers can store results their own way.
+ *
+ * @param {string} conceptId - 'lms', 'sleep', or 'screen_time' (not 'srl')
+ * @param {number} days - Look-back window
+ * @returns {Object|null} null = cold start; otherwise { allMetrics, userIds, composites,
+ *                                                        clusterRemap, clusterMeans, k,
+ *                                                        model, dims, labels }
+ */
+async function _runConceptClustering(conceptId, days) {
     const allMetrics = await getAllUserMetrics(conceptId, days);
-
-    if (!allMetrics[userId]) {
-        logger.debug(`clusterPeerService: no ${conceptId} data for user ${userId}`);
-        return null;
-    }
-
-    // SRL is special — variable dimensions
-    if (conceptId === 'srl') {
-        const userCount = Object.keys(allMetrics).length;
-        if (userCount < MIN_CLUSTER_USERS) {
-            logger.info(`clusterPeerService: cold start for SRL (${userCount}/${MIN_CLUSTER_USERS} users)`);
-            return { coldStart: true };
-        }
-        return computeSRLClusterScores(allMetrics, userId);
-    }
-
     const dims = DIMENSION_DEFS[conceptId];
     if (!dims) return null;
 
     const userIds = Object.keys(allMetrics);
 
-    // Cold start: not enough real users to form meaningful clusters yet.
     if (userIds.length < MIN_CLUSTER_USERS) {
-        logger.info(`clusterPeerService: cold start for ${conceptId} (${userIds.length}/${MIN_CLUSTER_USERS} users)`);
-        return { coldStart: true };
+        logger.info(`_runConceptClustering: cold start for ${conceptId} (${userIds.length}/${MIN_CLUSTER_USERS} users)`);
+        return null;
     }
+
     const dimKeys = Object.keys(dims);
 
     // Build feature matrix for clustering (N users x D dimensions)
@@ -227,7 +216,7 @@ async function computeClusterScores(dbPool, conceptId, userId, days = 7) {
         }).catch(err => logger.error(`storeDiagnostics fire-and-forget error: ${err.message}`));
     }
 
-    // Compute composite scores for each user
+    // Compute composite scores for all users
     const composites = userIds.map((uid, idx) => ({
         userId: uid,
         composite: computeCompositeScore(allMetrics[uid], allMetrics, dims).composite,
@@ -245,14 +234,53 @@ async function computeClusterScores(dbPool, conceptId, userId, days = 7) {
     }
     clusterMeans.sort((a, b) => a.mean - b.mean);
 
-    // Build re-mapping: original cluster index → ordered index (0=worst, 2=best)
+    // Build re-mapping: original cluster index → ordered index (0=worst, k-1=best)
     const clusterRemap = {};
     clusterMeans.forEach((cm, orderedIdx) => {
         clusterRemap[cm.cluster] = orderedIdx;
     });
 
+    const labels = generateClusterLabels(k, conceptId);
+    return { allMetrics, userIds, composites, clusterRemap, clusterMeans, k, model, dims, labels };
+}
+
+/**
+ * Compute cluster-based peer comparison scores for a user.
+ *
+ * @param {Object} dbPool - Database pool (unused, we use imported pool)
+ * @param {string} conceptId - 'lms', 'sleep', 'screen_time', 'srl'
+ * @param {string} userId - Target user ID
+ * @param {number} days - Look-back window (default 7)
+ * @returns {Object} { clusterLabel, percentileScore, dialMin, dialCenter, dialMax, domains: [...] }
+ */
+async function computeClusterScores(dbPool, conceptId, userId, days = 7) {
+    const allMetrics = await getAllUserMetrics(conceptId, days);
+
+    if (!allMetrics[userId]) {
+        logger.debug(`clusterPeerService: no ${conceptId} data for user ${userId}`);
+        return null;
+    }
+
+    // SRL is special — variable dimensions
+    if (conceptId === 'srl') {
+        const userCount = Object.keys(allMetrics).length;
+        if (userCount < MIN_CLUSTER_USERS) {
+            logger.info(`clusterPeerService: cold start for SRL (${userCount}/${MIN_CLUSTER_USERS} users)`);
+            return { coldStart: true };
+        }
+        return computeSRLClusterScores(allMetrics, userId);
+    }
+
+    if (!DIMENSION_DEFS[conceptId]) return null;
+
+    const fit = await _runConceptClustering(conceptId, days);
+    if (!fit) return { coldStart: true };
+
+    const { userIds, composites, clusterRemap, clusterMeans, k, model, dims, labels } = fit;
+
     // Find the user's cluster and percentile position
     const userIdx = userIds.indexOf(userId);
+    if (userIdx === -1) return null;
     const userOrigCluster = model.assignments[userIdx];
     const userOrderedCluster = clusterRemap[userOrigCluster];
     const userComposite = composites[userIdx].composite;
@@ -268,7 +296,6 @@ async function computeClusterScores(dbPool, conceptId, userId, days = 7) {
     const p95 = percentile(clusterComposites, 95);
     const userPercentile = mapToRange(userComposite, p5, p95);
 
-    const labels = generateClusterLabels(k, conceptId);
     const clusterLabel = labels[Math.min(userOrderedCluster, labels.length - 1)];
 
     // Store cluster definitions and assignment atomically
@@ -277,7 +304,7 @@ async function computeClusterScores(dbPool, conceptId, userId, days = 7) {
         await storeUserAssignment(userId, conceptId, userOrderedCluster, clusterLabel, userPercentile, client);
     });
 
-    // Also compute per-domain results for the breakdown
+    // Per-domain results for the breakdown
     const { domainScores } = computeCompositeScore(allMetrics[userId], allMetrics, dims);
     const domainResults = domainScores.map(ds => {
         const category = ds.score >= SCORE_THRESHOLDS.VERY_GOOD ? 'very_good' : ds.score >= SCORE_THRESHOLDS.GOOD ? 'good' : 'requires_improvement';
@@ -438,12 +465,58 @@ async function computeSRLClusterScores(allMetrics, userId) {
     };
 }
 
+/**
+ * Batch-score ALL users for a concept in a single PGMoE run.
+ * Use after bulk data writes (e.g. CSV import) so every user is clustered
+ * against the same complete, stable pool.
+ *
+ * @param {string} conceptId - 'lms', 'sleep', or 'screen_time' (not 'srl')
+ * @param {number} days - Look-back window (default 7)
+ * @returns {Promise<{coldStart?: boolean, usersScored: number, conceptId?: string}>}
+ */
+async function batchComputeClusterScores(conceptId, days = 7) {
+    const fit = await _runConceptClustering(conceptId, days);
+    if (!fit) {
+        logger.info(`batchComputeClusterScores: cold start for ${conceptId}`);
+        return { coldStart: true, usersScored: 0 };
+    }
+
+    const { userIds, composites, clusterRemap, clusterMeans, k, model, labels } = fit;
+
+    await withTransaction(pool, async (client) => {
+        await storeClusterResults(conceptId, composites, clusterRemap, clusterMeans, k, model, client);
+
+        for (let i = 0; i < userIds.length; i++) {
+            const uid            = userIds[i];
+            const origCluster    = model.assignments[i];
+            const orderedCluster = clusterRemap[origCluster];
+            const userComposite  = composites[i].composite;
+
+            const clusterComposites = composites
+                .filter(u => u.cluster === origCluster)
+                .map(u => u.composite)
+                .sort((a, b) => a - b);
+
+            const p5  = percentile(clusterComposites, 5);
+            const p95 = percentile(clusterComposites, 95);
+            const userPercentile = mapToRange(userComposite, p5, p95);
+            const clusterLabel   = labels[Math.min(orderedCluster, labels.length - 1)];
+
+            await storeUserAssignment(uid, conceptId, orderedCluster, clusterLabel, userPercentile, client);
+        }
+    });
+
+    logger.info(`batchComputeClusterScores: ${conceptId} — ${userIds.length} users scored in one run`);
+    return { usersScored: userIds.length, conceptId };
+}
+
 // =============================================================================
 // EXPORTS
 // =============================================================================
 
 export {
     computeClusterScores,
+    batchComputeClusterScores,
     DIMENSION_DEFS,
     // Re-exports from sub-modules for backwards compatibility
     fitPGMoE,

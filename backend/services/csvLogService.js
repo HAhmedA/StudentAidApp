@@ -5,7 +5,7 @@
 import pool from '../config/database.js'
 import logger from '../utils/logger.js'
 import { withTransaction } from '../utils/withTransaction.js'
-import { computeAllScores } from './scoring/index.js'
+import { batchScoreLMSCohort } from './scoring/scoreComputationService.js'
 import { computeJudgments } from './annotators/lmsAnnotationService.js'
 
 // =============================================================================
@@ -294,6 +294,9 @@ async function processUpload(uploadId) {
         let imported = 0
         let skipped  = 0
 
+        // ── Phase 1: write all sessions (per-student error isolation) ──────────
+        const importedMappings = []
+
         for (const mapping of mappings) {
             const dailyRows = aggregateCsvToDaily(mapping.csv_name, rows)
             if (dailyRows.length === 0) {
@@ -307,12 +310,7 @@ async function processUpload(uploadId) {
                     await upsertSessionRows(client, mapping.user_id, dailyRows)
                 })
 
-                computeAllScores(mapping.user_id).catch(err =>
-                    logger.error(`CSV import: computeAllScores error for ${mapping.user_id}: ${err.message}`)
-                )
-                computeJudgments(pool, mapping.user_id).catch(err =>
-                    logger.error(`CSV import: computeJudgments error for ${mapping.user_id}: ${err.message}`)
-                )
+                importedMappings.push({ ...mapping, dailyRows })
 
                 const totalEvents = dailyRows.reduce((s, r) => s + r.total_events, 0)
                 imported++
@@ -327,6 +325,27 @@ async function processUpload(uploadId) {
                 logger.error(`CSV import: failed for ${mapping.csv_name} (${mapping.email}): ${studentErr.message}`)
                 skipped++
                 details.push({ csvName: mapping.csv_name, email: mapping.email, daysUpdated: 0, totalEvents: 0 })
+            }
+        }
+
+        // ── Phase 2: single batch rescore after all writes complete ───────────
+        if (importedMappings.length > 0) {
+            // Compute the widest window needed to cover all imported sessions
+            const allDates  = importedMappings.flatMap(m => m.dailyRows.map(r => new Date(r.session_date).getTime()))
+            const maxMs     = Math.max(...allDates)
+            const daysSince = Math.ceil((Date.now() - maxMs) / 86400000)
+            const scoringDays = Math.max(7, daysSince + 7)
+
+            // ONE PGMoE run — all students scored against the same complete pool
+            batchScoreLMSCohort(scoringDays).catch(err =>
+                logger.error(`CSV import: batchScoreLMSCohort error: ${err.message}`)
+            )
+
+            // Per-user judgments (reads lms_sessions directly, doesn't need scoring to finish)
+            for (const m of importedMappings) {
+                computeJudgments(pool, m.user_id).catch(err =>
+                    logger.error(`CSV import: computeJudgments error for ${m.user_id}: ${err.message}`)
+                )
             }
         }
 

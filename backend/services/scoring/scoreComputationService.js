@@ -6,6 +6,7 @@ import pool from '../../config/database.js';
 import logger from '../../utils/logger.js';
 import { computeAndStoreRawScore, getAllScoresForChatbot } from './conceptScoreService.js';
 import { CONCEPT_IDS } from '../../config/concepts.js';
+import { batchComputeClusterScores } from './clusterPeerService.js';
 
 // Import raw score adapters from each annotation service
 import { getRawScoresForScoring as getSleepRawScores } from '../annotators/sleepAnnotationService.js';
@@ -95,9 +96,24 @@ async function computeAllScores(userId) {
 }
 
 /**
+ * Batch-score all users for the LMS concept in a single PGMoE run.
+ * Call after a bulk CSV import so every imported student is scored against
+ * the same complete, stable pool.
+ *
+ * @param {number} lmsDays - Look-back window (default 7)
+ * @returns {Promise<{coldStart?: boolean, usersScored: number}>}
+ */
+async function batchScoreLMSCohort(lmsDays = 7) {
+    logger.info(`batchScoreLMSCohort: scoring all users, window=${lmsDays} days`);
+    const result = await batchComputeClusterScores('lms', lmsDays);
+    logger.info(`batchScoreLMSCohort complete: ${result?.usersScored ?? 0} users scored`);
+    return result;
+}
+
+/**
  * Get formatted scores for chatbot prompt
  * This replaces the individual getJudgmentsForChatbot calls
- * 
+ *
  * @param {string} userId - User ID
  * @returns {Promise<string>} - Formatted markdown
  */
@@ -112,5 +128,6 @@ async function getScoresForChatbot(userId) {
 export {
     computeConceptScore,
     computeAllScores,
+    batchScoreLMSCohort,
     getScoresForChatbot
 };

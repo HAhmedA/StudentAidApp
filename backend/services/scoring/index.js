@@ -22,6 +22,7 @@ export {
 export {
     computeConceptScore,
     computeAllScores,
+    batchScoreLMSCohort,
     getScoresForChatbot
 } from './scoreComputationService.js';
 
