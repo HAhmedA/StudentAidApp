@@ -11,6 +11,7 @@ import scoresRoutes from './scores.js'
 import sleepRoutes from './sleep.js'
 import screenTimeRoutes from './screen-time.js'
 import lmsRoutes from './lms.js'
+import csvLogRoutes from './csvLog.js'
 
 import { logout, getMe } from '../controllers/authController.js'
 
@@ -35,6 +36,7 @@ router.use('/scores', scoresRoutes)
 router.use('/sleep', sleepRoutes)
 router.use('/screen-time', screenTimeRoutes)
 router.use('/lms', lmsRoutes)
+router.use('/lms', csvLogRoutes)
 
 export default router
 
