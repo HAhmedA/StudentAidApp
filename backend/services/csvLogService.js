@@ -271,64 +271,79 @@ async function upsertSessionRows(client, userId, dailyRows) {
 }
 
 async function processUpload(uploadId) {
-    const { rows: uploadRows } = await pool.query(
-        `SELECT id, csv_content FROM public.csv_log_uploads WHERE id = $1`,
-        [uploadId]
-    )
-    if (uploadRows.length === 0) throw new Error(`Upload ${uploadId} not found`)
-    const csvContent = uploadRows[0].csv_content
+    try {
+        const { rows: uploadRows } = await pool.query(
+            `SELECT id, csv_content FROM public.csv_log_uploads WHERE id = $1`,
+            [uploadId]
+        )
+        if (uploadRows.length === 0) throw new Error(`Upload ${uploadId} not found`)
+        const csvContent = uploadRows[0].csv_content
 
-    const { rows: mappings } = await pool.query(
-        `SELECT cpa.csv_name, cpa.user_id, u.email
-         FROM public.csv_participant_aliases cpa
-         JOIN public.users u ON u.id = cpa.user_id`
-    )
-    if (mappings.length === 0) {
-        return { imported: 0, skipped: 0, details: [] }
-    }
-
-    const rows = parseCsv(csvContent)
-
-    const details = []
-    let imported = 0
-    let skipped  = 0
-
-    for (const mapping of mappings) {
-        const dailyRows = aggregateCsvToDaily(mapping.csv_name, rows)
-        if (dailyRows.length === 0) {
-            skipped++
-            details.push({ csvName: mapping.csv_name, email: mapping.email, daysUpdated: 0, totalEvents: 0 })
-            continue
+        const { rows: mappings } = await pool.query(
+            `SELECT cpa.csv_name, cpa.user_id, u.email
+             FROM public.csv_participant_aliases cpa
+             JOIN public.users u ON u.id = cpa.user_id`
+        )
+        if (mappings.length === 0) {
+            return { imported: 0, skipped: 0, details: [] }
         }
 
-        await withTransaction(pool, async (client) => {
-            await upsertSessionRows(client, mapping.user_id, dailyRows)
-        })
+        const rows = parseCsv(csvContent)
 
-        computeAllScores(mapping.user_id).catch(err =>
-            logger.error(`CSV import: computeAllScores error for ${mapping.user_id}: ${err.message}`)
-        )
-        computeJudgments(pool, mapping.user_id).catch(err =>
-            logger.error(`CSV import: computeJudgments error for ${mapping.user_id}: ${err.message}`)
+        const details = []
+        let imported = 0
+        let skipped  = 0
+
+        for (const mapping of mappings) {
+            const dailyRows = aggregateCsvToDaily(mapping.csv_name, rows)
+            if (dailyRows.length === 0) {
+                skipped++
+                details.push({ csvName: mapping.csv_name, email: mapping.email, daysUpdated: 0, totalEvents: 0 })
+                continue
+            }
+
+            try {
+                await withTransaction(pool, async (client) => {
+                    await upsertSessionRows(client, mapping.user_id, dailyRows)
+                })
+
+                computeAllScores(mapping.user_id).catch(err =>
+                    logger.error(`CSV import: computeAllScores error for ${mapping.user_id}: ${err.message}`)
+                )
+                computeJudgments(pool, mapping.user_id).catch(err =>
+                    logger.error(`CSV import: computeJudgments error for ${mapping.user_id}: ${err.message}`)
+                )
+
+                const totalEvents = dailyRows.reduce((s, r) => s + r.total_events, 0)
+                imported++
+                details.push({
+                    csvName:     mapping.csv_name,
+                    email:       mapping.email,
+                    daysUpdated: dailyRows.length,
+                    totalEvents,
+                })
+                logger.info(`CSV import: ${mapping.csv_name} → ${mapping.email}: ${dailyRows.length} days, ${totalEvents} events`)
+            } catch (studentErr) {
+                logger.error(`CSV import: failed for ${mapping.csv_name} (${mapping.email}): ${studentErr.message}`)
+                skipped++
+                details.push({ csvName: mapping.csv_name, email: mapping.email, daysUpdated: 0, totalEvents: 0 })
+            }
+        }
+
+        await pool.query(
+            `UPDATE public.csv_log_uploads SET status = 'imported', imported_at = NOW() WHERE id = $1`,
+            [uploadId]
         )
 
-        const totalEvents = dailyRows.reduce((s, r) => s + r.total_events, 0)
-        imported++
-        details.push({
-            csvName:     mapping.csv_name,
-            email:       mapping.email,
-            daysUpdated: dailyRows.length,
-            totalEvents,
-        })
-        logger.info(`CSV import: ${mapping.csv_name} → ${mapping.email}: ${dailyRows.length} days, ${totalEvents} events`)
+        return { imported, skipped, details }
+    } catch (err) {
+        // Mark upload as failed so admin knows to retry
+        await pool.query(
+            `UPDATE public.csv_log_uploads SET status = 'failed' WHERE id = $1`,
+            [uploadId]
+        ).catch(updateErr => logger.error(`CSV import: could not write failed status: ${updateErr.message}`))
+        throw err
     }
-
-    await pool.query(
-        `UPDATE public.csv_log_uploads SET status = 'imported', imported_at = NOW() WHERE id = $1`,
-        [uploadId]
-    )
-
-    return { imported, skipped, details }
 }
 
 export { processUpload }
