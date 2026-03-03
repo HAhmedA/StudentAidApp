@@ -4,6 +4,7 @@ import Surveys from '../components/Surveys'
 import SleepSlider from '../components/SleepSlider'
 import AdminStudentViewer from '../components/AdminStudentViewer'
 import AdminClusterDiagnosticsPanel from '../components/AdminClusterDiagnosticsPanel'
+import AdminCsvLogPanel from '../components/AdminCsvLogPanel'
 import ScoreBoard from '../components/ScoreBoard'
 import { useReduxSelector, useReduxDispatch } from '../redux'
 import { load } from '../redux/surveys'
@@ -150,6 +151,9 @@ const Home = () => {
 
                     {/* Cluster diagnostics panel — always visible to admin */}
                     <AdminClusterDiagnosticsPanel />
+
+                    {/* CSV activity log upload panel */}
+                    <AdminCsvLogPanel />
 
                     {/* Student dashboard – shown when a student is selected */}
                     {selectedStudentId && selectedStudentName && (
