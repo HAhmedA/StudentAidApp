@@ -8,6 +8,7 @@ export const apiLimiter = rateLimit({
     message: { error: 'too_many_requests', message: 'Too many requests, please try again later.' },
     standardHeaders: true, // Return rate limit info in headers
     legacyHeaders: false, // Disable deprecated headers
+    skip: (req) => req.session?.user?.role === 'admin', // admins bypass the general limiter
 })
 
 // Stricter limiter for auth endpoints (login, register)
