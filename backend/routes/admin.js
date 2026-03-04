@@ -8,6 +8,7 @@ import { getAnnotations } from '../services/annotators/srlAnnotationService.js'
 import { asyncRoute, Errors } from '../utils/errors.js'
 import { CONCEPT_NAMES, CONCEPT_IDS } from '../config/concepts.js'
 import { getConceptPoolSizes, getUserConceptDataSet } from '../services/scoring/scoreQueryService.js'
+import { getLlmConfig } from '../services/llmConfigService.js'
 
 const router = Router()
 
@@ -298,6 +299,114 @@ router.delete('/clear-student-data', asyncRoute(async (req, res) => {
     `)
     logger.warn(`Admin ${req.session.user?.email} cleared all student data`)
     res.json({ cleared: true })
+}))
+
+// ── LLM Config endpoints ──────────────────────────────────────────
+
+const MASK = '●●●●●●'
+
+function validateLlmConfigBody(body) {
+    const { provider, baseUrl, mainModel, judgeModel, maxTokens, temperature, timeoutMs } = body
+    if (!provider || typeof provider !== 'string') return 'provider is required'
+    if (!baseUrl || typeof baseUrl !== 'string') return 'baseUrl is required'
+    if (!mainModel || typeof mainModel !== 'string') return 'mainModel is required'
+    if (!judgeModel || typeof judgeModel !== 'string') return 'judgeModel is required'
+    if (!Number.isInteger(maxTokens) || maxTokens < 1 || maxTokens > 32000) return 'maxTokens must be integer 1–32000'
+    if (typeof temperature !== 'number' || temperature < 0 || temperature > 2) return 'temperature must be 0.0–2.0'
+    if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 120000) return 'timeoutMs must be integer 1000–120000'
+    return null
+}
+
+router.get('/llm-config', asyncRoute(async (req, res) => {
+    const cfg = await getLlmConfig()
+    const { rows } = await pool.query(
+        'SELECT updated_at FROM public.llm_config ORDER BY updated_at DESC LIMIT 1'
+    )
+    res.json({
+        provider:    cfg.provider,
+        baseUrl:     cfg.baseUrl,
+        mainModel:   cfg.mainModel,
+        judgeModel:  cfg.judgeModel,
+        maxTokens:   cfg.maxTokens,
+        temperature: cfg.temperature,
+        timeoutMs:   cfg.timeoutMs,
+        apiKey:      cfg.apiKey ? MASK : '',
+        updatedAt:   rows[0]?.updated_at ?? null
+    })
+}))
+
+router.put('/llm-config', asyncRoute(async (req, res) => {
+    const { provider, baseUrl, mainModel, judgeModel, maxTokens, temperature, timeoutMs, apiKey } = req.body
+    const userId = req.session.user?.id
+
+    const validationError = validateLlmConfigBody(req.body)
+    if (validationError) throw Errors.VALIDATION(validationError)
+
+    let resolvedApiKey = apiKey
+    if (apiKey === MASK) {
+        const current = await getLlmConfig()
+        resolvedApiKey = current.apiKey
+    }
+
+    const { rows } = await pool.query(
+        `INSERT INTO public.llm_config
+            (provider, base_url, main_model, judge_model, max_tokens, temperature, timeout_ms, api_key, updated_by, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+         RETURNING provider, base_url, main_model, judge_model, max_tokens, temperature, timeout_ms, api_key, updated_at`,
+        [provider, baseUrl, mainModel, judgeModel, maxTokens, temperature, timeoutMs, resolvedApiKey, userId]
+    )
+
+    const row = rows[0]
+    logger.info(`LLM config updated by admin ${userId}: provider=${provider}`)
+    res.json({
+        provider:    row.provider,
+        baseUrl:     row.base_url,
+        mainModel:   row.main_model,
+        judgeModel:  row.judge_model,
+        maxTokens:   row.max_tokens,
+        temperature: parseFloat(row.temperature),
+        timeoutMs:   row.timeout_ms,
+        apiKey:      row.api_key ? MASK : '',
+        updatedAt:   row.updated_at
+    })
+}))
+
+router.post('/llm-config/test', asyncRoute(async (req, res) => {
+    const { baseUrl, apiKey: submittedKey, provider } = req.body
+
+    if (!baseUrl) throw Errors.VALIDATION('baseUrl is required')
+
+    let apiKey = submittedKey
+    if (submittedKey === MASK) {
+        const current = await getLlmConfig()
+        apiKey = current.apiKey
+    }
+
+    const headers = { 'Content-Type': 'application/json' }
+    if (apiKey && provider !== 'lmstudio') {
+        headers['Authorization'] = `Bearer ${apiKey}`
+    }
+
+    const start = Date.now()
+    try {
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 10000)
+
+        const response = await fetch(`${baseUrl}/v1/models`, {
+            method: 'GET', headers, signal: controller.signal
+        })
+        clearTimeout(timeoutId)
+
+        if (!response.ok) {
+            return res.json({ success: false, models: [], latencyMs: Date.now() - start, error: `HTTP ${response.status}` })
+        }
+
+        const data = await response.json()
+        const models = data.data?.map(m => m.id) || []
+        res.json({ success: true, models, latencyMs: Date.now() - start })
+    } catch (err) {
+        res.json({ success: false, models: [], latencyMs: Date.now() - start, error: err.message })
+    }
 }))
 
 // Legacy routes for backwards compatibility
