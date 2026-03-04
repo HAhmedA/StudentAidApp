@@ -3,18 +3,7 @@
 // Future support for OpenAI and Google APIs
 
 import logger from '../utils/logger.js'
-
-// Configuration from environment (with defaults for LMStudio)
-const config = {
-    provider: process.env.LLM_PROVIDER || 'lmstudio',
-    baseUrl: process.env.LLM_BASE_URL || 'http://host.docker.internal:1234',
-    mainModel: process.env.LLM_MAIN_MODEL || 'hermes-3-llama-3.2-3b',
-    judgeModel: process.env.LLM_JUDGE_MODEL || 'qwen2.5-3b-instruct',
-    maxTokens: parseInt(process.env.LLM_MAX_TOKENS || '2000', 10),
-    temperature: parseFloat(process.env.LLM_TEMPERATURE || '0.7'),
-    timeoutMs: parseInt(process.env.LLM_TIMEOUT_MS || '30000', 10),
-    apiKey: process.env.LLM_API_KEY || ''
-}
+import { getLlmConfig } from './llmConfigService.js'
 
 /**
  * Send a chat completion request to the LLM
@@ -27,6 +16,7 @@ const config = {
  * @returns {Promise<string>} - The assistant's response content
  */
 async function chatCompletion(messages, options = {}) {
+    const config = await getLlmConfig()
     const model = options.model || config.mainModel
     const maxTokens = options.maxTokens || config.maxTokens
     const temperature = options.temperature ?? config.temperature
@@ -129,6 +119,7 @@ async function chatCompletionWithRetry(messages, options = {}) {
  * @returns {Promise<{available: boolean, models: string[]}>}
  */
 async function checkAvailability() {
+    const config = await getLlmConfig()
     try {
         const controller = new AbortController()
         const timeoutId = setTimeout(() => controller.abort(), 5000) // 5 second timeout
@@ -175,5 +166,5 @@ export {
     chatCompletionWithRetry,
     checkAvailability,
     estimateTokens,
-    config as llmConfig
+    getLlmConfig
 }
