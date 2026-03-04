@@ -309,6 +309,7 @@ function validateLlmConfigBody(body) {
     const { provider, baseUrl, mainModel, judgeModel, maxTokens, temperature, timeoutMs } = body
     if (!provider || typeof provider !== 'string') return 'provider is required'
     if (!baseUrl || typeof baseUrl !== 'string') return 'baseUrl is required'
+    try { new URL(baseUrl) } catch { return 'baseUrl must be a valid URL' }
     if (!mainModel || typeof mainModel !== 'string') return 'mainModel is required'
     if (!judgeModel || typeof judgeModel !== 'string') return 'judgeModel is required'
     if (!Number.isInteger(maxTokens) || maxTokens < 1 || maxTokens > 32000) return 'maxTokens must be integer 1–32000'
@@ -352,7 +353,7 @@ router.put('/llm-config', asyncRoute(async (req, res) => {
         `INSERT INTO public.llm_config
             (provider, base_url, main_model, judge_model, max_tokens, temperature, timeout_ms, api_key, updated_by, updated_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
-         RETURNING provider, base_url, main_model, judge_model, max_tokens, temperature, timeout_ms, api_key, updated_at`,
+         RETURNING provider, base_url, main_model, judge_model, max_tokens, temperature, timeout_ms, updated_at`,
         [provider, baseUrl, mainModel, judgeModel, maxTokens, temperature, timeoutMs, resolvedApiKey, userId]
     )
 
@@ -366,7 +367,7 @@ router.put('/llm-config', asyncRoute(async (req, res) => {
         maxTokens:   row.max_tokens,
         temperature: parseFloat(row.temperature),
         timeoutMs:   row.timeout_ms,
-        apiKey:      row.api_key ? MASK : '',
+        apiKey:      resolvedApiKey ? MASK : '',
         updatedAt:   row.updated_at
     })
 }))

@@ -64,6 +64,20 @@ describe('GET /admin/llm-config', () => {
         const res = await request(makeApp('student')).get('/admin/llm-config')
         expect(res.status).toBe(403)
     })
+
+    it('returns empty string for apiKey when no key configured', async () => {
+        mockGetLlmConfig.mockResolvedValueOnce({
+            provider: 'lmstudio', baseUrl: 'http://localhost:1234',
+            mainModel: 'hermes-3', judgeModel: 'qwen2.5',
+            maxTokens: 2000, temperature: 0.7, timeoutMs: 30000,
+            apiKey: ''
+        })
+        mockQuery.mockResolvedValueOnce({ rows: [] })
+
+        const res = await request(makeApp()).get('/admin/llm-config')
+        expect(res.status).toBe(200)
+        expect(res.body.apiKey).toBe('')
+    })
 })
 
 describe('PUT /admin/llm-config', () => {
