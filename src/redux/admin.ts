@@ -73,7 +73,7 @@ export const fetchLlmConfig = createAsyncThunk(
         try {
             return await apiFetchLlmConfig()
         } catch (err: any) {
-            const msg = err?.response?.data?.message ?? err?.message ?? 'Failed to load LLM config.'
+            const msg = err?.message ?? 'Failed to load LLM config.'
             return rejectWithValue(msg)
         }
     }
@@ -85,7 +85,7 @@ export const updateLlmConfig = createAsyncThunk(
         try {
             return await apiSaveLlmConfig(cfg)
         } catch (err: any) {
-            const msg = err?.response?.data?.message ?? err?.message ?? 'Save failed.'
+            const msg = err?.message ?? 'Save failed.'
             return rejectWithValue(msg)
         }
     }
@@ -97,7 +97,7 @@ export const testLlmConfig = createAsyncThunk(
         try {
             return await apiTestLlmConfig(cfg)
         } catch (err: any) {
-            const msg = err?.response?.data?.message ?? err?.message ?? 'Connection test failed.'
+            const msg = err?.message ?? 'Connection test failed.'
             return rejectWithValue(msg)
         }
     }

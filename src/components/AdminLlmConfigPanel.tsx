@@ -8,9 +8,32 @@ import type { LlmConfig } from '../api/llmConfig'
 
 const PROVIDERS = ['lmstudio', 'openai', 'groq', 'other']
 
+const panelStyle: React.CSSProperties = {
+    background: '#1a1a2e', border: '1px solid #333', borderRadius: 8,
+    marginBottom: 16, overflow: 'hidden'
+}
+const headerStyle: React.CSSProperties = {
+    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+    padding: '12px 16px', cursor: 'pointer', userSelect: 'none',
+    background: '#16213e', color: '#e0e0e0'
+}
+const bodyStyle: React.CSSProperties = {
+    padding: '16px', display: 'grid', gap: 12, color: '#ccc'
+}
+const inputStyle: React.CSSProperties = {
+    background: '#0f0f23', border: '1px solid #444', borderRadius: 4,
+    color: '#e0e0e0', padding: '6px 10px', width: '100%', boxSizing: 'border-box'
+}
+const labelStyle: React.CSSProperties = { fontSize: 12, color: '#888', marginBottom: 4, display: 'block' }
+const rowStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }
+const btnStyle = (color: string): React.CSSProperties => ({
+    background: color, color: '#fff', border: 'none', borderRadius: 4,
+    padding: '8px 16px', cursor: 'pointer', fontWeight: 600
+})
+
 const AdminLlmConfigPanel: React.FC = () => {
     const dispatch = useDispatch<AppDispatch>()
-    const { llmConfig, llmConfigStatus, llmConfigError, llmTestResult, llmTestStatus, llmTestError } = useSelector(
+    const { llmConfig, llmConfigStatus, llmTestResult, llmTestStatus, llmTestError } = useSelector(
         (state: RootState) => state.admin
     )
 
@@ -26,7 +49,7 @@ const AdminLlmConfigPanel: React.FC = () => {
         if (llmConfig) setForm(llmConfig)
     }, [llmConfig])
 
-    const set = (field: keyof LlmConfig, value: unknown) =>
+    const set = <K extends keyof LlmConfig>(field: K, value: Partial<LlmConfig>[K]) =>
         setForm(prev => ({ ...prev, [field]: value }))
 
     const handleTest = () => {
@@ -50,41 +73,19 @@ const AdminLlmConfigPanel: React.FC = () => {
         }
     }
 
-    const panelStyle: React.CSSProperties = {
-        background: '#1a1a2e', border: '1px solid #333', borderRadius: 8,
-        marginBottom: 16, overflow: 'hidden'
-    }
-    const headerStyle: React.CSSProperties = {
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        padding: '12px 16px', cursor: 'pointer', userSelect: 'none',
-        background: '#16213e', color: '#e0e0e0'
-    }
-    const bodyStyle: React.CSSProperties = {
-        padding: '16px', display: 'grid', gap: 12, color: '#ccc'
-    }
-    const inputStyle: React.CSSProperties = {
-        background: '#0f0f23', border: '1px solid #444', borderRadius: 4,
-        color: '#e0e0e0', padding: '6px 10px', width: '100%', boxSizing: 'border-box'
-    }
-    const labelStyle: React.CSSProperties = { fontSize: 12, color: '#888', marginBottom: 4, display: 'block' }
-    const rowStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }
-    const btnStyle = (color: string): React.CSSProperties => ({
-        background: color, color: '#fff', border: 'none', borderRadius: 4,
-        padding: '8px 16px', cursor: 'pointer', fontWeight: 600
-    })
-
     return (
         <div style={panelStyle}>
-            <div style={headerStyle} onClick={() => setOpen(o => !o)}
-                tabIndex={0} role="button"
-                onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && setOpen(o => !o)}>
+            <button
+                style={{ ...headerStyle, background: 'none', border: 'none', width: '100%', textAlign: 'left', font: 'inherit' }}
+                onClick={() => setOpen(o => !o)}
+                aria-expanded={open}>
                 <span>{open ? '▼' : '▶'} LLM API Configuration</span>
                 {llmConfig?.updatedAt && (
                     <span style={{ fontSize: 11, color: '#888' }}>
                         last updated: {new Date(llmConfig.updatedAt).toLocaleString()}
                     </span>
                 )}
-            </div>
+            </button>
 
             {open && (
                 <div style={bodyStyle}>
@@ -135,19 +136,34 @@ const AdminLlmConfigPanel: React.FC = () => {
                             <label style={labelStyle}>Max Tokens</label>
                             <input style={inputStyle} type="number"
                                 value={form.maxTokens ?? ''}
-                                onChange={e => { const v = parseInt(e.target.value, 10); if (!isNaN(v)) set('maxTokens', v) }} />
+                                onChange={e => {
+                                    const raw = e.target.value
+                                    if (raw === '') { set('maxTokens', undefined); return }
+                                    const v = parseInt(raw, 10)
+                                    if (!isNaN(v)) set('maxTokens', v)
+                                }} />
                         </div>
                         <div>
                             <label style={labelStyle}>Temperature</label>
                             <input style={inputStyle} type="number" step="0.1" min="0" max="2"
                                 value={form.temperature ?? ''}
-                                onChange={e => { const v = parseFloat(e.target.value); if (!isNaN(v)) set('temperature', v) }} />
+                                onChange={e => {
+                                    const raw = e.target.value
+                                    if (raw === '') { set('temperature', undefined); return }
+                                    const v = parseFloat(raw)
+                                    if (!isNaN(v)) set('temperature', v)
+                                }} />
                         </div>
                         <div>
                             <label style={labelStyle}>Timeout (ms)</label>
                             <input style={inputStyle} type="number"
                                 value={form.timeoutMs ?? ''}
-                                onChange={e => { const v = parseInt(e.target.value, 10); if (!isNaN(v)) set('timeoutMs', v) }} />
+                                onChange={e => {
+                                    const raw = e.target.value
+                                    if (raw === '') { set('timeoutMs', undefined); return }
+                                    const v = parseInt(raw, 10)
+                                    if (!isNaN(v)) set('timeoutMs', v)
+                                }} />
                         </div>
                     </div>
 
