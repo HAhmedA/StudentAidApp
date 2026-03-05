@@ -166,7 +166,11 @@ const ScreenTimeForm = () => {
                                                 name='totalMinutes'
                                                 value={opt.value}
                                                 checked={totalMinutes === opt.value}
-                                                onChange={() => setTotalMinutes(opt.value)}
+                                                onChange={() => {
+                                                    setTotalMinutes(opt.value)
+                                                    if (opt.value > 0 && longestSession === 0) setLongestSession(null)
+                                                    if (opt.value === 0) setLongestSession(0)
+                                                }}
                                             />
                                             <span className='st-option-label'>{opt.label}</span>
                                         </label>
@@ -183,7 +187,9 @@ const ScreenTimeForm = () => {
                                     What was your longest uninterrupted screen session yesterday?
                                 </label>
                                 <div className='st-options'>
-                                    {LONGEST_SESSION_OPTIONS.map(opt => (
+                                    {LONGEST_SESSION_OPTIONS
+                                        .filter(opt => !totalMinutes || opt.value !== 0)
+                                        .map(opt => (
                                         <label className='st-option' key={opt.value}>
                                             <input
                                                 type='radio'
