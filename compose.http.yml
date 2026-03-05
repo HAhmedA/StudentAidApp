@@ -10,6 +10,7 @@ services:
     ports: []
     environment:
       - NODE_ENV=production
+      - COOKIE_SECURE=false
       - DEBUG_LLM=false
       - SIMULATION_MODE=false
       - CORS_ORIGINS=http://${EC2_HOST}
