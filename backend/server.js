@@ -24,6 +24,11 @@ const isProduction = process.env.NODE_ENV === 'production'
 validateEnvironment(isProduction)
 
 // Security headers
+// On plain HTTP deployments (COOKIE_SECURE=false), disable directives that
+// cause browsers to reject HTTP cookies: upgrade-insecure-requests (CSP) and
+// Strict-Transport-Security (HSTS). Both make Chrome treat the site as HTTPS
+// only, which silently drops SameSite=Lax cookies over HTTP.
+const isHttpDeploy = process.env.COOKIE_SECURE === 'false'
 app.use(helmet({
     contentSecurityPolicy: {
         directives: {
@@ -35,8 +40,13 @@ app.use(helmet({
                 process.env.LLM_BASE_URL,
             ].filter(Boolean),
             frameAncestors: ["'none'"],
+            // null disables the directive entirely (helmet v8 API)
+            upgradeInsecureRequests: isHttpDeploy ? null : [],
         }
-    }
+    },
+    // Disable HSTS on plain HTTP — sending it over HTTP has no effect and
+    // some browsers may cache it and later refuse to load the site over HTTP.
+    hsts: !isHttpDeploy,
 }))
 
 // Let Express trust reverse proxy headers; important for cookies behind Docker
@@ -81,7 +91,7 @@ app.use(session({
   cookie: {
     httpOnly: true,
     sameSite: 'lax',
-    secure: isProduction,
+    secure: process.env.COOKIE_SECURE !== undefined ? process.env.COOKIE_SECURE === 'true' : isProduction,
     maxAge: 1000 * 60 * 60 * 24 // 24 hours
   }
 }))
