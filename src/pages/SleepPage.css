@@ -1,0 +1,41 @@
+/* ── Sleep Page ───────────────────────────────────────────── */
+
+.sleep-page {
+    width: 100%;
+    min-height: calc(100vh - 64px);
+    background: #f7f8fa;
+    padding: 32px 24px;
+}
+
+.sleep-page-container {
+    max-width: 720px;
+    margin: 0 auto;
+}
+
+.sleep-page-back-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    background: white;
+    color: #374151;
+    border: 1.5px solid #E5E7EB;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    text-decoration: none;
+    margin-bottom: 20px;
+    transition: background 0.2s, border-color 0.2s;
+}
+
+.sleep-page-back-btn:hover {
+    background: #F9FAFB;
+    border-color: #D1D5DB;
+}
+
+@media (max-width: 480px) {
+    .sleep-page {
+        padding: 16px 12px;
+    }
+}

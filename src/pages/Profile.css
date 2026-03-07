@@ -196,7 +196,152 @@
   transform: none;
 }
 
-/* Responsive design */
+/* ── Disabilities collapsible panel ──────────────────────── */
+
+.profile-disabilities-panel {
+  border: 1.5px solid #E5E7EB;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.profile-disabilities-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  cursor: pointer;
+  font-size: 14px;
+  color: #374151;
+  font-weight: 500;
+  list-style: none;
+  background: #F9FAFB;
+  user-select: none;
+}
+
+.profile-disabilities-summary::-webkit-details-marker {
+  display: none;
+}
+
+.profile-disabilities-chevron {
+  transition: transform 0.2s;
+  font-size: 16px;
+  color: #9CA3AF;
+}
+
+details[open] .profile-disabilities-chevron {
+  transform: rotate(180deg);
+}
+
+.profile-disability-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 16px 8px;
+  border-top: 1px solid #E5E7EB;
+  background: white;
+}
+
+.profile-disability-tab {
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #374151;
+  background: #F3F4F6;
+  border: 1.5px solid transparent;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.profile-disability-tab:hover {
+  background: #E0F7FA;
+  color: #0891B2;
+}
+
+.profile-disability-tab.active {
+  background: #E0F7FA;
+  border-color: #0891B2;
+  color: #0891B2;
+}
+
+.profile-disability-items {
+  padding: 12px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: white;
+  border-top: 1px solid #F3F4F6;
+}
+
+/* Info icon + tooltip (mirrors ScoreGauge pattern) */
+.profile-info-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  margin-left: 4px;
+}
+
+.profile-info-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: #E5E7EB;
+  color: #6B7280;
+  font-size: 9px;
+  font-weight: 700;
+  cursor: help;
+  transition: background 0.15s;
+  font-style: normal;
+}
+
+.profile-info-icon:hover {
+  background: #D1D5DB;
+}
+
+.profile-info-tooltip {
+  display: none;
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 240px;
+  padding: 8px 10px;
+  background: #1F2937;
+  color: #F9FAFB;
+  font-size: 11px;
+  line-height: 1.5;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  z-index: 100;
+  pointer-events: none;
+}
+
+.profile-info-wrapper:hover .profile-info-tooltip {
+  display: block;
+}
+
+.profile-other-text {
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 14px;
+  border: 1.5px solid #D1D5DB;
+  border-radius: 8px;
+  background: white;
+  color: #111827;
+  transition: border-color 0.2s;
+  box-sizing: border-box;
+}
+
+.profile-other-text:focus {
+  outline: none;
+  border-color: #0891B2;
+  box-shadow: 0 0 0 3px rgba(8,145,178,0.1);
+}
+
+/* ── Responsive design ───────────────────────────────────── */
 @media (max-width: 768px) {
   .profile-wrapper {
     padding: 24px 16px;
@@ -221,5 +366,14 @@
 
   .profile-disabilities-container {
     max-height: 500px;
+  }
+}
+
+@media (max-width: 480px) {
+  .profile-disability-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 4px;
   }
 }

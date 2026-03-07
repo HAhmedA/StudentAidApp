@@ -15,11 +15,11 @@ interface ScoreGaugeProps {
     dialMax?: number           // P95 of cluster (default 100)
 }
 
-// Gradient colors for the continuous arc
+// Gradient colors for the continuous arc (yellow-low → green-high)
 const ARC_COLORS = {
-    low: '#86efac',    // Light green
-    mid: '#22c55e',    // Medium green
-    high: '#15803d'    // Dark green
+    low: '#FDE047',    // yellow-300 — needs attention
+    mid: '#86efac',    // green-300
+    high: '#15803d'    // dark green — doing well
 }
 
 /**

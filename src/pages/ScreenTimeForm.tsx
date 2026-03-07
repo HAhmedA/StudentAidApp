@@ -51,11 +51,12 @@ const ScreenTimeForm = () => {
     const [preSleepMinutes, setPreSleepMinutes] = useState<number | null>(null)
 
     const [savedEntry, setSavedEntry] = useState<SavedEntry | null>(null)
+    const [editMode, setEditMode] = useState(false)
     const [loading, setLoading] = useState(true)
     const [submitting, setSubmitting] = useState(false)
     const [submitMsg, setSubmitMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null)
 
-    const isReadonly = savedEntry !== null
+    const isReadonly = savedEntry !== null && !editMode
     const isComplete = totalMinutes !== null && longestSession !== null && preSleepMinutes !== null
     // A longest session longer than the total time is a logical contradiction
     const sessionExceedsTotal = longestSession !== null && totalMinutes !== null && longestSession > totalMinutes
@@ -71,6 +72,15 @@ const ScreenTimeForm = () => {
             .catch(() => setLoading(false))
     }, [])
 
+    const handleEditClick = () => {
+        if (savedEntry) {
+            setTotalMinutes(savedEntry.total_screen_minutes)
+            setLongestSession(savedEntry.longest_continuous_session)
+            setPreSleepMinutes(savedEntry.late_night_screen_minutes)
+        }
+        setEditMode(true)
+    }
+
     const handleSubmit = async () => {
         if (!isComplete) return
         setSubmitting(true)
@@ -79,6 +89,7 @@ const ScreenTimeForm = () => {
         try {
             const entry = await saveScreenTime({ totalMinutes: totalMinutes!, longestSession: longestSession!, preSleepMinutes: preSleepMinutes! })
             setSavedEntry(entry)
+            setEditMode(false)
             setSubmitMsg({ text: 'Screen time logged!', type: 'success' })
         } catch {
             setSubmitMsg({ text: 'Network error', type: 'error' })
@@ -129,9 +140,12 @@ const ScreenTimeForm = () => {
                     </p>
 
                     {/* Read-only summary */}
-                    {isReadonly && savedEntry && (
+                    {savedEntry && !editMode && (
                         <>
-                            <span className='st-readonly-badge'>✓ Logged today</span>
+                            <div className='st-readonly-header'>
+                                <span className='st-readonly-badge'>✓ Logged today</span>
+                                <button className='st-edit-btn' onClick={handleEditClick}>Edit</button>
+                            </div>
                             <div className='st-readonly-grid'>
                                 <div className='st-readonly-stat'>
                                     <span className='stat-label'>Total Screen Time</span>
@@ -149,8 +163,8 @@ const ScreenTimeForm = () => {
                         </>
                     )}
 
-                    {/* Editable form */}
-                    {!isReadonly && (
+                    {/* Editable form (also shown when editMode=true) */}
+                    {(!savedEntry || editMode) && (
                         <>
                             {/* Q1: Total screen time */}
                             <div className='st-question'>

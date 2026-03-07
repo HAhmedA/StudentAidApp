@@ -51,6 +51,24 @@ const minsToHHmm = (trackMins: number): string => {
     return `${realHour.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`
 }
 
+/** Convert ISO timestamp to 12h display string in UTC (avoids local timezone offset) */
+const isoToDisplayTime = (iso: string): string => {
+    const d = new Date(iso)
+    const h = d.getUTCHours()
+    const m = d.getUTCMinutes()
+    const suffix = h >= 12 ? 'PM' : 'AM'
+    const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h
+    return `${h12}:${m.toString().padStart(2, '0')} ${suffix}`
+}
+
+/** Convert ISO timestamp to track-minutes (track starts at 12 PM noon) */
+const hhmmToTrackMins = (iso: string): number => {
+    const d = new Date(iso)
+    const h = d.getUTCHours()
+    const m = d.getUTCMinutes()
+    return ((h - 12 + 24) % 24) * 60 + m
+}
+
 /** Duration label from total minutes */
 const durationLabel = (totalMins: number): string => {
     const h = Math.floor(totalMins / 60)
@@ -89,6 +107,7 @@ const SleepSlider = ({ onSaved }: SleepSliderProps) => {
         // default: 10:30 PM → 7:00 AM
     ])
     const [savedEntry, setSavedEntry] = useState<SavedSleepEntry | null>(null)
+    const [editMode, setEditMode] = useState(false)
     const [loading, setLoading] = useState(true)
     const [submitting, setSubmitting] = useState(false)
     const [submitMsg, setSubmitMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null)
@@ -102,13 +121,21 @@ const SleepSlider = ({ onSaved }: SleepSliderProps) => {
     const [hoverMin, setHoverMin] = useState<number | null>(null)
     const [drawStart, setDrawStart] = useState<number | null>(null)
 
-    const isReadonly = savedEntry !== null
+    const isReadonly = savedEntry !== null && !editMode
 
     // ── Fetch today's entry on mount ──
     useEffect(() => {
         getTodaySleep()
             .then(entry => {
-                if (entry) setSavedEntry(entry)
+                if (entry) {
+                    setSavedEntry(entry)
+                    // Bug fix: populate slider position from saved data (prevents reset-to-default on refresh)
+                    setIntervals([{
+                        id: nextId++,
+                        start: hhmmToTrackMins(entry.bedtime),
+                        end: hhmmToTrackMins(entry.wake_time)
+                    }])
+                }
                 setLoading(false)
             })
             .catch(() => setLoading(false))
@@ -255,6 +282,7 @@ const SleepSlider = ({ onSaved }: SleepSliderProps) => {
         try {
             const entry = await saveSleep(apiIntervals)
             setSavedEntry(entry)
+            setEditMode(false)
             setSubmitMsg({ text: 'Sleep log saved!', type: 'success' })
             onSaved?.()
         } catch {
@@ -269,13 +297,14 @@ const SleepSlider = ({ onSaved }: SleepSliderProps) => {
     const earliestStart = intervals.length > 0 ? Math.min(...intervals.map(i => i.start)) : 0
     const latestEnd = intervals.length > 0 ? Math.max(...intervals.map(i => i.end)) : 0
 
-    // ── Tick marks positions ──
-    const tickHours = [12, 15, 18, 21, 0, 3, 6, 9, 12] // real hours
-    const tickLabels = tickHours.map((h, idx) => {
-        const pct = (idx / (tickHours.length - 1)) * 100
-        const label = h === 0 ? '12 AM' : h === 12 ? '12 PM' : h > 12 ? `${h - 12} PM` : `${h} AM`
+    // ── Tick marks positions (hourly; major every 3 hours) ──
+    const ticks = Array.from({ length: 25 }, (_, i) => {
+        const h = (12 + i) % 24
+        const pct = (i / 24) * 100
+        const isMajor = i % 3 === 0
         const isMidnight = h === 0
-        return { pct, label, isMidnight }
+        const label = h === 0 ? '12 AM' : h === 12 ? '12 PM' : h > 12 ? `${h - 12} PM` : `${h} AM`
+        return { h, pct, isMajor, isMidnight, label }
     })
 
     // Night zone: from 9 PM (track min 540) to 6 AM (track min 1080)
@@ -306,22 +335,32 @@ const SleepSlider = ({ onSaved }: SleepSliderProps) => {
                         }
                     </p>
                 </div>
-                {isReadonly && (
-                    <span className='sleep-already-logged'>✓ Logged today</span>
+                {savedEntry && !editMode && (
+                    <div className='sleep-logged-actions'>
+                        <span className='sleep-already-logged'>✓ Logged today</span>
+                        <button className='sleep-edit-btn' onClick={() => setEditMode(true)}>Edit</button>
+                    </div>
+                )}
+                {editMode && (
+                    <button className='sleep-edit-cancel-btn' onClick={() => setEditMode(false)}>Cancel</button>
                 )}
             </div>
 
+            {/* Multi-interval hint (Sprint 5) */}
+            <p className='sleep-multi-hint'>You can log multiple sleep periods (e.g., nap + overnight).</p>
+
             {/* Track */}
             <div className='sleep-track-container'>
-                {/* Time labels */}
-                <div className='sleep-time-labels'>
-                    {tickLabels.map((t, i) => (
-                        <span
+                {/* Tick marks — major every 3h with label, minor every 1h */}
+                <div className='sleep-tick-row'>
+                    {ticks.map((t, i) => (
+                        <div
                             key={i}
-                            className={t.isMidnight ? 'sleep-label-midnight' : ''}
+                            className={`sleep-tick ${t.isMajor ? 'sleep-tick-major' : 'sleep-tick-minor'} ${t.isMidnight ? 'sleep-tick-midnight' : ''}`}
+                            style={{ left: `${t.pct}%` }}
                         >
-                            {t.label}
-                        </span>
+                            {t.isMajor && <span className='sleep-tick-label'>{t.label}</span>}
+                        </div>
                     ))}
                 </div>
 
@@ -398,13 +437,13 @@ const SleepSlider = ({ onSaved }: SleepSliderProps) => {
                     <div className='sleep-readonly-stat'>
                         <span className='stat-label'>Bedtime</span>
                         <span className='stat-value'>
-                            {new Date(savedEntry.bedtime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                            {isoToDisplayTime(savedEntry.bedtime)}
                         </span>
                     </div>
                     <div className='sleep-readonly-stat'>
                         <span className='stat-label'>Wake Time</span>
                         <span className='stat-value'>
-                            {new Date(savedEntry.wake_time).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                            {isoToDisplayTime(savedEntry.wake_time)}
                         </span>
                     </div>
                     <div className='sleep-readonly-stat'>
@@ -423,7 +462,7 @@ const SleepSlider = ({ onSaved }: SleepSliderProps) => {
                 <>
                     <div className='sleep-controls'>
                         <button className='sleep-add-btn' onClick={addInterval}>
-                            + Add sleep interval
+                            + Add Another Sleep Period
                         </button>
                         {intervals.length > 0 && (
                             <div className='sleep-summary'>

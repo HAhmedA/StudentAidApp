@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import './OnboardingModal.css'
 import { getProfile, completeOnboarding } from '../api/profile'
 import { ApiError } from '../api/client'
@@ -15,17 +16,17 @@ const STEPS = [
             '😴 Sleep — your rest patterns and nightly quality',
             '📱 Screen Time — your daily digital habits',
         ],
-        footer: 'Your personal AI assistant uses this data to give you tailored, private insights — focusing on your own trends rather than comparing you to others.',
+        footer: 'Your AI assistant uses this data to give you personalised insights.',
     },
     {
         icon: '📋',
         title: 'What to log and how often',
         checklist: [
             {
-                freq: 'Once at the start',
+                freq: 'Daily',
                 icon: '✦',
                 label: 'Learning Strategies Questionnaire',
-                detail: 'Helps us understand how you approach studying. Takes about 5–10 minutes.',
+                detail: 'Reflects how you plan, monitor, and adjust your studying.',
             },
             {
                 freq: 'Daily · ~30 seconds',
@@ -50,6 +51,7 @@ const STEPS = [
             'First step: complete the Learning Strategies Questionnaire. It unlocks your full dashboard and only takes a few minutes.',
             'You can always ask your AI assistant questions about your data, or get help understanding your scores.',
         ],
+        showProfileCta: true,
     },
 ]
 
@@ -140,6 +142,16 @@ const OnboardingModal = () => {
                     {current.footer && (
                         <p className="onboarding-footer-text">{current.footer}</p>
                     )}
+
+                    {(current as typeof STEPS[number] & { showProfileCta?: boolean }).showProfileCta && (
+                        <div className="onboarding-profile-cta">
+                            <span className="onboarding-profile-cta-icon">👤</span>
+                            <div>
+                                <div style={{ fontWeight: 600, fontSize: '14px', color: '#111827', marginBottom: '4px' }}>Set up your profile</div>
+                                <div style={{ fontSize: '13px', color: '#6B7280' }}>Add your degree, learning style and accessibility needs to personalise your experience.</div>
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* Navigation */}
@@ -160,13 +172,22 @@ const OnboardingModal = () => {
                             Next
                         </button>
                     ) : (
-                        <button
-                            className="onboarding-btn-primary"
-                            onClick={markComplete}
-                            disabled={completing}
-                        >
-                            {completing ? 'Saving…' : 'Get Started'}
-                        </button>
+                        <>
+                            <Link
+                                to="/profile"
+                                className="onboarding-btn-profile"
+                                onClick={markComplete}
+                            >
+                                Go to Profile →
+                            </Link>
+                            <button
+                                className="onboarding-btn-primary"
+                                onClick={markComplete}
+                                disabled={completing}
+                            >
+                                {completing ? 'Saving…' : 'Get Started'}
+                            </button>
+                        </>
                     )}
                 </div>
 

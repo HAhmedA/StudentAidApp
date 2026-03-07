@@ -8,6 +8,29 @@
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
 }
 
+/* "Need help?" pill */
+.chatbot-hi-pill {
+    position: absolute;
+    bottom: 70px;
+    right: 0;
+    background: white;
+    border: 1px solid #E5E7EB;
+    border-radius: 20px;
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #374151;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+    cursor: pointer;
+    white-space: nowrap;
+    animation: pillFadeIn 0.4s ease;
+}
+
+@keyframes pillFadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
 /* Floating bubble button */
 .chatbot-bubble {
     width: 60px;
@@ -22,6 +45,29 @@
     color: white;
     box-shadow: 0 4px 20px rgba(8, 145, 178, 0.4);
     transition: all 0.3s ease;
+    position: relative;
+    overflow: visible;
+}
+
+/* Sonar pulse — ::before ring that expands when chat is closed */
+.chatbot-bubble::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: rgba(8, 145, 178, 0.3);
+    animation: sonarPulse 2.5s ease-out infinite;
+    z-index: -1;
+}
+
+.chatbot-container.open .chatbot-bubble::before {
+    animation: none;
+}
+
+@keyframes sonarPulse {
+    0%   { transform: scale(1);   opacity: 0.6; }
+    70%  { transform: scale(1.6); opacity: 0; }
+    100% { transform: scale(1.6); opacity: 0; }
 }
 
 .chatbot-bubble:hover {

@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Surveys from '../components/Surveys'
-import SleepSlider from '../components/SleepSlider'
 import AdminStudentViewer from '../components/AdminStudentViewer'
 import AdminClusterDiagnosticsPanel from '../components/AdminClusterDiagnosticsPanel'
 import AdminCsvLogPanel from '../components/AdminCsvLogPanel'
@@ -253,10 +252,7 @@ const Home = () => {
                             <span className='reminder-icon'>⚠</span>
                             <span className='reminder-text'>You haven't logged today yet:</span>
                             {missingSleepLog && (
-                                <button
-                                    className='reminder-link'
-                                    onClick={() => document.getElementById('sleep-log-section')?.scrollIntoView({ behavior: 'smooth' })}
-                                >Sleep log →</button>
+                                <Link to='/sleep' className='reminder-link'>Sleep log →</Link>
                             )}
                             {missingScreenTime && (
                                 <Link to="/screen-time" className='reminder-link'>Screen time →</Link>
@@ -279,32 +275,54 @@ const Home = () => {
                     loading={scoresLoading}
                 />
 
-                {/* Quick Action Cards */}
-                <div className='quick-actions-row'>
-                    {firstSurvey && (
-                        <Link to={`/run/${firstSurvey.id}`} className='quick-action-card'>
-                            <span className='quick-action-icon'>📝</span>
-                            <div className='quick-action-text'>
-                                <div className='quick-action-title'>Self-Regulated Learning Survey</div>
-                                <div className='quick-action-desc'>Reflect on your study strategies</div>
+                {/* Data Source Progress + Quick Action Cards */}
+                {(() => {
+                    const completedCount = [!missingSleepLog, !missingScreenTime, !missingSRLSurvey].filter(Boolean).length
+                    return (
+                        <>
+                            <div className='data-source-progress'>
+                                You have completed {completedCount} out of 3 today
                             </div>
-                            <span className='quick-action-arrow'>→</span>
-                        </Link>
-                    )}
-                    <Link to="/screen-time" className='quick-action-card'>
-                        <span className='quick-action-icon'>📱</span>
-                        <div className='quick-action-text'>
-                            <div className='quick-action-title'>Daily Screen Time</div>
-                            <div className='quick-action-desc'>Log your screen usage from yesterday</div>
-                        </div>
-                        <span className='quick-action-arrow'>→</span>
-                    </Link>
-                </div>
-
-                {/* Sleep Log */}
-                <div id='sleep-log-section'>
-                    <SleepSlider onSaved={() => setMissingSleepLog(false)} />
-                </div>
+                            <div className='quick-actions-row'>
+                                {firstSurvey && (
+                                    <Link
+                                        to={`/run/${firstSurvey.id}`}
+                                        className={`quick-action-card ${!missingSRLSurvey ? 'quick-action-card--done' : 'quick-action-card--pending'}`}
+                                    >
+                                        <span className='quick-action-icon'>📝</span>
+                                        <div className='quick-action-text'>
+                                            <div className='quick-action-title'>Self-Regulated Learning Survey</div>
+                                            <div className='quick-action-desc'>Reflect on your study strategies</div>
+                                        </div>
+                                        <span className='quick-action-arrow'>{!missingSRLSurvey ? '✓' : '→'}</span>
+                                    </Link>
+                                )}
+                                <Link
+                                    to='/screen-time'
+                                    className={`quick-action-card ${!missingScreenTime ? 'quick-action-card--done' : 'quick-action-card--pending'}`}
+                                >
+                                    <span className='quick-action-icon'>📱</span>
+                                    <div className='quick-action-text'>
+                                        <div className='quick-action-title'>Daily Screen Time</div>
+                                        <div className='quick-action-desc'>Log your screen usage from yesterday</div>
+                                    </div>
+                                    <span className='quick-action-arrow'>{!missingScreenTime ? '✓' : '→'}</span>
+                                </Link>
+                                <Link
+                                    to='/sleep'
+                                    className={`quick-action-card ${!missingSleepLog ? 'quick-action-card--done' : 'quick-action-card--pending'}`}
+                                >
+                                    <span className='quick-action-icon'>🌙</span>
+                                    <div className='quick-action-text'>
+                                        <div className='quick-action-title'>Sleep Log</div>
+                                        <div className='quick-action-desc'>Track when you slept last night</div>
+                                    </div>
+                                    <span className='quick-action-arrow'>{!missingSleepLog ? '✓' : '→'}</span>
+                                </Link>
+                            </div>
+                        </>
+                    )
+                })()}
             </div>
         </div>
     )

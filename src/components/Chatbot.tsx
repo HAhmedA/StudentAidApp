@@ -47,6 +47,9 @@ const Chatbot = ({ isLoggedIn }: ChatbotProps) => {
     // LLM availability status (null = unknown/loading)
     const [llmAvailable, setLlmAvailable] = useState<boolean | null>(null)
 
+    // "Need help?" pill — shown briefly on login
+    const [showHiPill, setShowHiPill] = useState(false)
+
     const messagesEndRef = useRef<HTMLDivElement>(null)
     const messagesContainerRef = useRef<HTMLDivElement>(null)
     const inputRef = useRef<HTMLInputElement>(null)
@@ -58,6 +61,14 @@ const Chatbot = ({ isLoggedIn }: ChatbotProps) => {
     const scrollToBottom = useCallback(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
     }, [])
+
+    // Show "Need help?" pill on login, auto-hide after 10s
+    useEffect(() => {
+        if (!isLoggedIn) return
+        setShowHiPill(true)
+        const t = setTimeout(() => setShowHiPill(false), 10000)
+        return () => clearTimeout(t)
+    }, [isLoggedIn])
 
     // Poll LLM availability every 30 seconds while logged in
     useEffect(() => {
@@ -381,10 +392,15 @@ const Chatbot = ({ isLoggedIn }: ChatbotProps) => {
 
     return (
         <div className={`chatbot-container ${isOpen ? 'open' : ''}`}>
+            {/* "Need help?" pill */}
+            {showHiPill && !isOpen && (
+                <div className="chatbot-hi-pill" onClick={toggleChat}>Need help? 💬</div>
+            )}
+
             {/* Floating bubble button */}
             <button
                 className="chatbot-bubble"
-                onClick={toggleChat}
+                onClick={() => { toggleChat(); setShowHiPill(false) }}
                 aria-label={isOpen ? 'Close chat' : 'Open chat'}
             >
                 {hasUnread && !isOpen && (
@@ -398,8 +414,21 @@ const Chatbot = ({ isLoggedIn }: ChatbotProps) => {
                         <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
                 ) : (
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M21 11.5C21.0034 12.8199 20.6951 14.1219 20.1 15.3C19.3944 16.7118 18.3098 17.8992 16.9674 18.7293C15.6251 19.5594 14.0782 19.9994 12.5 20C11.1801 20.0034 9.87812 19.6951 8.7 19.1L3 21L4.9 15.3C4.30493 14.1219 3.99656 12.8199 4 11.5C4.00061 9.92179 4.44061 8.37488 5.27072 7.03258C6.10083 5.69028 7.28825 4.6056 8.7 3.90003C9.87812 3.30496 11.1801 2.99659 12.5 3.00003H13C15.0843 3.11502 17.053 3.99479 18.5291 5.47089C20.0052 6.94699 20.885 8.91568 21 11V11.5Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                    /* Robot face icon */
+                    <svg width="26" height="26" viewBox="0 0 26 26" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        {/* Antenna */}
+                        <line x1="13" y1="2" x2="13" y2="6" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+                        <circle cx="13" cy="2" r="1.5" fill="white"/>
+                        {/* Head */}
+                        <rect x="4" y="7" width="18" height="14" rx="3" fill="white" fillOpacity="0.9"/>
+                        {/* Eyes */}
+                        <circle cx="9.5" cy="13" r="2" fill="#0891B2"/>
+                        <circle cx="16.5" cy="13" r="2" fill="#0891B2"/>
+                        {/* Mouth */}
+                        <rect x="9" y="17" width="8" height="2" rx="1" fill="#0891B2"/>
+                        {/* Ear nubs */}
+                        <rect x="1" y="11" width="3" height="4" rx="1.5" fill="white" fillOpacity="0.7"/>
+                        <rect x="22" y="11" width="3" height="4" rx="1.5" fill="white" fillOpacity="0.7"/>
                     </svg>
                 )}
             </button>

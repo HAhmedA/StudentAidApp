@@ -161,6 +161,8 @@ const ScoreBoard = ({
                                 className={`score-gauge-wrapper ${expandedConceptId === score.conceptId ? 'expanded' : ''}`}
                                 onClick={() => !score.coldStart && handleGaugeClick(score.conceptId)}
                                 key={score.conceptId}
+                                data-cold-start={score.coldStart ? 'true' : undefined}
+                                style={{ cursor: score.coldStart ? 'default' : 'pointer' }}
                             >
                                 {score.coldStart ? (
                                     <div className='cold-start-placeholder'>

@@ -214,6 +214,31 @@
     line-height: 1.4;
 }
 
+/* ── Read-only header (badge + edit button) ──────────────── */
+
+.st-readonly-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.st-edit-btn {
+    padding: 4px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #0891B2;
+    background: transparent;
+    border: 1.5px solid #0891B2;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+
+.st-edit-btn:hover {
+    background: #E0F7FA;
+}
+
 /* ── Read-only summary ───────────────────────────────────── */
 
 .st-readonly-badge {
@@ -226,7 +251,6 @@
     font-size: 12px;
     font-weight: 600;
     border-radius: 20px;
-    margin-bottom: 20px;
 }
 
 .st-readonly-grid {

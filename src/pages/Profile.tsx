@@ -8,7 +8,8 @@ import {
     fieldsOfStudy,
     majorsByField,
     learningFormatOptions,
-    disabilityCategories
+    disabilityCategoriesDSM5,
+    DISABILITY_LEGACY_MAP
 } from '../models/profile-constants'
 import './Profile.css'
 
@@ -31,6 +32,8 @@ const Profile = () => {
     const [major, setMajor] = useState('')
     const [learningFormats, setLearningFormats] = useState<string[]>([])
     const [disabilities, setDisabilities] = useState<string[]>([])
+    const [selectedCategory, setSelectedCategory] = useState<string>('')
+    const [otherTexts, setOtherTexts] = useState<Record<string, string>>({})
 
     // Success message state
     const [showSystemSuccess, setShowSystemSuccess] = useState(false)
@@ -60,7 +63,10 @@ const Profile = () => {
             setFieldOfStudy(profileState.data.field_of_study || '')
             setMajor(profileState.data.major || '')
             setLearningFormats(profileState.data.learning_formats || [])
-            setDisabilities(profileState.data.disabilities || [])
+            // Apply legacy migration — map old string labels to new DSM-5 IDs
+            const rawDisabilities: string[] = profileState.data.disabilities || []
+            const migrated = rawDisabilities.map(d => DISABILITY_LEGACY_MAP[d] ?? d)
+            setDisabilities(Array.from(new Set(migrated)))
         }
     }, [isAdmin, profileState.data])
 
@@ -301,31 +307,81 @@ const Profile = () => {
                             </div>
                         </div>
 
-                        {/* Disabilities */}
+                        {/* Disabilities — collapsible DSM-5 panel */}
                         <div className='profile-form-group'>
                             <label className='profile-label'>
-                                Disabilities <span style={{ fontWeight: 'normal', color: '#6B7280' }}>(optional)</span>
+                                Disabilities / Learning Differences <span style={{ fontWeight: 'normal', color: '#6B7280' }}>(optional)</span>
                             </label>
-                            <div className='profile-disabilities-container'>
-                                {Object.entries(disabilityCategories).map(([category, items]) => (
-                                    <div key={category} className='profile-disability-category'>
-                                        <h3 className='profile-disability-category-title'>{category}</h3>
-                                        <div className='profile-checkbox-group'>
-                                            {items.map(disability => (
-                                                <label key={disability} className='profile-checkbox-label'>
+                            <details className='profile-disabilities-panel'>
+                                <summary className='profile-disabilities-summary'>
+                                    <span>
+                                        {disabilities.length > 0
+                                            ? `${disabilities.length} selected`
+                                            : 'Click to expand'}
+                                    </span>
+                                    <span className='profile-disabilities-chevron'>▾</span>
+                                </summary>
+
+                                {/* Category tabs */}
+                                <div className='profile-disability-tabs'>
+                                    {disabilityCategoriesDSM5.map(cat => (
+                                        <button
+                                            key={cat.id}
+                                            type='button'
+                                            className={`profile-disability-tab ${selectedCategory === cat.id ? 'active' : ''}`}
+                                            onClick={() => setSelectedCategory(prev => prev === cat.id ? '' : cat.id)}
+                                        >
+                                            {cat.label}
+                                        </button>
+                                    ))}
+                                </div>
+
+                                {/* Items for selected category */}
+                                {selectedCategory && (() => {
+                                    const cat = disabilityCategoriesDSM5.find(c => c.id === selectedCategory)
+                                    if (!cat) return null
+                                    return (
+                                        <div className='profile-disability-items'>
+                                            {cat.items.map(item => (
+                                                <label key={item.id} className='profile-checkbox-label'>
                                                     <input
                                                         type='checkbox'
                                                         className='profile-checkbox'
-                                                        checked={disabilities.includes(disability)}
-                                                        onChange={() => handleDisabilityChange(disability)}
+                                                        checked={disabilities.includes(item.id)}
+                                                        onChange={() => handleDisabilityChange(item.id)}
                                                     />
-                                                    <span>{disability}</span>
+                                                    <span>{item.label}</span>
+                                                    {item.tooltip && (
+                                                        <span className='profile-info-wrapper'>
+                                                            <span className='profile-info-icon'>ℹ</span>
+                                                            <span className='profile-info-tooltip'>{item.tooltip}</span>
+                                                        </span>
+                                                    )}
                                                 </label>
                                             ))}
+                                            {/* Other free-text */}
+                                            <label className='profile-checkbox-label'>
+                                                <input
+                                                    type='checkbox'
+                                                    className='profile-checkbox'
+                                                    checked={disabilities.includes(cat.otherKey)}
+                                                    onChange={() => handleDisabilityChange(cat.otherKey)}
+                                                />
+                                                <span>Other</span>
+                                            </label>
+                                            {disabilities.includes(cat.otherKey) && (
+                                                <input
+                                                    type='text'
+                                                    className='profile-other-text'
+                                                    placeholder='Please describe…'
+                                                    value={otherTexts[cat.otherKey] || ''}
+                                                    onChange={e => setOtherTexts(prev => ({ ...prev, [cat.otherKey]: e.target.value }))}
+                                                />
+                                            )}
                                         </div>
-                                    </div>
-                                ))}
-                            </div>
+                                    )
+                                })()}
+                            </details>
                         </div>
 
                         <div className='profile-form-actions'>

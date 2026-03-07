@@ -214,6 +214,41 @@
     display: block;
 }
 
+/* ── Score gauge wrapper — clickability affordance ────────── */
+
+.score-gauge-wrapper {
+    cursor: pointer;
+    position: relative;
+    border-radius: 12px;
+    transition: box-shadow 0.2s;
+}
+
+.score-gauge-wrapper[data-cold-start] {
+    cursor: default;
+}
+
+.score-gauge-wrapper::after {
+    content: 'Click to expand';
+    position: absolute;
+    bottom: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 10px;
+    color: #9ca3af;
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 0.2s;
+    pointer-events: none;
+}
+
+.score-gauge-wrapper:not([data-cold-start]):hover::after {
+    opacity: 1;
+}
+
+.score-gauge-wrapper:not([data-cold-start]):hover {
+    box-shadow: 0 4px 16px rgba(8, 145, 178, 0.18);
+}
+
 .score-gauges-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));

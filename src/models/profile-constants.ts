@@ -67,13 +67,111 @@ export const majorsByField: Record<string, string[]> = {
 
 export const learningFormatOptions = ['Reading', 'Listening', 'Watching', 'Hands-on Practice', 'Discussion', 'Writing']
 
-export const disabilityCategories: Record<string, string[]> = {
-    'Reading Disabilities': ['Dyslexia', 'Hyperlexia', 'Visual Processing Disorder'],
-    'Writing Disabilities': ['Dysgraphia', 'Written Expression Disorder', 'Motor Coordination Disorder'],
-    'Mathematics Disabilities': ['Dyscalculia', 'Math Reasoning Disorder', 'Number Processing Disorder'],
-    'Attention & Focus Disorders': ['Attention Deficit Disorder (ADD)', 'Attention Deficit Hyperactivity Disorder (ADHD)', 'Executive Function Disorder'],
-    'Language & Communication Disorders': ['Auditory Processing Disorder (APD)', 'Expressive Language Disorder', 'Receptive Language Disorder'],
-    'Memory & Cognitive Processing Disorders': ['Working Memory Deficit', 'Slow Processing Speed', 'Nonverbal Learning Disability (NVLD)'],
-    'Autism Spectrum-Related Learning Differences': ['High-Functioning Autism', 'Asperger\'s Syndrome', 'Social Communication Disorder'],
-    'Generalized Learning Disorders': ['Specific Learning Disorder (SLD)', 'Global Developmental Delay', 'Mild Cognitive Impairment']
+export interface DisabilityItem {
+    id: string
+    label: string
+    tooltip: string
 }
+
+export interface DisabilityCategory {
+    id: string
+    label: string
+    otherKey: string
+    items: DisabilityItem[]
+}
+
+export const disabilityCategoriesDSM5: DisabilityCategory[] = [
+    {
+        id: 'sld',
+        label: 'Specific Learning Disorders',
+        otherKey: 'sld_other',
+        items: [
+            { id: 'dyslexia', label: 'Dyslexia', tooltip: 'DSM-5: Specific Learning Disorder with impairment in reading — affects word recognition, decoding, and spelling.' },
+            { id: 'dysgraphia', label: 'Dysgraphia', tooltip: 'DSM-5: Specific Learning Disorder with impairment in written expression — affects handwriting, spelling, and composition.' },
+            { id: 'dyscalculia', label: 'Dyscalculia', tooltip: 'DSM-5: Specific Learning Disorder with impairment in mathematics — affects number sense, arithmetic facts, and calculation.' },
+            { id: 'reading_nos', label: 'Reading Disorder (NOS)', tooltip: 'Reading difficulties that do not fully meet Dyslexia criteria but significantly affect academic performance.' },
+            { id: 'written_expression', label: 'Written Expression Disorder', tooltip: 'DSM-5: Difficulties in written expression beyond spelling, including grammar, punctuation, and idea organisation.' },
+        ]
+    },
+    {
+        id: 'adhd',
+        label: 'ADHD',
+        otherKey: 'adhd_other',
+        items: [
+            { id: 'adhd_inattentive', label: 'Predominantly Inattentive', tooltip: 'DSM-5 ADHD: Primary difficulties with sustained attention, organisation, and following through on tasks.' },
+            { id: 'adhd_hyperactive', label: 'Predominantly Hyperactive-Impulsive', tooltip: 'DSM-5 ADHD: Primary difficulties with hyperactivity, fidgeting, and impulsive decision-making.' },
+            { id: 'adhd_combined', label: 'Combined Presentation', tooltip: 'DSM-5 ADHD: Meets criteria for both inattentive and hyperactive-impulsive presentations.' },
+        ]
+    },
+    {
+        id: 'asd',
+        label: 'Autism Spectrum Disorder',
+        otherKey: 'asd_other',
+        items: [
+            { id: 'asd_level1', label: 'ASD Level 1', tooltip: 'DSM-5 ASD Level 1 (formerly Asperger\'s Syndrome / High-Functioning Autism): Requires support; social communication differences with average or above-average intellectual ability.' },
+            { id: 'asd_level2', label: 'ASD Level 2', tooltip: 'DSM-5 ASD Level 2: Requires substantial support; more pronounced social communication and behavioural challenges.' },
+        ]
+    },
+    {
+        id: 'lang',
+        label: 'Language & Communication',
+        otherKey: 'lang_other',
+        items: [
+            { id: 'lang_disorder', label: 'Language Disorder', tooltip: 'DSM-5: Persistent difficulties in the acquisition and use of language across modalities (spoken, written, or sign).' },
+            { id: 'social_communication', label: 'Social (Pragmatic) Communication Disorder', tooltip: 'DSM-5: Primary difficulties with the social use of verbal and nonverbal communication, distinct from ASD.' },
+            { id: 'apd', label: 'Auditory Processing Disorder (APD)', tooltip: 'Difficulty processing auditory information despite normal hearing — affects listening in noisy environments and following spoken instructions.' },
+        ]
+    },
+    {
+        id: 'dev_motor',
+        label: 'Developmental & Motor',
+        otherKey: 'dev_motor_other',
+        items: [
+            { id: 'dcd', label: 'DCD (Dyspraxia)', tooltip: 'DSM-5 Developmental Coordination Disorder: Difficulties with motor skill acquisition affecting daily activities and academic tasks.' },
+            { id: 'sensory_processing', label: 'Sensory Processing Differences', tooltip: 'Atypical responses to sensory input (e.g., noise, light, touch) that affect concentration and learning environments.' },
+        ]
+    },
+    {
+        id: 'cog',
+        label: 'Cognitive Processing',
+        otherKey: 'cog_other',
+        items: [
+            { id: 'nvld', label: 'NVLD', tooltip: 'Nonverbal Learning Disability: Strong verbal skills alongside difficulties with visual-spatial processing, maths, and social cues.' },
+            { id: 'working_memory', label: 'Working Memory Deficit', tooltip: 'Reduced capacity to hold and manipulate information in short-term memory, affecting multi-step tasks and following instructions.' },
+            { id: 'slow_processing', label: 'Slow Processing Speed', tooltip: 'Takes significantly longer to process and respond to information, affecting timed tasks and note-taking.' },
+        ]
+    },
+    {
+        id: 'other',
+        label: 'Other / Prefer Not to Specify',
+        otherKey: 'other_text',
+        items: [
+            { id: 'prefer_not', label: 'Prefer not to specify', tooltip: 'You can still receive personalised support without specifying a diagnosis.' },
+        ]
+    },
+]
+
+/** Maps old string disability labels (stored in DB before DSM-5 migration) to new IDs */
+export const DISABILITY_LEGACY_MAP: Record<string, string> = {
+    'Dyslexia': 'dyslexia',
+    'Dysgraphia': 'dysgraphia',
+    'Dyscalculia': 'dyscalculia',
+    'Written Expression Disorder': 'written_expression',
+    'Motor Coordination Disorder': 'dcd',
+    'Attention Deficit Disorder (ADD)': 'adhd_inattentive',
+    'Attention Deficit Hyperactivity Disorder (ADHD)': 'adhd_combined',
+    'Executive Function Disorder': 'adhd_combined',
+    'Auditory Processing Disorder (APD)': 'apd',
+    'Expressive Language Disorder': 'lang_disorder',
+    'Receptive Language Disorder': 'lang_disorder',
+    'Working Memory Deficit': 'working_memory',
+    'Slow Processing Speed': 'slow_processing',
+    'Nonverbal Learning Disability (NVLD)': 'nvld',
+    "High-Functioning Autism": 'asd_level1',
+    "Asperger's Syndrome": 'asd_level1',
+    'Social Communication Disorder': 'social_communication',
+    'Specific Learning Disorder (SLD)': 'dyslexia',
+}
+
+// Keep legacy export for any remaining references
+export const disabilityCategories: Record<string, string[]> = {}

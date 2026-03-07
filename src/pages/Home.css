@@ -601,13 +601,34 @@
   font-weight: 500;
 }
 
+/* ── Data Source Progress ────────────────────────────────── */
+
+.data-source-progress {
+  font-size: 13px;
+  color: #6B7280;
+  font-weight: 500;
+  margin-bottom: -8px;
+}
+
 /* ── Quick Action Cards ──────────────────────────────────── */
 
 .quick-actions-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr;
   gap: 16px;
-  margin-bottom: 0; /* gap handled by mood-cards-container */
+  margin-bottom: 0;
+}
+
+@media (max-width: 900px) {
+  .quick-actions-row {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .quick-actions-row {
+    grid-template-columns: 1fr;
+  }
 }
 
 .quick-action-card {
@@ -620,13 +641,36 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   text-decoration: none;
   color: inherit;
-  transition: box-shadow 0.2s, transform 0.15s;
+  transition: box-shadow 0.2s, transform 0.15s, background 0.2s, border-color 0.2s;
   cursor: pointer;
+  border: 1.5px solid transparent;
 }
 
 .quick-action-card:hover {
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.13);
   transform: translateY(-2px);
+}
+
+/* Completed state — green tint */
+.quick-action-card--done {
+  background: #f0fdf4;
+  border-color: #86efac;
+}
+
+/* Pending state — amber glow pulse */
+.quick-action-card--pending {
+  animation: cardGlow 3s ease-in-out infinite;
+}
+
+@keyframes cardGlow {
+  0%, 100% {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    border-color: transparent;
+  }
+  50% {
+    box-shadow: 0 4px 18px rgba(245, 158, 11, 0.25);
+    border-color: #fcd34d;
+  }
 }
 
 .quick-action-icon {
@@ -657,11 +701,6 @@
   flex-shrink: 0;
 }
 
-@media (max-width: 600px) {
-  .quick-actions-row {
-    grid-template-columns: 1fr;
-  }
-}
 
 /* ── AdminCsvLogPanel ─────────────────────────────────────── */
 

@@ -226,6 +226,44 @@
   color: #374151;
 }
 
+/* Profile CTA block (step 3) */
+.onboarding-profile-cta {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  background: #F0F9FF;
+  border: 1px solid #BAE6FD;
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-top: 16px;
+  text-align: left;
+}
+
+.onboarding-profile-cta-icon {
+  font-size: 24px;
+  flex-shrink: 0;
+  line-height: 1.2;
+}
+
+.onboarding-btn-profile {
+  padding: 11px 20px;
+  background: transparent;
+  color: #0891B2;
+  border: 1.5px solid #0891B2;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  transition: background 0.2s;
+}
+
+.onboarding-btn-profile:hover {
+  background: #E0F7FA;
+}
+
 /* Skip link */
 .onboarding-skip {
   background: none;

@@ -47,6 +47,55 @@
   border-radius: 20px;
 }
 
+/* ── Multi-interval hint ─────────────────────────────────── */
+
+.sleep-multi-hint {
+  font-size: 12px;
+  color: #9CA3AF;
+  margin: 0 0 8px;
+  font-style: italic;
+}
+
+/* ── Logged actions row (badge + edit) ───────────────────── */
+
+.sleep-logged-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sleep-edit-btn {
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #0891B2;
+  background: transparent;
+  border: 1.5px solid #0891B2;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.sleep-edit-btn:hover {
+  background: #E0F7FA;
+}
+
+.sleep-edit-cancel-btn {
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #6B7280;
+  background: transparent;
+  border: 1.5px solid #D1D5DB;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.sleep-edit-cancel-btn:hover {
+  background: #F3F4F6;
+}
+
 /* ── Track container ─────────────────────────────────────── */
 
 .sleep-track-container {
@@ -55,19 +104,45 @@
   user-select: none;
 }
 
-.sleep-time-labels {
-  display: flex;
-  justify-content: space-between;
-  font-size: 11px;
-  color: #9CA3AF;
-  margin-bottom: 8px;
-  padding: 0 2px;
-  font-weight: 500;
+/* ── Tick marks (hourly; major every 3h) ─────────────────── */
+
+.sleep-tick-row {
+  position: relative;
+  height: 28px;
+  margin-bottom: 4px;
 }
 
-.sleep-time-labels span.sleep-label-midnight {
+.sleep-tick {
+  position: absolute;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.sleep-tick-major {
+  bottom: 0;
+}
+
+.sleep-tick-label {
+  font-size: 10px;
+  color: #9CA3AF;
+  font-weight: 500;
+  white-space: nowrap;
+  line-height: 1;
+  margin-bottom: 3px;
+}
+
+.sleep-tick-midnight .sleep-tick-label {
   color: #6B7280;
   font-weight: 700;
+}
+
+.sleep-tick-minor {
+  bottom: 0;
+  width: 1px;
+  height: 6px;
+  background: #D1D5DB;
 }
 
 .sleep-track {
@@ -409,6 +484,18 @@
 }
 
 /* ── Responsive ──────────────────────────────────────────── */
+
+@media (max-width: 480px) {
+  .sleep-track {
+    height: 52px;
+    touch-action: none;
+  }
+
+  .sleep-handle {
+    width: 22px;
+    height: 22px;
+  }
+}
 
 @media (max-width: 768px) {
   .sleep-slider-card {

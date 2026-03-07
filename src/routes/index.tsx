@@ -7,6 +7,7 @@ import Login from "../pages/Login"
 import Register from "../pages/Register"
 import Profile from "../pages/Profile"
 import ScreenTimeForm from "../pages/ScreenTimeForm"
+import SleepPage from "../pages/SleepPage"
 import RequireAdmin from "../components/RequireAdmin"
 import RequireAuth from "../components/RequireAuth"
 import { useReduxDispatch, useReduxSelector } from '../redux'
@@ -35,6 +36,9 @@ export const NavBar = () => {
                             <span />
                         </button>
                         <div className={`sjs-nav-links${menuOpen ? ' sjs-nav-links--open' : ''}`}>
+                            {user?.role !== 'admin' && (
+                                <NavLink className='sjs-nav-button sjs-nav-button-gold sjs-nav-button-grouped' to="/sleep" onClick={() => setMenuOpen(false)}><span>Sleep Log</span></NavLink>
+                            )}
                             <NavLink className='sjs-nav-button sjs-nav-button-gold sjs-nav-button-grouped' to="/profile" onClick={() => setMenuOpen(false)}><span>Profile</span></NavLink>
                             <span className='sjs-nav-button sjs-nav-button-gold sjs-nav-button-grouped' onClick={() => { dispatch(logout()); setMenuOpen(false); }}><span>Logout</span></span>
                         </div>
@@ -57,6 +61,7 @@ const Content = (): React.ReactElement => (
             <Route path="/edit/:id" element={<RequireAuth><RequireAdmin><Edit /></RequireAdmin></RequireAuth>}></Route>
             <Route path="/profile" element={<RequireAuth><Profile /></RequireAuth>}></Route>
             <Route path="/screen-time" element={<RequireAuth><ScreenTimeForm /></RequireAuth>}></Route>
+            <Route path="/sleep" element={<RequireAuth><SleepPage /></RequireAuth>}></Route>
             <Route element={<NoMatch />}></Route>
         </Routes>
     </>
