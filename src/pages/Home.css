@@ -446,6 +446,123 @@
   color: #6B7280;
 }
 
+.admin-lms-section {
+  margin-bottom: 20px;
+}
+
+.admin-lms-search-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.admin-lms-search {
+  flex: 1;
+  max-width: 280px;
+  padding: 7px 12px;
+  font-size: 13px;
+  border: 1.5px solid #D1D5DB;
+  border-radius: 7px;
+  background: #F9FAFB;
+  color: #111827;
+  transition: border-color 0.2s;
+}
+
+.admin-lms-search:focus {
+  outline: none;
+  border-color: #0891B2;
+  box-shadow: 0 0 0 3px rgba(8, 145, 178, 0.12);
+}
+
+.admin-lms-count {
+  font-size: 12px;
+  color: #6B7280;
+  white-space: nowrap;
+}
+
+.admin-lms-table-wrapper {
+  max-height: 240px;
+  overflow-y: auto;
+  overflow-x: auto;
+  border: 1px solid #E5E7EB;
+  border-radius: 8px;
+}
+
+.admin-lms-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.admin-lms-table thead th {
+  position: sticky;
+  top: 0;
+  background: #F8FAFC;
+  padding: 7px 12px;
+  text-align: left;
+  font-weight: 600;
+  color: #374151;
+  border-bottom: 1px solid #E5E7EB;
+  white-space: nowrap;
+}
+
+.admin-lms-table tbody tr:hover {
+  background: #F9FAFB;
+}
+
+.admin-lms-table td {
+  padding: 6px 12px;
+  border-bottom: 1px solid #F3F4F6;
+  color: #374151;
+}
+
+.admin-lms-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.admin-lms-email {
+  color: #6B7280 !important;
+  font-size: 12px !important;
+}
+
+.admin-lms-date {
+  white-space: nowrap;
+  color: #6B7280 !important;
+  font-size: 12px !important;
+}
+
+.admin-lms-empty {
+  text-align: center;
+  color: #9CA3AF;
+  padding: 16px !important;
+}
+
+.lms-synced { color: #059669; font-weight: 600; }
+.lms-none   { color: #9CA3AF; }
+
+.admin-sync-row-btn {
+  padding: 3px 10px;
+  font-size: 12px;
+  border: 1px solid #D1D5DB;
+  border-radius: 5px;
+  background: white;
+  cursor: pointer;
+  color: #374151;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.admin-sync-row-btn:hover:not(:disabled) {
+  background: #F0F9FF;
+  border-color: #0891B2;
+  color: #0891B2;
+}
+
+.admin-sync-row-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 .admin-student-select {
   width: 100%;
   max-width: 480px;

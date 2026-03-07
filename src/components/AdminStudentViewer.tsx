@@ -29,6 +29,7 @@ const AdminStudentViewer = ({ onStudentSelect, selectedStudentId }: Props) => {
     const [syncAllLoading, setSyncAllLoading] = useState(false)
     const [syncAllResult, setSyncAllResult] = useState<SyncAllResult | null>(null)
     const [perStudentSyncing, setPerStudentSyncing] = useState<Set<string>>(new Set())
+    const [syncSearch, setSyncSearch] = useState('')
 
     useEffect(() => {
         // Load students for dropdown
@@ -133,42 +134,63 @@ const AdminStudentViewer = ({ onStudentSelect, selectedStudentId }: Props) => {
             </div>
 
             {/* ── Student LMS sync table ── */}
-            {syncStatuses.length > 0 && (
-                <div className='admin-lms-table-wrapper' style={{ overflowX: 'auto' }}>
-                    <table className='admin-lms-table'>
-                        <thead>
-                            <tr>
-                                <th>Student</th>
-                                <th>Email</th>
-                                <th>LMS Data</th>
-                                <th>Last Sync</th>
-                                <th>Sync</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {syncStatuses.map(s => (
-                                <tr key={s.userId}>
-                                    <td>{s.name}</td>
-                                    <td>{s.email}</td>
-                                    <td className={s.hasMoodleData ? 'lms-synced' : 'lms-none'}>
-                                        {s.hasMoodleData ? '✓' : '—'}
-                                    </td>
-                                    <td>{formatLastSync(s.lastSync)}</td>
-                                    <td>
-                                        <button
-                                            className='admin-sync-row-btn'
-                                            onClick={() => handleSyncStudent(s.userId)}
-                                            disabled={perStudentSyncing.has(s.userId) || !connectionStatus?.connected}
-                                        >
-                                            {perStudentSyncing.has(s.userId) ? '...' : 'Sync'}
-                                        </button>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            )}
+            {syncStatuses.length > 0 && (() => {
+                const q = syncSearch.trim().toLowerCase()
+                const filtered = q
+                    ? syncStatuses.filter(s => s.name.toLowerCase().includes(q) || s.email.toLowerCase().includes(q))
+                    : syncStatuses
+                const syncedCount = syncStatuses.filter(s => s.hasMoodleData).length
+                return (
+                    <div className='admin-lms-section'>
+                        <div className='admin-lms-search-row'>
+                            <input
+                                className='admin-lms-search'
+                                type='text'
+                                placeholder='Search students…'
+                                value={syncSearch}
+                                onChange={e => setSyncSearch(e.target.value)}
+                            />
+                            <span className='admin-lms-count'>{syncedCount}/{syncStatuses.length} synced</span>
+                        </div>
+                        <div className='admin-lms-table-wrapper'>
+                            <table className='admin-lms-table'>
+                                <thead>
+                                    <tr>
+                                        <th>Student</th>
+                                        <th>Email</th>
+                                        <th>LMS</th>
+                                        <th>Last Sync</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {filtered.length === 0 ? (
+                                        <tr><td colSpan={5} className='admin-lms-empty'>No students match</td></tr>
+                                    ) : filtered.map(s => (
+                                        <tr key={s.userId}>
+                                            <td>{s.name}</td>
+                                            <td className='admin-lms-email'>{s.email}</td>
+                                            <td className={s.hasMoodleData ? 'lms-synced' : 'lms-none'}>
+                                                {s.hasMoodleData ? '✓' : '—'}
+                                            </td>
+                                            <td className='admin-lms-date'>{formatLastSync(s.lastSync)}</td>
+                                            <td>
+                                                <button
+                                                    className='admin-sync-row-btn'
+                                                    onClick={() => handleSyncStudent(s.userId)}
+                                                    disabled={perStudentSyncing.has(s.userId) || !connectionStatus?.connected}
+                                                >
+                                                    {perStudentSyncing.has(s.userId) ? '…' : 'Sync'}
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                )
+            })()}
 
             {/* ── Existing student selector (unchanged) ── */}
             <div className='admin-selector-header'>
