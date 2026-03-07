@@ -37,7 +37,7 @@ export async function getConceptPoolSizes(days = 7) {
         UNION ALL
         SELECT 'srl', COUNT(DISTINCT user_id)
         FROM public.srl_annotations
-        WHERE time_window = '7d' AND response_count > 0 ${EXCLUDE_SIMULATED_USERS}
+        WHERE time_window = '7d' AND response_count > 0
     `, [days])
     const sizes = {}
     for (const r of rows) {
@@ -184,7 +184,6 @@ async function getSRLMetrics() {
         SELECT user_id, concept_key, avg_score, is_inverted
         FROM public.srl_annotations
         WHERE time_window = '7d' AND response_count > 0
-        ${EXCLUDE_SIMULATED_USERS}
         ORDER BY user_id, concept_key
     `)
     const metrics = {}
