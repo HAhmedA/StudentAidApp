@@ -3,6 +3,7 @@ body {
   background: #f7f8fa;
   font-family: 'Inter', 'Open Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif;
   color: #23282c;
+  overflow-x: hidden;
 }
 
 .sjs-app {
@@ -81,6 +82,67 @@ body {
 
 .sjs-nav-button-gold span {
   color: #ffffff !important;
+}
+
+/* ── Per-button color variants ─────────────────────────────── */
+.sjs-nav-btn--home    { background: #1F9C9C !important; }
+.sjs-nav-btn--home:hover, .sjs-nav-btn--home.active {
+  background: #27b8b8 !important;
+}
+
+.sjs-nav-btn--chat {
+  background: #DB951D !important;
+  position: relative;
+  overflow: hidden;
+  animation: chatBtnGlow 3s ease-in-out infinite;
+}
+.sjs-nav-btn--chat:hover {
+  background: #eda832 !important;
+}
+
+/* Shiny sweep effect */
+.sjs-nav-btn--chat::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -75%;
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(
+    120deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.35) 50%,
+    transparent 100%
+  );
+  animation: chatBtnShine 3s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes chatBtnGlow {
+  0%, 100% {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    outline: 2px solid transparent;
+  }
+  50% {
+    box-shadow: 0 4px 18px rgba(245, 158, 11, 0.45);
+    outline: 2px solid #fcd34d;
+  }
+}
+
+@keyframes chatBtnShine {
+  0%   { left: -75%; }
+  30%  { left: 125%; }
+  100% { left: 125%; }
+}
+
+.sjs-nav-btn--profile { background: #1E5275 !important; }
+.sjs-nav-btn--profile:hover, .sjs-nav-btn--profile.active {
+  background: #256490 !important;
+}
+
+.sjs-nav-btn--logout  { background: #AB4C38 !important; }
+.sjs-nav-btn--logout:hover {
+  background: #c45a44 !important;
 }
 
 .sjs-nav-button-grouped {
@@ -205,7 +267,7 @@ h1 {
 /* Tablet breakpoint */
 @media (max-width: 768px) {
   .sjs-app__header-inner {
-    padding: 0 16px;
+    padding: 0 24px;
     height: 56px;
   }
 
