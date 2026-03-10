@@ -8,6 +8,30 @@ import { asyncRoute } from '../utils/errors.js'
 const router = Router()
 router.use(requireAuth)
 
+/**
+ * @swagger
+ * /annotations/:
+ *   get:
+ *     summary: Get wellbeing annotations for the current user
+ *     tags: [Annotations]
+ *     security: [{ cookieAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: timeWindow
+ *         schema: { type: string, example: 7d }
+ *         description: Look-back window (e.g. 7d, 30d)
+ *     responses:
+ *       200:
+ *         description: Annotations object keyed by concept
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 annotations: { type: object }
+ *       401: { description: Not authenticated }
+ *       500: { description: Server error }
+ */
 // Get annotations for current user (for UI display)
 router.get('/', asyncRoute(async (req, res) => {
     const userId = req.session.user.id

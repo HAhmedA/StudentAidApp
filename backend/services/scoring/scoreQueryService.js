@@ -178,6 +178,46 @@ async function getScreenTimeMetrics(days) {
     return metrics
 }
 
+// =============================================================================
+// CLUSTER INFO QUERY (shared by scores route and admin student-viewer route)
+// =============================================================================
+
+/**
+ * Get cluster assignment and percentile dial info for all concepts a user belongs to.
+ *
+ * @param {string} userId
+ * @param {import('pg').Pool} [dbPool] - Optional pool override (defaults to module-level pool)
+ * @returns {Promise<Record<string, {clusterLabel, clusterIndex, totalClusters, percentilePosition, clusterUserCount, dialMin, dialCenter, dialMax}>>}
+ */
+export async function getClusterInfoByUser(userId, dbPool = pool) {
+    const { rows } = await dbPool.query(
+        `SELECT uca.concept_id, uca.cluster_label, uca.cluster_index,
+                uca.percentile_position,
+                pc.p5, pc.p50, pc.p95, pc.user_count,
+                (SELECT COUNT(*) FROM public.peer_clusters pc2
+                 WHERE pc2.concept_id = uca.concept_id) AS total_clusters
+         FROM public.user_cluster_assignments uca
+         JOIN public.peer_clusters pc
+           ON pc.concept_id = uca.concept_id AND pc.cluster_index = uca.cluster_index
+         WHERE uca.user_id = $1`,
+        [userId]
+    )
+    const clusterInfo = {}
+    for (const r of rows) {
+        clusterInfo[r.concept_id] = {
+            clusterLabel:       r.cluster_label,
+            clusterIndex:       parseInt(r.cluster_index, 10),
+            totalClusters:      parseInt(r.total_clusters, 10),
+            percentilePosition: parseFloat(r.percentile_position) || 50,
+            clusterUserCount:   parseInt(r.user_count, 10),
+            dialMin:            Math.round(parseFloat(r.p5)  * 100) / 100,
+            dialCenter:         Math.round(parseFloat(r.p50) * 100) / 100,
+            dialMax:            Math.round(parseFloat(r.p95) * 100) / 100
+        }
+    }
+    return clusterInfo
+}
+
 // ---- SRL ----
 async function getSRLMetrics() {
     const { rows } = await pool.query(`

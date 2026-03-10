@@ -110,6 +110,65 @@ function computeCompositeScore(userMetrics, allMetrics, dims) {
     return { composite, domainScores };
 }
 
+/**
+ * Order clusters by mean composite score (ascending: 0=worst, k-1=best).
+ * Returns { clusterMeans, clusterRemap }
+ */
+function _orderClusters(composites, k) {
+    const clusterMeans = [];
+    for (let c = 0; c < k; c++) {
+        const members = composites.filter(u => u.cluster === c);
+        const mean = members.length > 0
+            ? members.reduce((s, u) => s + u.composite, 0) / members.length
+            : 0;
+        clusterMeans.push({ cluster: c, mean, count: members.length });
+    }
+    clusterMeans.sort((a, b) => a.mean - b.mean);
+    const clusterRemap = {};
+    clusterMeans.forEach((cm, orderedIdx) => { clusterRemap[cm.cluster] = orderedIdx; });
+    return { clusterMeans, clusterRemap };
+}
+
+/**
+ * Compute percentile dials and user percentile position within their cluster.
+ * Returns { p5, p50, p95, userPercentile, clusterComposites }
+ */
+function _computeUserPercentile(composites, userOrigCluster, userComposite) {
+    const clusterComposites = composites
+        .filter(u => u.cluster === userOrigCluster)
+        .map(u => u.composite)
+        .sort((a, b) => a - b);
+    const p5 = percentile(clusterComposites, 5);
+    const p50 = percentile(clusterComposites, 50);
+    const p95 = percentile(clusterComposites, 95);
+    const userPercentile = mapToRange(userComposite, p5, p95);
+    return { p5, p50, p95, userPercentile, clusterComposites };
+}
+
+/**
+ * Persist cluster results and user assignment in a single transaction.
+ */
+async function _persistClusterResults(conceptId, userId, composites, clusterRemap, clusterMeans, k, model, userOrderedCluster, clusterLabel, userPercentile) {
+    await withTransaction(pool, async (client) => {
+        await storeClusterResults(conceptId, composites, clusterRemap, clusterMeans, k, model, client);
+        await storeUserAssignment(userId, conceptId, userOrderedCluster, clusterLabel, userPercentile, client);
+    });
+}
+
+/**
+ * Map a numeric 0-100 score to a category key and label.
+ * Returns { category, categoryLabel }
+ */
+function _mapDomainCategory(score) {
+    const category = score >= SCORE_THRESHOLDS.VERY_GOOD ? 'very_good'
+        : score >= SCORE_THRESHOLDS.GOOD ? 'good'
+        : 'requires_improvement';
+    const categoryLabel = score >= SCORE_THRESHOLDS.VERY_GOOD ? 'Very Good'
+        : score >= SCORE_THRESHOLDS.GOOD ? 'Good'
+        : 'Could Improve';
+    return { category, categoryLabel };
+}
+
 // =============================================================================
 // MAIN PUBLIC API
 // =============================================================================
@@ -224,21 +283,7 @@ async function _runConceptClustering(conceptId, days) {
     }));
 
     // Order clusters by mean composite score (low→high)
-    const clusterMeans = [];
-    for (let c = 0; c < k; c++) {
-        const members = composites.filter(u => u.cluster === c);
-        const mean = members.length > 0
-            ? members.reduce((s, u) => s + u.composite, 0) / members.length
-            : 0;
-        clusterMeans.push({ cluster: c, mean, count: members.length });
-    }
-    clusterMeans.sort((a, b) => a.mean - b.mean);
-
-    // Build re-mapping: original cluster index → ordered index (0=worst, k-1=best)
-    const clusterRemap = {};
-    clusterMeans.forEach((cm, orderedIdx) => {
-        clusterRemap[cm.cluster] = orderedIdx;
-    });
+    const { clusterMeans, clusterRemap } = _orderClusters(composites, k);
 
     const labels = generateClusterLabels(k, conceptId);
     return { allMetrics, userIds, composites, clusterRemap, clusterMeans, k, model, dims, labels };
@@ -285,30 +330,17 @@ async function computeClusterScores(dbPool, conceptId, userId, days = 7) {
     const userOrderedCluster = clusterRemap[userOrigCluster];
     const userComposite = composites[userIdx].composite;
 
-    // Get all composites in the user's cluster
-    const clusterComposites = composites
-        .filter(u => u.cluster === userOrigCluster)
-        .map(u => u.composite)
-        .sort((a, b) => a - b);
-
-    const p5 = percentile(clusterComposites, 5);
-    const p50 = percentile(clusterComposites, 50);
-    const p95 = percentile(clusterComposites, 95);
-    const userPercentile = mapToRange(userComposite, p5, p95);
+    const { p5, p50, p95, userPercentile, clusterComposites } = _computeUserPercentile(composites, userOrigCluster, userComposite);
 
     const clusterLabel = labels[Math.min(userOrderedCluster, labels.length - 1)];
 
     // Store cluster definitions and assignment atomically
-    await withTransaction(pool, async (client) => {
-        await storeClusterResults(conceptId, composites, clusterRemap, clusterMeans, k, model, client);
-        await storeUserAssignment(userId, conceptId, userOrderedCluster, clusterLabel, userPercentile, client);
-    });
+    await _persistClusterResults(conceptId, userId, composites, clusterRemap, clusterMeans, k, model, userOrderedCluster, clusterLabel, userPercentile);
 
     // Per-domain results for the breakdown
     const { domainScores } = computeCompositeScore(allMetrics[userId], allMetrics, dims);
     const domainResults = domainScores.map(ds => {
-        const category = ds.score >= SCORE_THRESHOLDS.VERY_GOOD ? 'very_good' : ds.score >= SCORE_THRESHOLDS.GOOD ? 'good' : 'requires_improvement';
-        const categoryLabel = ds.score >= SCORE_THRESHOLDS.VERY_GOOD ? 'Very Good' : ds.score >= SCORE_THRESHOLDS.GOOD ? 'Good' : 'Could Improve';
+        const { category, categoryLabel } = _mapDomainCategory(ds.score);
         return {
             domain: ds.domain,
             numericScore: Math.round(ds.score * 100) / 100,
@@ -399,42 +431,20 @@ async function computeSRLClusterScores(allMetrics, userId) {
         };
     });
 
-    // Order clusters
-    const clusterMeans = [];
-    for (let c = 0; c < k; c++) {
-        const members = composites.filter(u => u.cluster === c);
-        const mean = members.length > 0
-            ? members.reduce((s, u) => s + u.composite, 0) / members.length
-            : 0;
-        clusterMeans.push({ cluster: c, mean, count: members.length });
-    }
-    clusterMeans.sort((a, b) => a.mean - b.mean);
-
-    const clusterRemap = {};
-    clusterMeans.forEach((cm, orderedIdx) => { clusterRemap[cm.cluster] = orderedIdx; });
+    // Order clusters and find user position
+    const { clusterMeans, clusterRemap } = _orderClusters(composites, k);
 
     const userIdx = userIds.indexOf(userId);
     const userOrigCluster = model.assignments[userIdx];
     const userOrderedCluster = clusterRemap[userOrigCluster];
     const userComposite = composites[userIdx].composite;
 
-    const clusterComposites = composites
-        .filter(u => u.cluster === userOrigCluster)
-        .map(u => u.composite)
-        .sort((a, b) => a - b);
-
-    const p5 = percentile(clusterComposites, 5);
-    const p50 = percentile(clusterComposites, 50);
-    const p95 = percentile(clusterComposites, 95);
-    const userPercentile = mapToRange(userComposite, p5, p95);
+    const { p5, p50, p95, userPercentile, clusterComposites } = _computeUserPercentile(composites, userOrigCluster, userComposite);
 
     const srlLabels = generateClusterLabels(k, 'srl');
     const clusterLabel = srlLabels[Math.min(userOrderedCluster, srlLabels.length - 1)];
 
-    await withTransaction(pool, async (client) => {
-        await storeClusterResults('srl', composites, clusterRemap, clusterMeans, k, model, client);
-        await storeUserAssignment(userId, 'srl', userOrderedCluster, clusterLabel, userPercentile, client);
-    });
+    await _persistClusterResults('srl', userId, composites, clusterRemap, clusterMeans, k, model, userOrderedCluster, clusterLabel, userPercentile);
 
     // Per-domain results for SRL
     const domainResults = conceptKeys.map(ck => {
@@ -442,8 +452,7 @@ async function computeSRLClusterScores(allMetrics, userId) {
         if (!data) return { domain: ck, numericScore: 50, category: 'good', categoryLabel: 'Good' };
         let score = (data.score / 5) * 100;
         if (data.isInverted) score = 100 - score;
-        const category = score >= SCORE_THRESHOLDS.VERY_GOOD ? 'very_good' : score >= SCORE_THRESHOLDS.GOOD ? 'good' : 'requires_improvement';
-        const categoryLabel = score >= SCORE_THRESHOLDS.VERY_GOOD ? 'Very Good' : score >= SCORE_THRESHOLDS.GOOD ? 'Good' : 'Could Improve';
+        const { category, categoryLabel } = _mapDomainCategory(score);
         return {
             domain: ck,
             numericScore: Math.round(score * 100) / 100,

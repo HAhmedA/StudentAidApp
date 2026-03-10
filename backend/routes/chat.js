@@ -17,6 +17,25 @@ import { getPreferences, upsertPreferences } from '../services/chatbotPreference
 const router = Router()
 router.use(requireAuth)
 
+/**
+ * @swagger
+ * /chat/session:
+ *   get:
+ *     summary: Get or create the active chat session for the current user
+ *     tags: [Chat]
+ *     security: [{ cookieAuth: [] }]
+ *     responses:
+ *       200:
+ *         description: Session info
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 sessionId: { type: string }
+ *                 isNew:     { type: boolean }
+ *       401: { description: Not authenticated }
+ */
 router.get('/session', asyncRoute(async (req, res) => {
     const userId = req.session.user.id
     const { sessionId, isNew } = await getOrCreateSession(userId)
@@ -45,6 +64,38 @@ router.get('/initial', asyncRoute(async (req, res) => {
     })
 }))
 
+/**
+ * @swagger
+ * /chat/message:
+ *   post:
+ *     summary: Send a message to the AI chatbot
+ *     tags: [Chat]
+ *     security: [{ cookieAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [message]
+ *             properties:
+ *               message: { type: string, maxLength: 5000 }
+ *     responses:
+ *       200:
+ *         description: AI response
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 response:         { type: string }
+ *                 sessionId:        { type: string }
+ *                 suggestedPrompts: { type: array, items: { type: string } }
+ *                 success:          { type: boolean }
+ *       400: { description: Missing or invalid message }
+ *       401: { description: Not authenticated }
+ *       500: { description: Server error }
+ */
 router.post('/message', asyncRoute(async (req, res) => {
     const userId = req.session.user.id
     const { message } = req.body
@@ -65,6 +116,38 @@ router.post('/message', asyncRoute(async (req, res) => {
     })
 }))
 
+/**
+ * @swagger
+ * /chat/history:
+ *   get:
+ *     summary: Get message history for a chat session
+ *     tags: [Chat]
+ *     security: [{ cookieAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: sessionId
+ *         required: true
+ *         schema: { type: string }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 20, maximum: 50 }
+ *       - in: query
+ *         name: before
+ *         schema: { type: string, description: Cursor for pagination }
+ *     responses:
+ *       200:
+ *         description: Chat messages
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 messages: { type: array, items: { type: object } }
+ *                 hasMore:  { type: boolean }
+ *       400: { description: sessionId is required }
+ *       401: { description: Not authenticated }
+ *       403: { description: Not authorized to access this session }
+ */
 router.get('/history', asyncRoute(async (req, res) => {
     const userId = req.session.user.id
     const { sessionId, limit = 20, before } = req.query

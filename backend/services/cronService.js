@@ -16,15 +16,18 @@ import { computeAllScores } from './scoring/scoreComputationService.js';
  * "Active" means they have at least one non-simulated data record across any domain.
  *
  * Runs each user sequentially to avoid hammering the DB with parallel PGMoE fits.
+ *
+ * @param {import('pg').Pool} [dbPool] - DB pool (defaults to module-level pool; injectable for tests)
+ * @param {Function} [computeAllScoresFn] - Score computation fn (injectable for tests)
  */
-async function recomputeAllActiveUserScores() {
+export async function recomputeAllActiveUserScores(dbPool = pool, computeAllScoresFn = computeAllScores) {
     logger.info('Cron: Starting nightly score recomputation...');
 
     try {
         // Collect distinct user IDs that have submitted real data recently.
         // lms_sessions is included so students whose only recent activity is LMS
         // engagement (no sleep/screen-time logged) are still rescored nightly.
-        const { rows } = await pool.query(`
+        const { rows } = await dbPool.query(`
             SELECT DISTINCT user_id FROM (
                 SELECT user_id FROM public.sleep_sessions
                     WHERE is_simulated = false
@@ -55,7 +58,7 @@ async function recomputeAllActiveUserScores() {
 
         for (const { user_id } of rows) {
             try {
-                await computeAllScores(user_id);
+                await computeAllScoresFn(user_id);
                 successCount++;
             } catch (err) {
                 logger.error(`Cron: Score recomputation failed for user ${user_id}: ${err.message}`);
@@ -75,7 +78,7 @@ async function recomputeAllActiveUserScores() {
  */
 export function startCronJobs() {
     // Run at midnight every day (server local time)
-    cron.schedule('0 0 * * *', recomputeAllActiveUserScores);
+    cron.schedule('0 0 * * *', () => recomputeAllActiveUserScores());
 
     logger.info('Cron: Nightly score recomputation scheduled at 00:00.');
 }

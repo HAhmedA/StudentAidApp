@@ -26,7 +26,8 @@ jest.unstable_mockModule('../config/concepts.js', () => ({
     CONCEPT_NAMES: {}, CONCEPT_IDS: {}
 }))
 jest.unstable_mockModule('../services/scoring/scoreQueryService.js', () => ({
-    getConceptPoolSizes: jest.fn(), getUserConceptDataSet: jest.fn()
+    getConceptPoolSizes: jest.fn(), getUserConceptDataSet: jest.fn(),
+    getClusterInfoByUser: jest.fn(), getAllUserMetrics: jest.fn()
 }))
 
 global.fetch = mockFetch

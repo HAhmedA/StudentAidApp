@@ -26,11 +26,18 @@ const RECOMMENDED_ENV = {
  * Validate environment variables
  * In production: throws error if required vars are missing
  * In development: logs warnings for missing vars
- * 
- * @param {boolean} isProduction - Whether running in production mode
+ *
+ * @param {string} nodeEnv - Value of process.env.NODE_ENV
+ * @returns {boolean} isProduction — true when nodeEnv === 'production'
  * @throws {Error} In production if required variables are missing
  */
-function validateEnvironment(isProduction = false) {
+function validateEnvironment(nodeEnv) {
+    const VALID_ENVS = ['production', 'development', 'test']
+    if (!VALID_ENVS.includes(nodeEnv)) {
+        logger.warn(`NODE_ENV "${nodeEnv ?? '(unset)'}" is not recognised — defaulting to "development"`)
+        nodeEnv = 'development'
+    }
+    const isProduction = nodeEnv === 'production'
     const missing = []
     const warnings = []
 
@@ -76,6 +83,7 @@ function validateEnvironment(isProduction = false) {
     }
 
     logger.info('Environment validation passed')
+    return isProduction
 }
 
 export { validateEnvironment, REQUIRED_PRODUCTION_ENV, RECOMMENDED_ENV }

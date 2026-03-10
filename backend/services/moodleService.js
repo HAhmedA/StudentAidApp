@@ -406,6 +406,50 @@ function aggregateToDaily({ quizAttempts, assignments, forumPosts }) {
 }
 
 // =============================================================================
+// SHARED LMS UPSERT (used by syncUserFromMoodle and moodleEventSimulator)
+// =============================================================================
+
+/**
+ * Upsert a list of daily LMS rows into lms_sessions within an existing transaction.
+ *
+ * @param {import('pg').PoolClient} client - Active transaction client
+ * @param {string} userId
+ * @param {Array} dailyRows - Aggregated daily rows from aggregateToDaily()
+ * @param {boolean} isSimulated - true for simulator data, false for real Moodle data
+ */
+export async function upsertLmsDailyRows(client, userId, dailyRows, isSimulated) {
+    for (const row of dailyRows) {
+        await client.query(
+            `INSERT INTO public.lms_sessions
+                 (user_id, session_date, total_active_minutes, total_events,
+                  number_of_sessions, longest_session_minutes, days_active_in_period,
+                  reading_minutes, watching_minutes, exercise_practice_events,
+                  assignment_work_events, forum_views, forum_posts, is_simulated)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+             ON CONFLICT (user_id, session_date) DO UPDATE SET
+                 total_active_minutes     = EXCLUDED.total_active_minutes,
+                 total_events             = EXCLUDED.total_events,
+                 number_of_sessions       = EXCLUDED.number_of_sessions,
+                 longest_session_minutes  = EXCLUDED.longest_session_minutes,
+                 days_active_in_period    = EXCLUDED.days_active_in_period,
+                 reading_minutes          = EXCLUDED.reading_minutes,
+                 watching_minutes         = EXCLUDED.watching_minutes,
+                 exercise_practice_events = EXCLUDED.exercise_practice_events,
+                 assignment_work_events   = EXCLUDED.assignment_work_events,
+                 forum_views              = EXCLUDED.forum_views,
+                 forum_posts              = EXCLUDED.forum_posts,
+                 is_simulated             = EXCLUDED.is_simulated`,
+            [
+                userId, row.session_date, row.total_active_minutes, row.total_events,
+                row.number_of_sessions, row.longest_session_minutes, row.days_active_in_period,
+                row.reading_minutes, row.watching_minutes, row.exercise_practice_events,
+                row.assignment_work_events, row.forum_views, row.forum_posts, isSimulated,
+            ]
+        )
+    }
+}
+
+// =============================================================================
 // SYNC ORCHESTRATION
 // =============================================================================
 
@@ -453,34 +497,7 @@ async function syncUserFromMoodle(pool, userId, userEmail) {
 
     // 6. Upsert lms_sessions and recompute baseline
     await withTransaction(pool, async (client) => {
-        for (const row of dailyRows) {
-            await client.query(
-                `INSERT INTO public.lms_sessions
-                     (user_id, session_date, total_active_minutes, total_events,
-                      number_of_sessions, longest_session_minutes, days_active_in_period,
-                      reading_minutes, watching_minutes, exercise_practice_events,
-                      assignment_work_events, forum_views, forum_posts, is_simulated)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-                 ON CONFLICT (user_id, session_date) DO UPDATE SET
-                     total_active_minutes     = EXCLUDED.total_active_minutes,
-                     total_events             = EXCLUDED.total_events,
-                     number_of_sessions       = EXCLUDED.number_of_sessions,
-                     longest_session_minutes  = EXCLUDED.longest_session_minutes,
-                     reading_minutes          = EXCLUDED.reading_minutes,
-                     watching_minutes         = EXCLUDED.watching_minutes,
-                     exercise_practice_events = EXCLUDED.exercise_practice_events,
-                     assignment_work_events   = EXCLUDED.assignment_work_events,
-                     forum_views              = EXCLUDED.forum_views,
-                     forum_posts              = EXCLUDED.forum_posts,
-                     is_simulated             = EXCLUDED.is_simulated`,
-                [
-                    userId, row.session_date, row.total_active_minutes, row.total_events,
-                    row.number_of_sessions, row.longest_session_minutes, row.days_active_in_period,
-                    row.reading_minutes, row.watching_minutes, row.exercise_practice_events,
-                    row.assignment_work_events, row.forum_views, row.forum_posts, false,
-                ]
-            )
-        }
+        await upsertLmsDailyRows(client, userId, dailyRows, false)
 
         // Recompute baseline from rolling 7-day average of real rows
         await client.query(

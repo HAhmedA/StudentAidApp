@@ -18,10 +18,25 @@ import { validateEnvironment } from './config/envValidation.js'
 import { startCronJobs } from './services/cronService.js'
 
 const app = express()
-const isProduction = process.env.NODE_ENV === 'production'
 
 // Validate environment variables (fails in production if critical vars missing)
-validateEnvironment(isProduction)
+// Returns isProduction so we don't re-derive it from the potentially-invalid raw value
+const isProduction = validateEnvironment(process.env.NODE_ENV)
+
+// Optional Sentry error tracking — activated only when SENTRY_DSN is set.
+// Zero impact when not configured.
+if (process.env.SENTRY_DSN) {
+    try {
+        const Sentry = (await import('@sentry/node')).default
+        Sentry.init({ dsn: process.env.SENTRY_DSN, environment: process.env.NODE_ENV || 'development' })
+        app.use(Sentry.Handlers.requestHandler())
+        logger.info('Sentry error tracking initialised')
+        // Sentry error handler is added below, before the global error handler
+        app._sentryErrorHandler = Sentry.Handlers.errorHandler()
+    } catch (err) {
+        logger.warn(`Sentry init failed (is @sentry/node installed?): ${err.message}`)
+    }
+}
 
 // Security headers
 // On plain HTTP deployments (COOKIE_SECURE=false), disable directives that
@@ -111,6 +126,11 @@ app.use('/api', apiLimiter, routes)
 // Swagger API Documentation (dev only)
 if (!isProduction) {
     app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs))
+}
+
+// Sentry error handler (no-op when Sentry is not configured)
+if (app._sentryErrorHandler) {
+    app.use(app._sentryErrorHandler)
 }
 
 // Global error handler

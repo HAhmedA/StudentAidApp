@@ -59,6 +59,27 @@ async function runSyncJob(jobId, users) {
 // CONNECTION STATUS
 // =============================================================================
 
+/**
+ * @swagger
+ * /lms/admin/connection-status:
+ *   get:
+ *     summary: Check Moodle LMS connection status
+ *     tags: [LMS]
+ *     security: [{ cookieAuth: [] }]
+ *     responses:
+ *       200:
+ *         description: Connection status
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 connected:        { type: boolean }
+ *                 sitename:         { type: string, nullable: true }
+ *                 moodleConfigured: { type: boolean }
+ *       401: { description: Not authenticated }
+ *       403: { description: Not an admin }
+ */
 router.get('/admin/connection-status', asyncRoute(async (req, res) => {
     const moodleConfigured = !!(process.env.MOODLE_BASE_URL && process.env.MOODLE_TOKEN)
 
@@ -160,6 +181,35 @@ router.get('/admin/sync-all/status/:jobId', asyncRoute(async (req, res) => {
 // SINGLE USER SYNC
 // =============================================================================
 
+/**
+ * @swagger
+ * /lms/admin/sync/{userId}:
+ *   post:
+ *     summary: Sync a single user's LMS activity from Moodle
+ *     tags: [LMS]
+ *     security: [{ cookieAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema: { type: string }
+ *         description: UUID of the user to sync
+ *     responses:
+ *       200:
+ *         description: Sync result
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 synced: { type: integer, description: Number of days synced }
+ *                 days:   { type: array, items: { type: string } }
+ *       404: { description: User not found }
+ *       401: { description: Not authenticated }
+ *       403: { description: Not an admin }
+ *       502: { description: Moodle API error }
+ *       503: { description: Moodle not configured }
+ */
 router.post('/admin/sync/:userId', asyncRoute(async (req, res) => {
     const { userId } = req.params
 

@@ -8,7 +8,7 @@
 //   LOW_ACHIEVER   — 2 active days/wk, ~0-1 quiz attempts, 0 assignments, 0 forum posts
 
 import logger from '../utils/logger.js'
-import { aggregateToDaily } from './moodleService.js'
+import { aggregateToDaily, upsertLmsDailyRows } from './moodleService.js'
 import { withTransaction } from '../utils/withTransaction.js'
 import { computeJudgments } from './annotators/lmsAnnotationService.js'
 import { computeAllScores } from './scoring/index.js'
@@ -156,34 +156,7 @@ async function simulateUserData(pool, userId) {
 
     // Upsert lms_sessions (is_simulated=true) and baseline
     await withTransaction(pool, async (client) => {
-        for (const row of dailyRows) {
-            await client.query(
-                `INSERT INTO public.lms_sessions
-                     (user_id, session_date, total_active_minutes, total_events,
-                      number_of_sessions, longest_session_minutes, days_active_in_period,
-                      reading_minutes, watching_minutes, exercise_practice_events,
-                      assignment_work_events, forum_views, forum_posts, is_simulated)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-                 ON CONFLICT (user_id, session_date) DO UPDATE SET
-                     total_active_minutes     = EXCLUDED.total_active_minutes,
-                     total_events             = EXCLUDED.total_events,
-                     number_of_sessions       = EXCLUDED.number_of_sessions,
-                     longest_session_minutes  = EXCLUDED.longest_session_minutes,
-                     reading_minutes          = EXCLUDED.reading_minutes,
-                     watching_minutes         = EXCLUDED.watching_minutes,
-                     exercise_practice_events = EXCLUDED.exercise_practice_events,
-                     assignment_work_events   = EXCLUDED.assignment_work_events,
-                     forum_views              = EXCLUDED.forum_views,
-                     forum_posts              = EXCLUDED.forum_posts,
-                     is_simulated             = EXCLUDED.is_simulated`,
-                [
-                    userId, row.session_date, row.total_active_minutes, row.total_events,
-                    row.number_of_sessions, row.longest_session_minutes, row.days_active_in_period,
-                    row.reading_minutes, row.watching_minutes, row.exercise_practice_events,
-                    row.assignment_work_events, row.forum_views, row.forum_posts, true,
-                ]
-            )
-        }
+        await upsertLmsDailyRows(client, userId, dailyRows, true)
 
         // Baseline: profile-driven weekly estimate
         const cfg = MOCK_PROFILES[profile] || MOCK_PROFILES[DEFAULT_PROFILE]

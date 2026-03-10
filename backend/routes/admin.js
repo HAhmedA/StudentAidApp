@@ -7,7 +7,7 @@ import { DEFAULT_ALIGNMENT_PROMPT } from '../services/alignmentService.js'
 import { getAnnotations } from '../services/annotators/srlAnnotationService.js'
 import { asyncRoute, Errors } from '../utils/errors.js'
 import { CONCEPT_NAMES, CONCEPT_IDS } from '../config/concepts.js'
-import { getConceptPoolSizes, getUserConceptDataSet } from '../services/scoring/scoreQueryService.js'
+import { getConceptPoolSizes, getUserConceptDataSet, getClusterInfoByUser } from '../services/scoring/scoreQueryService.js'
 import { getLlmConfig, clearLlmConfigCache } from '../services/llmConfigService.js'
 import { computeAllScores } from '../services/scoring/scoreComputationService.js'
 
@@ -19,30 +19,81 @@ router.use(requireAdmin)
 // Valid prompt types
 const VALID_PROMPT_TYPES = ['system', 'alignment']
 
+// Named handler functions — also called by legacy /system-prompt routes below
+async function handleGetPrompt(req, res) {
+    const promptType = req.query.type || 'system'
+
+    if (!VALID_PROMPT_TYPES.includes(promptType)) {
+        throw Errors.VALIDATION(`invalid_prompt_type — valid: ${VALID_PROMPT_TYPES.join(', ')}`)
+    }
+
+    const { rows } = await pool.query(
+        `SELECT prompt, prompt_type, updated_at
+         FROM public.system_prompts
+         WHERE prompt_type = $1
+         ORDER BY updated_at DESC LIMIT 1`,
+        [promptType]
+    )
+
+    if (rows.length === 0) {
+        const defaultPrompt = promptType === 'system' ? 'Be Ethical' : DEFAULT_ALIGNMENT_PROMPT
+        return res.json({ prompt: defaultPrompt, prompt_type: promptType, updated_at: null })
+    }
+
+    res.json(rows[0])
+}
+
+async function handleUpdatePrompt(req, res) {
+    const { prompt, type } = req.body
+    const promptType = type || 'system'
+    const userId = req.session.user?.id
+
+    if (!VALID_PROMPT_TYPES.includes(promptType)) {
+        throw Errors.VALIDATION(`invalid_prompt_type — valid: ${VALID_PROMPT_TYPES.join(', ')}`)
+    }
+
+    if (!prompt || typeof prompt !== 'string') {
+        throw Errors.VALIDATION('prompt is required')
+    }
+
+    // Insert new prompt (keep history)
+    const { rows } = await pool.query(
+        `INSERT INTO public.system_prompts (prompt, prompt_type, created_by, updated_at)
+         VALUES ($1, $2, $3, NOW())
+         RETURNING prompt, prompt_type, updated_at`,
+        [prompt, promptType, userId]
+    )
+
+    logger.info(`${promptType} prompt updated by admin: ${userId}`)
+    res.json(rows[0])
+}
+
 // Get prompt by type (default: system)
-router.get('/prompt', asyncRoute(async (req, res) => {
-        const promptType = req.query.type || 'system'
+router.get('/prompt', asyncRoute(handleGetPrompt))
 
-        if (!VALID_PROMPT_TYPES.includes(promptType)) {
-            throw Errors.VALIDATION(`invalid_prompt_type — valid: ${VALID_PROMPT_TYPES.join(', ')}`)
-        }
-
-        const { rows } = await pool.query(
-            `SELECT prompt, prompt_type, updated_at
-             FROM public.system_prompts
-             WHERE prompt_type = $1
-             ORDER BY updated_at DESC LIMIT 1`,
-            [promptType]
-        )
-
-        if (rows.length === 0) {
-            const defaultPrompt = promptType === 'system' ? 'Be Ethical' : DEFAULT_ALIGNMENT_PROMPT
-            return res.json({ prompt: defaultPrompt, prompt_type: promptType, updated_at: null })
-        }
-
-        res.json(rows[0])
-}))
-
+/**
+ * @swagger
+ * /admin/prompts:
+ *   get:
+ *     summary: Get all system prompts (system and alignment types)
+ *     tags: [Admin]
+ *     security: [{ cookieAuth: [] }]
+ *     responses:
+ *       200:
+ *         description: Prompts keyed by type
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               additionalProperties:
+ *                 type: object
+ *                 properties:
+ *                   prompt:      { type: string }
+ *                   prompt_type: { type: string }
+ *                   updated_at:  { type: string, nullable: true }
+ *       401: { description: Not authenticated }
+ *       403: { description: Not an admin }
+ */
 // Get all prompts (both types)
 router.get('/prompts', asyncRoute(async (req, res) => {
         const prompts = {}
@@ -67,33 +118,36 @@ router.get('/prompts', asyncRoute(async (req, res) => {
 }))
 
 // Update prompt by type
-router.put('/prompt', asyncRoute(async (req, res) => {
-        const { prompt, type } = req.body
-        const promptType = type || 'system'
-        const userId = req.session.user?.id
-
-        if (!VALID_PROMPT_TYPES.includes(promptType)) {
-            throw Errors.VALIDATION(`invalid_prompt_type — valid: ${VALID_PROMPT_TYPES.join(', ')}`)
-        }
-
-        if (!prompt || typeof prompt !== 'string') {
-            throw Errors.VALIDATION('prompt is required')
-        }
-
-        // Insert new prompt (keep history)
-        const { rows } = await pool.query(
-            `INSERT INTO public.system_prompts (prompt, prompt_type, created_by, updated_at)
-             VALUES ($1, $2, $3, NOW())
-             RETURNING prompt, prompt_type, updated_at`,
-            [prompt, promptType, userId]
-        )
-
-        logger.info(`${promptType} prompt updated by admin: ${userId}`)
-        res.json(rows[0])
-}))
+router.put('/prompt', asyncRoute(handleUpdatePrompt))
 
 // ── Student viewer endpoints ──────────────────────────────────────
 
+/**
+ * @swagger
+ * /admin/students:
+ *   get:
+ *     summary: List all student accounts
+ *     tags: [Admin]
+ *     security: [{ cookieAuth: [] }]
+ *     responses:
+ *       200:
+ *         description: Array of student users
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 students:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:    { type: string }
+ *                       name:  { type: string }
+ *                       email: { type: string }
+ *       401: { description: Not authenticated }
+ *       403: { description: Not an admin }
+ */
 // List all student users
 router.get('/students', asyncRoute(async (req, res) => {
         const { rows } = await pool.query(
@@ -102,6 +156,33 @@ router.get('/students', asyncRoute(async (req, res) => {
         res.json({ students: rows })
 }))
 
+/**
+ * @swagger
+ * /admin/students/{studentId}/scores:
+ *   get:
+ *     summary: Get all concept scores for a specific student
+ *     tags: [Admin]
+ *     security: [{ cookieAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: studentId
+ *         required: true
+ *         schema: { type: string }
+ *         description: UUID of the student
+ *     responses:
+ *       200:
+ *         description: Array of concept scores with cluster info
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 scores:
+ *                   type: array
+ *                   items: { type: object }
+ *       401: { description: Not authenticated }
+ *       403: { description: Not an admin }
+ */
 // Get concept scores for a specific student (mirrors /api/scores logic)
 router.get('/students/:studentId/scores', asyncRoute(async (req, res) => {
         const { studentId } = req.params
@@ -127,31 +208,7 @@ router.get('/students/:studentId/scores', asyncRoute(async (req, res) => {
         }
 
         // Cluster info
-        const { rows: clusterRows } = await pool.query(
-            `SELECT uca.concept_id, uca.cluster_label, uca.cluster_index,
-                    uca.percentile_position,
-                    pc.p5, pc.p50, pc.p95, pc.user_count,
-                    (SELECT COUNT(*) FROM public.peer_clusters pc2
-                     WHERE pc2.concept_id = uca.concept_id) AS total_clusters
-             FROM public.user_cluster_assignments uca
-             JOIN public.peer_clusters pc
-               ON pc.concept_id = uca.concept_id AND pc.cluster_index = uca.cluster_index
-             WHERE uca.user_id = $1`,
-            [studentId]
-        )
-        const clusterInfo = {}
-        for (const r of clusterRows) {
-            clusterInfo[r.concept_id] = {
-                clusterLabel: r.cluster_label,
-                clusterIndex: parseInt(r.cluster_index, 10),
-                totalClusters: parseInt(r.total_clusters, 10),
-                percentilePosition: parseFloat(r.percentile_position) || 50,
-                clusterUserCount: parseInt(r.user_count, 10),
-                dialMin: Math.round(parseFloat(r.p5) * 100) / 100,
-                dialCenter: Math.round(parseFloat(r.p50) * 100) / 100,
-                dialMax: Math.round(parseFloat(r.p95) * 100) / 100
-            }
-        }
+        const clusterInfo = await getClusterInfoByUser(studentId, pool)
 
         const scores = rows.map(row => ({
             conceptId: row.concept_id,
@@ -237,44 +294,97 @@ router.get('/cluster-diagnostics', asyncRoute(async (req, res) => {
     res.json({ diagnostics })
 }))
 
-// Cluster members — all students with their cluster assignments and scores
+/**
+ * @swagger
+ * /admin/cluster-members:
+ *   get:
+ *     summary: Paginated list of students with their cluster assignments
+ *     tags: [Admin]
+ *     security: [{ cookieAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: conceptId
+ *         schema: { type: string, enum: [sleep, screen_time, lms, srl] }
+ *         description: Filter to a specific concept
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, default: 1 }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 50, maximum: 200 }
+ *     responses:
+ *       200:
+ *         description: Paginated cluster members
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 members: { type: array, items: { type: object } }
+ *                 total:   { type: integer }
+ *                 page:    { type: integer }
+ *                 limit:   { type: integer }
+ *       401: { description: Not authenticated }
+ *       403: { description: Not an admin }
+ */
+// Cluster members — paginated list of students with cluster assignments and scores
+// Query params: ?conceptId= (optional filter), ?page=1, ?limit=50 (max 200)
 router.get('/cluster-members', asyncRoute(async (req, res) => {
-    const { rows } = await pool.query(
-        `SELECT
-            uca.concept_id,
-            uca.cluster_index,
-            uca.cluster_label,
-            uca.percentile_position,
-            u.id          AS user_id,
-            u.name,
-            u.email,
-            cs.score,
-            cs.trend,
-            cs.aspect_breakdown,
-            pc.p50        AS cluster_p50
-         FROM public.user_cluster_assignments uca
-         JOIN public.users u
-             ON u.id = uca.user_id
-         LEFT JOIN public.concept_scores cs
-             ON cs.user_id = uca.user_id AND cs.concept_id = uca.concept_id
-         JOIN public.peer_clusters pc
-             ON pc.concept_id = uca.concept_id AND pc.cluster_index = uca.cluster_index
-         ORDER BY uca.concept_id, uca.cluster_index, uca.percentile_position DESC`
-    )
+    const conceptId = req.query.conceptId || null
+    const page  = Math.max(1, parseInt(req.query.page,  10) || 1)
+    const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 50))
+    const offset = (page - 1) * limit
+
+    const conceptFilter = conceptId ? `AND uca.concept_id = $3` : ''
+    const queryParams   = conceptId ? [limit, offset, conceptId] : [limit, offset]
+
+    const [{ rows }, { rows: countRows }] = await Promise.all([
+        pool.query(
+            `SELECT
+                uca.concept_id,
+                uca.cluster_index,
+                uca.cluster_label,
+                uca.percentile_position,
+                u.id          AS user_id,
+                u.email,
+                cs.score,
+                cs.trend,
+                cs.aspect_breakdown,
+                pc.p50        AS cluster_p50
+             FROM public.user_cluster_assignments uca
+             JOIN public.users u
+                 ON u.id = uca.user_id
+             LEFT JOIN public.concept_scores cs
+                 ON cs.user_id = uca.user_id AND cs.concept_id = uca.concept_id
+             JOIN public.peer_clusters pc
+                 ON pc.concept_id = uca.concept_id AND pc.cluster_index = uca.cluster_index
+             WHERE 1=1 ${conceptFilter}
+             ORDER BY uca.concept_id, uca.cluster_index, uca.percentile_position DESC
+             LIMIT $1 OFFSET $2`,
+            queryParams
+        ),
+        pool.query(
+            `SELECT COUNT(*) AS total
+             FROM public.user_cluster_assignments uca
+             WHERE 1=1 ${conceptId ? 'AND uca.concept_id = $1' : ''}`,
+            conceptId ? [conceptId] : []
+        )
+    ])
+
     const members = rows.map(r => ({
         conceptId: r.concept_id,
         clusterIndex: parseInt(r.cluster_index, 10),
         clusterLabel: r.cluster_label,
         clusterP50: r.cluster_p50 != null ? parseFloat(r.cluster_p50) : null,
         userId: r.user_id,
-        name: r.name,
-        email: r.email.split('@')[0],
+        username: r.email.split('@')[0],
         score: r.score != null ? parseFloat(r.score) : null,
         trend: r.trend,
         percentilePosition: r.percentile_position != null ? parseFloat(r.percentile_position) : null,
         breakdown: r.aspect_breakdown || null
     }))
-    res.json({ members })
+
+    res.json({ members, total: parseInt(countRows[0].total, 10), page, limit })
 }))
 
 // Delete all student data (keeps users, profiles, surveys, prompts, csv logs)
@@ -466,15 +576,15 @@ router.post('/llm-config/test', asyncRoute(async (req, res) => {
     }
 }))
 
-// Legacy routes for backwards compatibility
-router.get('/system-prompt', async (req, res) => {
+// Legacy routes for backwards compatibility — delegate directly to named handlers
+router.get('/system-prompt', asyncRoute((req, res) => {
     req.query.type = 'system'
-    return router.handle(req, res)
-})
+    return handleGetPrompt(req, res)
+}))
 
-router.put('/system-prompt', async (req, res) => {
+router.put('/system-prompt', asyncRoute((req, res) => {
     req.body.type = 'system'
-    return router.handle(req, res)
-})
+    return handleUpdatePrompt(req, res)
+}))
 
 export default router

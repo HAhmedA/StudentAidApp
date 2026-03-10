@@ -21,7 +21,7 @@ import logger from '../utils/logger.js'
 import { requireAuth } from '../middleware/auth.js'
 import { CONCEPT_IDS, CONCEPT_NAMES } from '../config/concepts.js'
 import { asyncRoute, Errors } from '../utils/errors.js'
-import { getConceptPoolSizes, getUserConceptDataSet } from '../services/scoring/scoreQueryService.js'
+import { getConceptPoolSizes, getUserConceptDataSet, getClusterInfoByUser } from '../services/scoring/scoreQueryService.js'
 
 const router = Router()
 
@@ -29,6 +29,38 @@ const router = Router()
 router.use(requireAuth)
 
 /**
+ * @swagger
+ * /scores/:
+ *   get:
+ *     summary: Get all concept scores for the current user
+ *     tags: [Scores]
+ *     security: [{ cookieAuth: [] }]
+ *     responses:
+ *       200:
+ *         description: Array of concept scores with cluster and dial info
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 scores:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       conceptId:    { type: string }
+ *                       conceptName:  { type: string }
+ *                       score:        { type: number, nullable: true }
+ *                       trend:        { type: string, nullable: true }
+ *                       clusterLabel: { type: string, nullable: true }
+ *                       dialMin:      { type: number }
+ *                       dialCenter:   { type: number }
+ *                       dialMax:      { type: number }
+ *                       coldStart:    { type: boolean }
+ *                       computedAt:   { type: string, nullable: true }
+ *       401: { description: Not authenticated }
+ *       500: { description: Server error }
+ *
  * GET /api/scores
  * Get all concept scores for the current user
  * Returns array of { conceptId, score, trend, computedAt }
@@ -60,31 +92,7 @@ router.get('/', asyncRoute(async (req, res) => {
         }
 
         // Get cluster info for each concept
-        const { rows: clusterRows } = await pool.query(
-            `SELECT uca.concept_id, uca.cluster_label, uca.cluster_index,
-                    uca.percentile_position,
-                    pc.p5, pc.p50, pc.p95, pc.user_count,
-                    (SELECT COUNT(*) FROM public.peer_clusters pc2
-                     WHERE pc2.concept_id = uca.concept_id) AS total_clusters
-             FROM public.user_cluster_assignments uca
-             JOIN public.peer_clusters pc
-               ON pc.concept_id = uca.concept_id AND pc.cluster_index = uca.cluster_index
-             WHERE uca.user_id = $1`,
-            [userId]
-        )
-        const clusterInfo = {}
-        for (const r of clusterRows) {
-            clusterInfo[r.concept_id] = {
-                clusterLabel: r.cluster_label,
-                clusterIndex: parseInt(r.cluster_index, 10),
-                totalClusters: parseInt(r.total_clusters, 10),
-                percentilePosition: parseFloat(r.percentile_position) || 50,
-                clusterUserCount: parseInt(r.user_count, 10),
-                dialMin: Math.round(parseFloat(r.p5) * 100) / 100,
-                dialCenter: Math.round(parseFloat(r.p50) * 100) / 100,
-                dialMax: Math.round(parseFloat(r.p95) * 100) / 100
-            }
-        }
+        const clusterInfo = await getClusterInfoByUser(userId, pool)
 
         // Map concept_id to friendly names (imported from canonical config)
         const conceptNames = CONCEPT_NAMES
