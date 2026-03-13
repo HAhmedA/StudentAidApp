@@ -332,7 +332,31 @@
 /* Desktop: text-only panel content (no gauge dial) */
 .gauge-expanded-panel-text-only {
     padding: 24px;
-    max-width: 700px;
+}
+
+/* Two-column layout for desktop breakdown */
+.breakdown-two-col {
+    display: flex;
+    align-items: flex-start;
+    gap: 0;
+}
+
+.breakdown-col-left {
+    flex: 0 0 38%;
+    min-width: 0;
+}
+
+.breakdown-col-divider {
+    width: 1px;
+    background: #e5e7eb;
+    align-self: stretch;
+    margin: 0 24px;
+    flex-shrink: 0;
+}
+
+.breakdown-col-right {
+    flex: 1 1 0;
+    min-width: 0;
 }
 
 /* Mobile: inline breakdown inside the gauge card */

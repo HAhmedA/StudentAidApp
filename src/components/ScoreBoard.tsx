@@ -175,7 +175,7 @@ const ScoreBoard = ({
     const defaultTooltip = 'Your score is calculated by comparing you with students who have similar behavioral patterns. The dial range (P5–P95) shows where most students in your group fall. The two needles show your progress from yesterday to today.'
 
     // Shared breakdown content — used by both the inline mobile slot and the desktop panel
-    const renderBreakdownContent = (score: ConceptScore) => {
+    const renderBreakdownContent = (score: ConceptScore, twoColumns = false) => {
         if (!score.breakdown) return null
 
         const dialMin = score.dialMin ?? 0
@@ -193,9 +193,9 @@ const ScoreBoard = ({
         const badgeDot = isTop ? '🟢' : isBottom ? '🟡' : '🔵'
         const showBadge = score.clusterLabel != null && score.clusterIndex != null && score.totalClusters != null
 
-        return (
+        // Summary block: cluster badge + comparison statement
+        const summaryBlock = (
             <>
-                <div className='score-details-title' style={{ marginBottom: '12px' }}>Detailed Breakdown</div>
                 {showBadge && (
                     <div className='cluster-badge' style={{
                         backgroundColor: badgeBg,
@@ -223,33 +223,61 @@ const ScoreBoard = ({
                     border: `1px solid ${toneBorder}`,
                     borderRadius: '6px',
                     padding: '8px 10px',
-                    marginBottom: '10px',
+                    marginBottom: twoColumns ? 0 : '10px',
                     fontSize: '13px',
                     color: toneColor,
                     lineHeight: '1.4'
                 }}>
                     {comparison.text}
                 </div>
-                <ul className='gauge-expanded-breakdown-list'>
-                    {Object.entries(score.breakdown).map(([key]) => (
-                        <li key={key} style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '3px' }}>
-                            <span className='detail-label' style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                {formatAspectName(key)}
-                                {DOMAIN_DESCRIPTIONS[key] && (
-                                    <span className='domain-info-wrapper'>
-                                        <span className='domain-info-icon'>ℹ</span>
-                                        <span className='domain-info-tooltip'>{DOMAIN_DESCRIPTIONS[key]}</span>
-                                    </span>
-                                )}
-                            </span>
-                            {DOMAIN_TIPS[key] && (
-                                <span style={{ fontSize: '11px', color: '#6b7280', lineHeight: '1.4', paddingLeft: '2px' }}>
-                                    💡 {DOMAIN_TIPS[key]}
+            </>
+        )
+
+        // Tips list: dimension names + actionable tips
+        const tipsBlock = (
+            <ul className='gauge-expanded-breakdown-list'>
+                {Object.entries(score.breakdown).map(([key]) => (
+                    <li key={key} style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '3px' }}>
+                        <span className='detail-label' style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            {formatAspectName(key)}
+                            {DOMAIN_DESCRIPTIONS[key] && (
+                                <span className='domain-info-wrapper'>
+                                    <span className='domain-info-icon'>ℹ</span>
+                                    <span className='domain-info-tooltip'>{DOMAIN_DESCRIPTIONS[key]}</span>
                                 </span>
                             )}
-                        </li>
-                    ))}
-                </ul>
+                        </span>
+                        {DOMAIN_TIPS[key] && (
+                            <span style={{ fontSize: '11px', color: '#6b7280', lineHeight: '1.4', paddingLeft: '2px' }}>
+                                💡 {DOMAIN_TIPS[key]}
+                            </span>
+                        )}
+                    </li>
+                ))}
+            </ul>
+        )
+
+        if (twoColumns) {
+            return (
+                <div className='breakdown-two-col'>
+                    <div className='breakdown-col-left'>
+                        <div className='score-details-title' style={{ marginBottom: '12px' }}>Your Status</div>
+                        {summaryBlock}
+                    </div>
+                    <div className='breakdown-col-divider' />
+                    <div className='breakdown-col-right'>
+                        <div className='score-details-title' style={{ marginBottom: '12px' }}>Focus Areas</div>
+                        {tipsBlock}
+                    </div>
+                </div>
+            )
+        }
+
+        return (
+            <>
+                <div className='score-details-title' style={{ marginBottom: '12px' }}>Detailed Breakdown</div>
+                {summaryBlock}
+                {tipsBlock}
             </>
         )
     }
@@ -264,7 +292,7 @@ const ScoreBoard = ({
         return (
             <div className='gauge-expanded-panel'>
                 <div className='gauge-expanded-panel-text-only'>
-                    {renderBreakdownContent(expandedScore)}
+                    {renderBreakdownContent(expandedScore, true)}
                 </div>
             </div>
         )
