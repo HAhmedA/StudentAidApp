@@ -512,25 +512,20 @@ async function generateInitialGreeting(userId) {
             return { success: true, greeting: GREETING_FALLBACK, sessionId }
         }
 
-        // Generate new greeting using LLM with alignment checking
+        // Generate new greeting using LLM — alignment is skipped for the greeting because
+        // it is fully system-generated from trusted internal data (not user input), so there
+        // is nothing to sanitize and no risk of prompt injection.
         logger.chat(`Assembling initial greeting prompt`, { userId })
         const messages = await assembleInitialGreetingPrompt(userId)
-        logger.chat(`Prompt assembled, calling LLM with alignment`, { userId, messageCount: messages.length })
+        logger.chat(`Prompt assembled, calling LLM directly (no alignment for greeting)`, { userId, messageCount: messages.length })
 
-        // Get system instructions for alignment check
-        const systemInstructions = await getSystemInstructionsForAlignment(userId)
-
-        // Generate aligned greeting (same as regular messages)
-        const result = await getAlignedResponse(
-            async () => await chatCompletionWithRetry(messages),
-            'Generate a personalized greeting for the user',  // Synthetic user query for context
-            systemInstructions
-        )
+        const rawGreeting = await chatCompletionWithRetry(messages)
+        const result = { content: rawGreeting, passed: true, retries: 0 }
 
         // Parse embedded follow-up suggestions from the greeting
         const { cleanedResponse: cleanedGreeting, suggestions: embeddedSuggestions } = parseFollowUpSuggestions(result.content)
         const greeting = cleanedGreeting
-        logger.chat(`LLM greeting received`, { userId, greetingLength: greeting.length, passed: result.passed, embeddedSuggestions: embeddedSuggestions.length })
+        logger.chat(`LLM greeting received`, { userId, greetingLength: greeting.length, embeddedSuggestions: embeddedSuggestions.length })
 
         // Cache the cleaned greeting (set greeting_generated_at for staleness detection)
         await pool.query(

@@ -216,11 +216,6 @@ const ScoreGauge: React.FC<ScoreGaugeProps> = ({
                 </svg>
             </div>
 
-            {/* Trend icon only (cluster label removed) */}
-            <div className="gauge-score-display">
-                {getTrendIcon()}
-            </div>
-
             {/* Legend — always shows both arrows */}
             <div className="gauge-legend">
                 <div className="gauge-legend-item">

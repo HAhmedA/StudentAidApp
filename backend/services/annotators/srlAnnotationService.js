@@ -241,24 +241,19 @@ function generateAnnotationTextLLM(conceptKey, fullTitle, trend, avg, min, max, 
     const displayTitle = CONCEPT_SHORT_NAMES[conceptKey] || fullTitle;
     const cleanTitle = displayTitle.replace(/:$/, '');
 
-    // Single response - just show the current value
+    // Single response
     if (count === 1) {
-        return `Regarding "${cleanTitle}": The student's most recent response is ${avg.toFixed(1)} out of 5.`;
+        return `- ${cleanTitle}: ${avg.toFixed(1)}/5 (single response)`;
     }
 
     // Multiple responses but insufficient data for trend analysis
     if (!hasSufficientData) {
-        const period = 'recently';
-        return `Regarding "${cleanTitle}": The student has responded ${count} times ${period}, ` +
-            `averaging ${avg.toFixed(1)} out of 5 (range: ${min}-${max}). ` +
-            `(More data needed for trend analysis)`;
+        return `- ${cleanTitle}: avg ${avg.toFixed(1)}/5 (${count} responses, more data needed)`;
     }
 
-    // Sufficient data - Use Nuanced Description
+    // Sufficient data — compact one-liner
     const complexDesc = generateComplexDescription(trend, latestScore, previousAvg, isInverted);
-
-    return `Regarding "${cleanTitle}": ${complexDesc} ` +
-        `Statistics: overall average ${avg.toFixed(1)}, min ${min}, max ${max} (based on ${count} responses over 7 days).`;
+    return `- ${cleanTitle}: avg ${avg.toFixed(1)}/5 — ${complexDesc}`;
 }
 
 /**
@@ -510,14 +505,7 @@ async function getAnnotationsForChatbot(pool, userId) {
 
     let result = '## Student Self-Regulated Learning Status\n\n';
 
-    // Internal peer context block (for LLM calibration only)
-    if (clusterRows.length > 0) {
-        const c = clusterRows[0];
-        const pct = c.percentile_position != null ? Math.round(parseFloat(c.percentile_position)) : null;
-        result += `[Internal context — do not share with student]\n`;
-        result += `Peer context: Student is at the ${pct != null ? pct + 'th' : 'unknown'} percentile `;
-        result += `among students with similar SRL patterns (scale 0–100, higher = stronger self-regulation).\n\n`;
-    }
+    // Peer cluster context is now included in STUDENT DATA SUMMARY (cluster tier blocks) — not duplicated here.
 
     // Show 7-day data (primary window)
     const by7d = validAnnotations.filter(a => a.timeWindow === '7d');

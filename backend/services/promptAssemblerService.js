@@ -461,7 +461,7 @@ ${summaries}
 
     const messages = [
         { role: 'system', content: assembledSystem },
-        { role: 'user', content: "Hello, I just opened the chat. Please greet me and briefly summarize my data in bulletpoints. Please, provide few personalized recommendations that aligns with my charachteristics in bulletpoints." }
+        { role: 'user', content: "Hey, just opened the app." }
     ]
 
     logger.info(`FULL INITIAL GREETING PROMPT for ${userId}:\n${JSON.stringify(messages, null, 2)}`)
@@ -478,32 +478,10 @@ ${summaries}
  * @returns {Promise<string>}
  */
 async function getSystemInstructionsForAlignment(userId = null) {
-    const baseSystemPrompt = await getSystemPrompt()
-
-    if (!userId) {
-        return baseSystemPrompt
-    }
-
-    // accurate context for the judge
-    const [userContext, conceptScores, summaries] = await Promise.all([
-        getUserContext(userId),
-        getScoresForChatbot(userId),
-        getSummariesForChatbot(userId)
-    ])
-
-    return `${baseSystemPrompt}
-
----
-
-USER CONTEXT & PREFERENCES:
-${userContext}
-
-STUDENT DATA SUMMARY:
-${conceptScores}
-
-PREVIOUS CHATS (SUMMARIZED):
-${summaries}
-`
+    // The judge only needs to know the domain scope, not the student's actual data.
+    // Passing scores + summaries to a small judge model bloats its context and causes
+    // false-positive safety flags on legitimate wellness vocabulary (anxiety, sleep, stress).
+    return await getSystemPrompt()
 }
 
 /**

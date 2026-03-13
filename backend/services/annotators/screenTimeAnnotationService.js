@@ -331,22 +331,11 @@ async function getJudgmentsForChatbot(pool, userId) {
 
     let result = '## Screen Time Analysis\n\n';
 
-    // Internal peer context block (for LLM calibration only)
-    if (clusterRows.length > 0) {
-        const c = clusterRows[0];
-        const pct = c.percentile_position != null ? Math.round(parseFloat(c.percentile_position)) : null;
-        result += `[Internal context — do not share with student]\n`;
-        result += `Peer context: Typical daily screen time for students with similar usage patterns is `;
-        result += `${toHours(c.p5)}–${toHours(c.p95)}, median ${toHours(c.p50)}. `;
-        if (pct != null) {
-            result += `Student is at the ${pct}th percentile (lower = less screen time = better for this metric).\n\n`;
-        } else {
-            result += '\n\n';
-        }
-    }
+    // Peer cluster context is now included in STUDENT DATA SUMMARY (cluster tier blocks) — not duplicated here.
 
     // Most recent day
-    result += `### Yesterday (${recent.session_date}):\n`;
+    const recentDateStr = new Date(recent.session_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    result += `### Yesterday (${recentDateStr}):\n`;
     result += `- Total screen time: ${toHours(recent.total_screen_minutes)}`;
     if (previous) {
         const diff = recent.total_screen_minutes - previous.total_screen_minutes;

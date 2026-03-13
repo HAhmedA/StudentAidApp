@@ -28,6 +28,7 @@ import logger from '../../utils/logger.js';
 import { severityToScore, EqualWeightStrategy } from './scoringStrategies.js';
 import { CONCEPT_NAMES } from '../../config/concepts.js';
 import { withTransaction } from '../../utils/withTransaction.js';
+import { getClusterInfoByUser } from './scoreQueryService.js';
 
 // Default strategy (can be swapped for custom strategies later)
 const DEFAULT_STRATEGY = new EqualWeightStrategy();
@@ -266,8 +267,8 @@ function formatScoreForChatbot(conceptId, score, trend) {
  */
 async function getAllScoresForChatbot(userId) {
     const { rows } = await pool.query(
-        `SELECT concept_id, score, trend 
-         FROM public.concept_scores 
+        `SELECT concept_id, score, trend
+         FROM public.concept_scores
          WHERE user_id = $1
          ORDER BY concept_id`,
         [userId]
@@ -277,10 +278,35 @@ async function getAllScoresForChatbot(userId) {
         return 'No data summaries available yet.';
     }
 
+    const clusterInfo = await getClusterInfoByUser(userId);
+
     let result = '## Student Data Summary\n[Internal context — use for tone calibration only]\n\n';
 
     for (const row of rows) {
         result += `- ${formatScoreForChatbot(row.concept_id, row.score, row.trend)}\n`;
+
+        const cluster = clusterInfo[row.concept_id];
+        if (!cluster) {
+            result += `  [Internal context: No peer group assigned yet — not enough users for comparison.]\n`;
+        } else {
+            const { clusterLabel, clusterIndex, totalClusters, percentilePosition, clusterUserCount } = cluster;
+            const tierNum = clusterIndex + 1; // 1-based for readability
+
+            let tierDescriptor, calibrationHint;
+            if (clusterIndex === totalClusters - 1) {
+                tierDescriptor = 'top cluster';
+                calibrationHint = 'validate and reinforce';
+            } else if (clusterIndex === 0) {
+                tierDescriptor = 'lowest cluster';
+                calibrationHint = 'be encouraging, focus on small achievable wins, never shame';
+            } else {
+                tierDescriptor = 'middle cluster';
+                calibrationHint = 'encourage upward movement, note what\'s working';
+            }
+
+            const percentile = Math.round(percentilePosition);
+            result += `  [Internal context — do not share: Peer group "${clusterLabel}" | Tier ${tierNum} of ${totalClusters} (${tierDescriptor}; Tier ${totalClusters} = highest performing) | ${percentile}th percentile within group | ${clusterUserCount} students in group | Calibration: ${tierDescriptor} — ${calibrationHint}.]\n`;
+        }
     }
 
     return result;

@@ -436,16 +436,7 @@ async function getJudgmentsForChatbot(pool, userId) {
 
     let result = '## LMS Activity Analysis\n\n';
 
-    // Internal peer context block
-    if (clusterRows.length > 0) {
-        const c = clusterRows[0];
-        const pct = c.percentile_position != null ? Math.round(parseFloat(c.percentile_position)) : null;
-        result += `[Internal context — do not share with student]\n`;
-        result += `Peer context: Typical weekly LMS engagement for students with similar patterns is `;
-        result += `${toMin(c.p5)}–${toMin(c.p95)} total active time, median ${toMin(c.p50)}. `;
-        if (pct != null) result += `Student is at the ${pct}th percentile within this group.\n\n`;
-        else result += '\n\n';
-    }
+    // Peer cluster context is now included in STUDENT DATA SUMMARY (cluster tier blocks) — not duplicated here.
 
     const totalActive = sessions.reduce((s, r) => s + (r.total_active_minutes || 0), 0);
     const totalSessions = sessions.reduce((s, r) => s + (r.number_of_sessions || 0), 0);

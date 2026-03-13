@@ -389,22 +389,11 @@ async function getJudgmentsForChatbot(pool, userId) {
 
     let result = '## Sleep Analysis\n\n';
 
-    // Internal peer context block (for LLM calibration only)
-    if (clusterRows.length > 0) {
-        const c = clusterRows[0];
-        const pct = c.percentile_position != null ? Math.round(parseFloat(c.percentile_position)) : null;
-        result += `[Internal context — do not share with student]\n`;
-        result += `Peer context: Typical sleep range for students with similar patterns is `;
-        result += `${toHours(c.p5)}–${toHours(c.p95)}, median ${toHours(c.p50)}. `;
-        if (pct != null) {
-            result += `Student is currently at the ${pct}th percentile within this group.\n\n`;
-        } else {
-            result += '\n\n';
-        }
-    }
+    // Peer cluster context is now included in STUDENT DATA SUMMARY (cluster tier blocks) — not duplicated here.
 
     // Most recent night
-    result += `### Last night (${recent.session_date}):\n`;
+    const recentDateStr = new Date(recent.session_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    result += `### Last night (${recentDateStr}):\n`;
     result += `- Duration: ${toHours(recent.total_sleep_minutes)} sleep`;
     if (previous) {
         const diff = recent.total_sleep_minutes - previous.total_sleep_minutes;
