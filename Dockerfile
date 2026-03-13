@@ -16,6 +16,10 @@ COPY . .
 ARG VITE_API_BASE
 ENV VITE_API_BASE=${VITE_API_BASE}
 
+# BASE_URL sets the Vite base path for asset URLs (e.g. /esm for subpath deployments)
+ARG BASE_URL=""
+ENV BASE_URL=${BASE_URL}
+
 # Build production bundle — disable source maps + cap heap for 1 GB RAM hosts (e.g. t2.micro)
 # GENERATE_SOURCEMAP=false cuts peak webpack memory by ~50% (no .map files generated)
 ENV NODE_OPTIONS=--max_old_space_size=700

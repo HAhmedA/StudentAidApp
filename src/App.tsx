@@ -46,7 +46,7 @@ function App() {
   }, [])
   return (
     <Provider store={store}>
-      <Router>
+      <Router basename={import.meta.env.BASE_URL.replace(/\/$/, '')}>
         <AppContent />
       </Router>
     </Provider>
