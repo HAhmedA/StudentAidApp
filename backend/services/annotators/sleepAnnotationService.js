@@ -384,7 +384,7 @@ async function getJudgmentsForChatbot(pool, userId) {
     const fmtTime = (ts) => {
         if (!ts) return 'N/A';
         const d = new Date(ts);
-        return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+        return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
     };
 
     let result = '## Sleep Analysis\n\n';
