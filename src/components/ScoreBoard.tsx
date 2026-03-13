@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import ScoreGauge from './ScoreGauge'
 import { CONCEPT_IDS, CONCEPT_DISPLAY_NAMES, DOMAIN_DESCRIPTIONS, DOMAIN_TIPS } from '../constants/concepts'
 
@@ -150,6 +150,13 @@ const ScoreBoard = ({
     showConceptPlaceholders = false,
 }: Props) => {
     const [expandedConceptId, setExpandedConceptId] = useState<string | null>(null)
+    const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 700)
+
+    useEffect(() => {
+        const handler = () => setIsMobile(window.innerWidth <= 700)
+        window.addEventListener('resize', handler)
+        return () => window.removeEventListener('resize', handler)
+    }, [])
 
     const displayScores = showConceptPlaceholders
         ? CONCEPT_IDS.map(id => scores.find(s => s.conceptId === id) ?? {
@@ -167,118 +174,97 @@ const ScoreBoard = ({
 
     const defaultTooltip = 'Your score is calculated by comparing you with students who have similar behavioral patterns. The dial range (P5–P95) shows where most students in your group fall. The two needles show your progress from yesterday to today.'
 
-    // Build the expanded panel content (rendered outside the grid for full width)
-    const expandedScore = expandedConceptId
-        ? displayScores.find(s => s.conceptId === expandedConceptId)
-        : null
+    // Shared breakdown content — used by both the inline mobile slot and the desktop panel
+    const renderBreakdownContent = (score: ConceptScore) => {
+        if (!score.breakdown) return null
 
-    const renderExpandedPanel = () => {
-        if (!expandedScore || !expandedScore.breakdown) return null
-
-        const dialMin = expandedScore.dialMin ?? 0
-        const dialMax = expandedScore.dialMax ?? 100
-        const comparison = getConceptComparisonStatement(
-            expandedScore.score!,
-            expandedScore.yesterdayScore,
-            dialMin,
-            dialMax
-        )
+        const dialMin = score.dialMin ?? 0
+        const dialMax = score.dialMax ?? 100
+        const comparison = getConceptComparisonStatement(score.score!, score.yesterdayScore, dialMin, dialMax)
         const toneBg = comparison.tone === 'better' ? '#f0fdf4' : comparison.tone === 'worse' ? '#fffbeb' : '#f9fafb'
         const toneBorder = comparison.tone === 'better' ? '#bbf7d0' : comparison.tone === 'worse' ? '#fde68a' : '#e5e7eb'
         const toneColor = comparison.tone === 'better' ? '#15803d' : comparison.tone === 'worse' ? '#92400e' : '#374151'
 
-        const isTop = expandedScore.clusterIndex === (expandedScore.totalClusters ?? 0) - 1
-        const isBottom = expandedScore.clusterIndex === 0
+        const isTop = score.clusterIndex === (score.totalClusters ?? 0) - 1
+        const isBottom = score.clusterIndex === 0
         const badgeBg = isTop ? '#ECFDF5' : isBottom ? '#FFFBEB' : '#EFF6FF'
         const badgeBorder = isTop ? '#6EE7B7' : isBottom ? '#FCD34D' : '#BFDBFE'
         const badgeColor = isTop ? '#065F46' : isBottom ? '#78350F' : '#1E3A5F'
         const badgeDot = isTop ? '🟢' : isBottom ? '🟡' : '🔵'
-        const showBadge = expandedScore.clusterLabel != null
-            && expandedScore.clusterIndex != null
-            && expandedScore.totalClusters != null
+        const showBadge = score.clusterLabel != null && score.clusterIndex != null && score.totalClusters != null
 
         return (
-            <div className='gauge-expanded-panel'>
-                <div className='gauge-expanded-panel-inner'>
-                    {/* Left: gauge */}
-                    <div className='gauge-expanded-gauge-col'>
-                        <ScoreGauge
-                            score={expandedScore.score!}
-                            label={expandedScore.conceptName}
-                            trend={expandedScore.trend ?? undefined}
-                            size="large"
-                            yesterdayScore={expandedScore.yesterdayScore}
-                            clusterLabel={expandedScore.clusterLabel}
-                            dialMin={expandedScore.dialMin}
-                            dialCenter={expandedScore.dialCenter}
-                            dialMax={expandedScore.dialMax}
-                        />
-                    </div>
-
-                    {/* Divider */}
-                    <div className='gauge-expanded-divider' />
-
-                    {/* Right: details */}
-                    <div className='gauge-expanded-details-col'>
-                        <div className='score-details-title' style={{ marginBottom: '12px' }}>Detailed Breakdown</div>
-
-                        {showBadge && (
-                            <div className='cluster-badge' style={{
-                                backgroundColor: badgeBg,
-                                border: `1px solid ${badgeBorder}`,
-                                borderRadius: '8px',
-                                padding: '8px 12px',
-                                marginBottom: '10px',
-                                color: badgeColor
-                            }}>
-                                <div className='cluster-badge-label'>{badgeDot} {expandedScore.clusterLabel}</div>
-                                {expandedScore.percentilePosition != null && (
-                                    <div className='cluster-badge-detail'>
-                                        You are at the {ordinal(expandedScore.percentilePosition)} percentile of this group
-                                    </div>
-                                )}
-                                {expandedScore.clusterUserCount != null && (
-                                    <div className='cluster-badge-detail'>
-                                        {expandedScore.clusterUserCount} student{expandedScore.clusterUserCount !== 1 ? 's' : ''} in this group
-                                    </div>
-                                )}
+            <>
+                <div className='score-details-title' style={{ marginBottom: '12px' }}>Detailed Breakdown</div>
+                {showBadge && (
+                    <div className='cluster-badge' style={{
+                        backgroundColor: badgeBg,
+                        border: `1px solid ${badgeBorder}`,
+                        borderRadius: '8px',
+                        padding: '8px 12px',
+                        marginBottom: '10px',
+                        color: badgeColor
+                    }}>
+                        <div className='cluster-badge-label'>{badgeDot} {score.clusterLabel}</div>
+                        {score.percentilePosition != null && (
+                            <div className='cluster-badge-detail'>
+                                You are at the {ordinal(score.percentilePosition)} percentile of this group
                             </div>
                         )}
-
-                        <div style={{
-                            backgroundColor: toneBg,
-                            border: `1px solid ${toneBorder}`,
-                            borderRadius: '6px',
-                            padding: '8px 10px',
-                            marginBottom: '10px',
-                            fontSize: '13px',
-                            color: toneColor,
-                            lineHeight: '1.4'
-                        }}>
-                            {comparison.text}
-                        </div>
-
-                        <ul className='gauge-expanded-breakdown-list'>
-                            {Object.entries(expandedScore.breakdown).map(([key]) => (
-                                <li key={key} style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '3px' }}>
-                                    <span className='detail-label' style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                        {formatAspectName(key)}
-                                        {DOMAIN_DESCRIPTIONS[key] && (
-                                            <span className='domain-info-wrapper'>
-                                                <span className='domain-info-icon'>ℹ</span>
-                                                <span className='domain-info-tooltip'>{DOMAIN_DESCRIPTIONS[key]}</span>
-                                            </span>
-                                        )}
-                                    </span>
-                                    {DOMAIN_TIPS[key] && (
-                                        <span style={{ fontSize: '11px', color: '#6b7280', lineHeight: '1.4', paddingLeft: '2px' }}>
-                                            💡 {DOMAIN_TIPS[key]}
-                                        </span>
-                                    )}
-                                </li>
-                            ))}
-                        </ul>
+                        {score.clusterUserCount != null && (
+                            <div className='cluster-badge-detail'>
+                                {score.clusterUserCount} student{score.clusterUserCount !== 1 ? 's' : ''} in this group
+                            </div>
+                        )}
                     </div>
+                )}
+                <div style={{
+                    backgroundColor: toneBg,
+                    border: `1px solid ${toneBorder}`,
+                    borderRadius: '6px',
+                    padding: '8px 10px',
+                    marginBottom: '10px',
+                    fontSize: '13px',
+                    color: toneColor,
+                    lineHeight: '1.4'
+                }}>
+                    {comparison.text}
+                </div>
+                <ul className='gauge-expanded-breakdown-list'>
+                    {Object.entries(score.breakdown).map(([key]) => (
+                        <li key={key} style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '3px' }}>
+                            <span className='detail-label' style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                {formatAspectName(key)}
+                                {DOMAIN_DESCRIPTIONS[key] && (
+                                    <span className='domain-info-wrapper'>
+                                        <span className='domain-info-icon'>ℹ</span>
+                                        <span className='domain-info-tooltip'>{DOMAIN_DESCRIPTIONS[key]}</span>
+                                    </span>
+                                )}
+                            </span>
+                            {DOMAIN_TIPS[key] && (
+                                <span style={{ fontSize: '11px', color: '#6b7280', lineHeight: '1.4', paddingLeft: '2px' }}>
+                                    💡 {DOMAIN_TIPS[key]}
+                                </span>
+                            )}
+                        </li>
+                    ))}
+                </ul>
+            </>
+        )
+    }
+
+    // Desktop: full-width panel below the grid (text only, no gauge dial)
+    const expandedScore = expandedConceptId
+        ? displayScores.find(s => s.conceptId === expandedConceptId)
+        : null
+
+    const renderDesktopPanel = () => {
+        if (!expandedScore || !expandedScore.breakdown) return null
+        return (
+            <div className='gauge-expanded-panel'>
+                <div className='gauge-expanded-panel-text-only'>
+                    {renderBreakdownContent(expandedScore)}
                 </div>
             </div>
         )
@@ -346,13 +332,19 @@ const ScoreBoard = ({
                                                     ? <div className={`gauge-last-updated${lu.stale ? ' stale' : ''}`}>{lu.text}</div>
                                                     : null
                                             })()}
+                                            {/* Mobile: inline breakdown right below this gauge */}
+                                            {isMobile && expandedConceptId === score.conceptId && score.breakdown && (
+                                                <div className='gauge-inline-breakdown'>
+                                                    {renderBreakdownContent(score)}
+                                                </div>
+                                            )}
                                         </>
                                     )}
                                 </div>
                             ))}
                         </div>
-                        {/* Full-width expanded panel — sits below the entire gauge row */}
-                        {renderExpandedPanel()}
+                        {/* Desktop: full-width text panel below the entire gauge row */}
+                        {!isMobile && renderDesktopPanel()}
                     </>
                 )}
             </div>

@@ -329,32 +329,19 @@
     }
 }
 
-.gauge-expanded-panel-inner {
-    display: flex;
-    align-items: flex-start;
-    gap: 0;
+/* Desktop: text-only panel content (no gauge dial) */
+.gauge-expanded-panel-text-only {
     padding: 24px;
+    max-width: 700px;
 }
 
-.gauge-expanded-gauge-col {
-    flex: 0 0 auto;
-    display: flex;
-    justify-content: center;
-    min-width: 260px;
-    max-width: 320px;
-}
-
-.gauge-expanded-divider {
-    width: 1px;
-    background: #e5e7eb;
-    align-self: stretch;
-    margin: 0 28px;
-    flex-shrink: 0;
-}
-
-.gauge-expanded-details-col {
-    flex: 1 1 0;
-    min-width: 0;
+/* Mobile: inline breakdown inside the gauge card */
+.gauge-inline-breakdown {
+    width: 100%;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #e5e7eb;
+    animation: gauge-panel-slide-in 0.2s ease-out;
 }
 
 .gauge-expanded-breakdown-list {
@@ -374,22 +361,4 @@
 
 .gauge-expanded-breakdown-list li:last-child {
     border-bottom: none;
-}
-
-/* On small screens, stack vertically */
-@media (max-width: 700px) {
-    .gauge-expanded-panel-inner {
-        flex-direction: column;
-        align-items: center;
-    }
-
-    .gauge-expanded-divider {
-        width: 100%;
-        height: 1px;
-        margin: 16px 0;
-    }
-
-    .gauge-expanded-details-col {
-        width: 100%;
-    }
 }
