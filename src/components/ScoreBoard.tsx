@@ -167,6 +167,123 @@ const ScoreBoard = ({
 
     const defaultTooltip = 'Your score is calculated by comparing you with students who have similar behavioral patterns. The dial range (P5–P95) shows where most students in your group fall. The two needles show your progress from yesterday to today.'
 
+    // Build the expanded panel content (rendered outside the grid for full width)
+    const expandedScore = expandedConceptId
+        ? displayScores.find(s => s.conceptId === expandedConceptId)
+        : null
+
+    const renderExpandedPanel = () => {
+        if (!expandedScore || !expandedScore.breakdown) return null
+
+        const dialMin = expandedScore.dialMin ?? 0
+        const dialMax = expandedScore.dialMax ?? 100
+        const comparison = getConceptComparisonStatement(
+            expandedScore.score!,
+            expandedScore.yesterdayScore,
+            dialMin,
+            dialMax
+        )
+        const toneBg = comparison.tone === 'better' ? '#f0fdf4' : comparison.tone === 'worse' ? '#fffbeb' : '#f9fafb'
+        const toneBorder = comparison.tone === 'better' ? '#bbf7d0' : comparison.tone === 'worse' ? '#fde68a' : '#e5e7eb'
+        const toneColor = comparison.tone === 'better' ? '#15803d' : comparison.tone === 'worse' ? '#92400e' : '#374151'
+
+        const isTop = expandedScore.clusterIndex === (expandedScore.totalClusters ?? 0) - 1
+        const isBottom = expandedScore.clusterIndex === 0
+        const badgeBg = isTop ? '#ECFDF5' : isBottom ? '#FFFBEB' : '#EFF6FF'
+        const badgeBorder = isTop ? '#6EE7B7' : isBottom ? '#FCD34D' : '#BFDBFE'
+        const badgeColor = isTop ? '#065F46' : isBottom ? '#78350F' : '#1E3A5F'
+        const badgeDot = isTop ? '🟢' : isBottom ? '🟡' : '🔵'
+        const showBadge = expandedScore.clusterLabel != null
+            && expandedScore.clusterIndex != null
+            && expandedScore.totalClusters != null
+
+        return (
+            <div className='gauge-expanded-panel'>
+                <div className='gauge-expanded-panel-inner'>
+                    {/* Left: gauge */}
+                    <div className='gauge-expanded-gauge-col'>
+                        <ScoreGauge
+                            score={expandedScore.score!}
+                            label={expandedScore.conceptName}
+                            trend={expandedScore.trend ?? undefined}
+                            size="large"
+                            yesterdayScore={expandedScore.yesterdayScore}
+                            clusterLabel={expandedScore.clusterLabel}
+                            dialMin={expandedScore.dialMin}
+                            dialCenter={expandedScore.dialCenter}
+                            dialMax={expandedScore.dialMax}
+                        />
+                    </div>
+
+                    {/* Divider */}
+                    <div className='gauge-expanded-divider' />
+
+                    {/* Right: details */}
+                    <div className='gauge-expanded-details-col'>
+                        <div className='score-details-title' style={{ marginBottom: '12px' }}>Detailed Breakdown</div>
+
+                        {showBadge && (
+                            <div className='cluster-badge' style={{
+                                backgroundColor: badgeBg,
+                                border: `1px solid ${badgeBorder}`,
+                                borderRadius: '8px',
+                                padding: '8px 12px',
+                                marginBottom: '10px',
+                                color: badgeColor
+                            }}>
+                                <div className='cluster-badge-label'>{badgeDot} {expandedScore.clusterLabel}</div>
+                                {expandedScore.percentilePosition != null && (
+                                    <div className='cluster-badge-detail'>
+                                        You are at the {ordinal(expandedScore.percentilePosition)} percentile of this group
+                                    </div>
+                                )}
+                                {expandedScore.clusterUserCount != null && (
+                                    <div className='cluster-badge-detail'>
+                                        {expandedScore.clusterUserCount} student{expandedScore.clusterUserCount !== 1 ? 's' : ''} in this group
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        <div style={{
+                            backgroundColor: toneBg,
+                            border: `1px solid ${toneBorder}`,
+                            borderRadius: '6px',
+                            padding: '8px 10px',
+                            marginBottom: '10px',
+                            fontSize: '13px',
+                            color: toneColor,
+                            lineHeight: '1.4'
+                        }}>
+                            {comparison.text}
+                        </div>
+
+                        <ul className='gauge-expanded-breakdown-list'>
+                            {Object.entries(expandedScore.breakdown).map(([key]) => (
+                                <li key={key} style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '3px' }}>
+                                    <span className='detail-label' style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                        {formatAspectName(key)}
+                                        {DOMAIN_DESCRIPTIONS[key] && (
+                                            <span className='domain-info-wrapper'>
+                                                <span className='domain-info-icon'>ℹ</span>
+                                                <span className='domain-info-tooltip'>{DOMAIN_DESCRIPTIONS[key]}</span>
+                                            </span>
+                                        )}
+                                    </span>
+                                    {DOMAIN_TIPS[key] && (
+                                        <span style={{ fontSize: '11px', color: '#6b7280', lineHeight: '1.4', paddingLeft: '2px' }}>
+                                            💡 {DOMAIN_TIPS[key]}
+                                        </span>
+                                    )}
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        )
+    }
+
     return (
         <div className='mood-card'>
             <div className='mood-card-header-row'>
@@ -187,151 +304,56 @@ const ScoreBoard = ({
                 ) : displayScores.length === 0 ? (
                     <div className='mood-no-data'>{emptyMessage}</div>
                 ) : (
-                    <div className='score-gauges-grid'>
-                        {displayScores.map(score => (
-                            <div
-                                className={`score-gauge-wrapper ${expandedConceptId === score.conceptId ? 'expanded' : ''}`}
-                                onClick={() => !score.coldStart && !score.noData && handleGaugeClick(score.conceptId)}
-                                key={score.conceptId}
-                                data-cold-start={score.coldStart ? 'true' : undefined}
-                                data-no-data={score.noData ? 'true' : undefined}
-                                style={{ cursor: (score.coldStart || score.noData) ? 'default' : 'pointer' }}
-                            >
-                                {score.coldStart ? (
-                                    <div className='cold-start-placeholder'>
-                                        <div className='cold-start-icon'>⏳</div>
-                                        <div className='cold-start-label'>{score.conceptName}</div>
-                                        <div className='cold-start-message'>Building your profile — check back once more students have joined.</div>
-                                    </div>
-                                ) : score.noData ? (
-                                    <div className='no-data-placeholder'>
-                                        <div className='no-data-icon'>{NO_DATA_ICONS[score.conceptId] ?? '📊'}</div>
-                                        <div className='no-data-label'>{score.conceptName}</div>
-                                        <div className='no-data-message'>{NO_DATA_HINTS[score.conceptId] ?? 'No data yet'}</div>
-                                    </div>
-                                ) : (
-                                    <>
-                                        <ScoreGauge
-                                            score={score.score!}
-                                            label={score.conceptName}
-                                            trend={score.trend ?? undefined}
-                                            size="medium"
-                                            yesterdayScore={score.yesterdayScore}
-                                            clusterLabel={score.clusterLabel}
-                                            dialMin={score.dialMin}
-                                            dialCenter={score.dialCenter}
-                                            dialMax={score.dialMax}
-                                        />
-                                        {(() => {
-                                            const lu = formatLastUpdated(score.computedAt)
-                                            return lu.text
-                                                ? <div className={`gauge-last-updated${lu.stale ? ' stale' : ''}`}>{lu.text}</div>
-                                                : null
-                                        })()}
-                                    </>
-                                )}
-                                {expandedConceptId === score.conceptId && score.breakdown && (() => {
-                                    const dialMin = score.dialMin ?? 0
-                                    const dialMax = score.dialMax ?? 100
-                                    const comparison = getConceptComparisonStatement(
-                                        score.score!,
-                                        score.yesterdayScore,
-                                        dialMin,
-                                        dialMax
-                                    )
-                                    const toneBg = comparison.tone === 'better'
-                                        ? '#f0fdf4'
-                                        : comparison.tone === 'worse'
-                                            ? '#fffbeb'
-                                            : '#f9fafb'
-                                    const toneBorder = comparison.tone === 'better'
-                                        ? '#bbf7d0'
-                                        : comparison.tone === 'worse'
-                                            ? '#fde68a'
-                                            : '#e5e7eb'
-                                    const toneColor = comparison.tone === 'better'
-                                        ? '#15803d'
-                                        : comparison.tone === 'worse'
-                                            ? '#92400e'
-                                            : '#374151'
-                                    // Cluster badge tier colors
-                                    const isTop = score.clusterIndex === (score.totalClusters ?? 0) - 1
-                                    const isBottom = score.clusterIndex === 0
-                                    const badgeBg = isTop ? '#ECFDF5' : isBottom ? '#FFFBEB' : '#EFF6FF'
-                                    const badgeBorder = isTop ? '#6EE7B7' : isBottom ? '#FCD34D' : '#BFDBFE'
-                                    const badgeColor = isTop ? '#065F46' : isBottom ? '#78350F' : '#1E3A5F'
-                                    const badgeDot = isTop ? '🟢' : isBottom ? '🟡' : '🔵'
-                                    const showBadge = score.clusterLabel != null
-                                        && score.clusterIndex != null
-                                        && score.totalClusters != null
-
-                                    return (
-                                        <div className='score-details-list'>
-                                            <div style={{ borderBottom: '1px solid #e5e7eb', paddingBottom: '4px', marginBottom: '8px' }}>
-                                                <div className='score-details-title' style={{ borderBottom: 'none', marginBottom: 0, paddingBottom: 0 }}>Detailed Breakdown</div>
-                                            </div>
-                                            {showBadge && (
-                                                <div className='cluster-badge' style={{
-                                                    backgroundColor: badgeBg,
-                                                    border: `1px solid ${badgeBorder}`,
-                                                    borderRadius: '8px',
-                                                    padding: '8px 12px',
-                                                    marginBottom: '10px',
-                                                    color: badgeColor
-                                                }}>
-                                                    <div className='cluster-badge-label'>
-                                                        {badgeDot} {score.clusterLabel}
-                                                    </div>
-                                                    {score.percentilePosition != null && (
-                                                        <div className='cluster-badge-detail'>
-                                                            You are at the {ordinal(score.percentilePosition)} percentile of this group
-                                                        </div>
-                                                    )}
-                                                    {score.clusterUserCount != null && (
-                                                        <div className='cluster-badge-detail'>
-                                                            {score.clusterUserCount} student{score.clusterUserCount !== 1 ? 's' : ''} in this group
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            )}
-                                            <div style={{
-                                                backgroundColor: toneBg,
-                                                border: `1px solid ${toneBorder}`,
-                                                borderRadius: '6px',
-                                                padding: '8px 10px',
-                                                marginBottom: '10px',
-                                                fontSize: '13px',
-                                                color: toneColor,
-                                                lineHeight: '1.4'
-                                            }}>
-                                                {comparison.text}
-                                            </div>
-                                            <ul>
-                                                {Object.entries(score.breakdown).map(([key]) => (
-                                                    <li key={key} style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '3px' }}>
-                                                        <span className='detail-label' style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                                            {formatAspectName(key)}
-                                                            {DOMAIN_DESCRIPTIONS[key] && (
-                                                                <span className='domain-info-wrapper'>
-                                                                    <span className='domain-info-icon'>ℹ</span>
-                                                                    <span className='domain-info-tooltip'>{DOMAIN_DESCRIPTIONS[key]}</span>
-                                                                </span>
-                                                            )}
-                                                        </span>
-                                                        {DOMAIN_TIPS[key] && (
-                                                            <span style={{ fontSize: '11px', color: '#6b7280', lineHeight: '1.4', paddingLeft: '2px' }}>
-                                                                💡 {DOMAIN_TIPS[key]}
-                                                            </span>
-                                                        )}
-                                                    </li>
-                                                ))}
-                                            </ul>
+                    <>
+                        <div className='score-gauges-grid'>
+                            {displayScores.map(score => (
+                                <div
+                                    className={`score-gauge-wrapper ${expandedConceptId === score.conceptId ? 'expanded' : ''}`}
+                                    onClick={() => !score.coldStart && !score.noData && handleGaugeClick(score.conceptId)}
+                                    key={score.conceptId}
+                                    data-cold-start={score.coldStart ? 'true' : undefined}
+                                    data-no-data={score.noData ? 'true' : undefined}
+                                    style={{ cursor: (score.coldStart || score.noData) ? 'default' : 'pointer' }}
+                                >
+                                    {score.coldStart ? (
+                                        <div className='cold-start-placeholder'>
+                                            <div className='cold-start-icon'>⏳</div>
+                                            <div className='cold-start-label'>{score.conceptName}</div>
+                                            <div className='cold-start-message'>Building your profile — check back once more students have joined.</div>
                                         </div>
-                                    )
-                                })()}
-                            </div>
-                        ))}
-                    </div>
+                                    ) : score.noData ? (
+                                        <div className='no-data-placeholder'>
+                                            <div className='no-data-icon'>{NO_DATA_ICONS[score.conceptId] ?? '📊'}</div>
+                                            <div className='no-data-label'>{score.conceptName}</div>
+                                            <div className='no-data-message'>{NO_DATA_HINTS[score.conceptId] ?? 'No data yet'}</div>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <ScoreGauge
+                                                score={score.score!}
+                                                label={score.conceptName}
+                                                trend={score.trend ?? undefined}
+                                                size="medium"
+                                                yesterdayScore={score.yesterdayScore}
+                                                clusterLabel={score.clusterLabel}
+                                                dialMin={score.dialMin}
+                                                dialCenter={score.dialCenter}
+                                                dialMax={score.dialMax}
+                                            />
+                                            {(() => {
+                                                const lu = formatLastUpdated(score.computedAt)
+                                                return lu.text
+                                                    ? <div className={`gauge-last-updated${lu.stale ? ' stale' : ''}`}>{lu.text}</div>
+                                                    : null
+                                            })()}
+                                        </>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                        {/* Full-width expanded panel — sits below the entire gauge row */}
+                        {renderExpandedPanel()}
+                    </>
                 )}
             </div>
         </div>
