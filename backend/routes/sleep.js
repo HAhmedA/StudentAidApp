@@ -52,52 +52,50 @@ router.post('/', asyncRoute(async (req, res) => {
         yesterday.setDate(yesterday.getDate() - 1)
         const sessionDate = yesterday.toISOString().split('T')[0] // YYYY-MM-DD
 
+        // Convert HH:mm to track-minutes (track spans 12 PM noon → 12 PM next day).
+        // Hours 12–23 are "before midnight" (track 0–719, yesterday evening).
+        // Hours 0–11 are "after midnight" (track 720–1439, today morning).
+        // This matches the frontend's minsToHHmm / hhmmToTrackMins formula exactly,
+        // ensuring intervals are sorted chronologically even when they cross midnight.
+        const toTrackMins = (hhmm) => {
+            const [h, m] = hhmm.split(':').map(Number)
+            return ((h - 12 + 24) % 24) * 60 + m
+        }
+
+        // Convert track-minutes to an absolute Date object
+        const trackToDate = (trackMins) => {
+            const d = new Date(yesterday)
+            if (trackMins < 720) {
+                // Before midnight → yesterday evening
+                d.setHours(12 + Math.floor(trackMins / 60), trackMins % 60, 0, 0)
+            } else {
+                // After midnight → today morning
+                const minsAfterMidnight = trackMins - 720
+                d.setDate(d.getDate() + 1)
+                d.setHours(Math.floor(minsAfterMidnight / 60), minsAfterMidnight % 60, 0, 0)
+            }
+            return d
+        }
+
         const parsed = intervals.map(({ start, end }) => {
-            const [sh, sm] = start.split(':').map(Number)
-            const [eh, em] = end.split(':').map(Number)
-            let startMin = sh * 60 + sm
-            let endMin = eh * 60 + em
-            // If end is before start, it crosses midnight (e.g. 23:00 → 07:00)
-            // But in our model, end should always be after start because the
-            // slider enforces that. If end < start it means it went past midnight.
-            if (endMin <= startMin) endMin += 1440
-            return { startMin, endMin, startH: sh, startM: sm, endH: eh, endM: em }
+            const startTrack = toTrackMins(start)
+            let endTrack = toTrackMins(end)
+            // Guard: if end track <= start, interval wraps around noon (very unusual); extend by one full day
+            if (endTrack <= startTrack) endTrack += 1440
+            return { startTrack, endTrack, durationMins: endTrack - startTrack }
         })
 
-        // Sort by start time
-        parsed.sort((a, b) => a.startMin - b.startMin)
+        // Sort chronologically using track-minutes (not raw clock hours)
+        parsed.sort((a, b) => a.startTrack - b.startTrack)
 
-        // Earliest bedtime
-        const earliest = parsed[0]
-        const bedtimeDate = new Date(yesterday)
-        bedtimeDate.setHours(earliest.startH, earliest.startM, 0, 0)
-        // If bedtime hour >= 12 (noon), it's yesterday evening; otherwise it's today early morning
-        if (earliest.startH < 12) {
-            // Early morning → this is actually "today"
-            bedtimeDate.setDate(bedtimeDate.getDate() + 1)
-        }
-
-        // Latest wake time
-        const latest = parsed[parsed.length - 1]
-        // Find the interval with the latest endMin
-        const latestEnd = parsed.reduce((best, p) => p.endMin > best.endMin ? p : best, parsed[0])
-        const wakeDate = new Date(yesterday)
-        wakeDate.setHours(latestEnd.endH, latestEnd.endM, 0, 0)
-        if (latestEnd.endH < 12 || latestEnd.endMin > 1440) {
-            // Morning → today
-            wakeDate.setDate(wakeDate.getDate() + 1)
-        }
-        // If the raw end crossed midnight (endMin > 1440), adjust the hour
-        if (latestEnd.endMin > 1440) {
-            const actualMin = latestEnd.endMin - 1440
-            wakeDate.setHours(Math.floor(actualMin / 60), actualMin % 60, 0, 0)
-        }
+        const bedtimeDate = trackToDate(parsed[0].startTrack)
+        const wakeDate = trackToDate(parsed[parsed.length - 1].endTrack)
 
         // Total sleep = sum of all interval durations
-        const totalSleepMinutes = parsed.reduce((sum, p) => sum + (p.endMin - p.startMin), 0)
+        const totalSleepMinutes = parsed.reduce((sum, p) => sum + p.durationMins, 0)
 
-        // Time in bed = wake_time - bedtime in minutes
-        const timeInBedMinutes = Math.round((wakeDate.getTime() - bedtimeDate.getTime()) / 60000)
+        // Time in bed = wake_time − bedtime (always non-negative now that sort is correct)
+        const timeInBedMinutes = Math.max(0, Math.round((wakeDate.getTime() - bedtimeDate.getTime()) / 60000))
 
         // Awake minutes = time in bed - total sleep
         const awakeMinutes = Math.max(0, timeInBedMinutes - totalSleepMinutes)
