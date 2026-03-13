@@ -14,9 +14,9 @@ const MAX_ALIGNMENT_RETRIES = 1
 
 // Contextual alignment failure messages based on failure category
 const ALIGNMENT_MESSAGES = {
-    default: "The service is down at the moment, please try again later.",
+    default: "I wasn't able to generate a suitable response to that. Please try rephrasing your question.",
     safety: "I can't help with that particular request. Is there something else about your learning I can assist with?",
-    scope: "That topic is outside my expertise. I focus on self-regulated learning strategies and study skills.",
+    scope: "That topic is outside my expertise. I'm here to help with your learning habits, study strategies, and wellbeing data.",
     unclear: "I'm having trouble understanding your request. Could you provide more details or rephrase?"
 }
 
@@ -35,7 +35,12 @@ function categorizeFailure(reason) {
     if (!reason) return 'default'
     const r = reason.toLowerCase()
     if (r.includes('safety') || r.includes('harmful') || r.includes('inappropriate')) return 'safety'
-    if (r.includes('scope') || r.includes('instruction') || r.includes('outside')) return 'scope'
+    if (
+        r.includes('scope') || r.includes('instruction') || r.includes('outside') ||
+        r.includes('off-topic') || r.includes('off topic') || r.includes('unrelated') ||
+        r.includes('not related') || r.includes('irrelevant') || r.includes('topic') ||
+        r.includes('cooking') || r.includes('recipe') || r.includes('entirely')
+    ) return 'scope'
     if (r.includes('unclear') || r.includes('ambiguous') || r.includes('understand')) return 'unclear'
     return 'default'
 }
