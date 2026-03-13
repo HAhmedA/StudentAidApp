@@ -34,6 +34,7 @@ jest.unstable_mockModule('../../../services/simulationOrchestratorService.js', (
 }))
 
 // ── Dynamic imports after mocks ────────────────────────────────────────────────
+process.env.SESSION_SECRET = 'test-secret'
 const { default: authRouter } = await import('../../../routes/auth.js')
 
 function buildApp() {

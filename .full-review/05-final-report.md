@@ -1,314 +1,178 @@
-# Comprehensive Code Review Report
+# Comprehensive Code Review — Final Report
 
-## Review Target
-
-**Branch:** `feature/chatbot` vs `main`
-**Application:** Student Wellbeing Dashboard (React + Node.js/Express ESM + PostgreSQL)
-**Review Date:** 2026-02-28
-**Phases Completed:** Code Quality, Architecture, Security, Performance, Testing, Documentation, Framework Best Practices, CI/CD & DevOps
+**Application:** Student Wellbeing Dashboard (Node.js/Express + React + PostgreSQL)
+**Review Date:** 2026-03-11
+**Commits Reviewed:** `04eaee5` (P1 fixes), `d524dc2` (chatbot/gauges)
+**Phases Completed:** Code Quality, Architecture, Security, Performance, Testing, Documentation, Best Practices, CI/CD
 
 ---
 
 ## Executive Summary
 
-The `feature/chatbot` branch delivers substantial new functionality — a PGMoE scoring pipeline, Moodle LMS integration, an AI chatbot layer, and a cluster diagnostics admin panel. The core algorithmic work is well-structured and the ESM backend architecture is clean and consistent. However, the branch has **significant security, operational, and testing gaps** that make it unsuitable for production deployment in its current state.
+The codebase shows consistent improvement across recent sprints: parameterised SQL throughout, `asyncRoute` error handling, extracted scoring helpers, paginated admin endpoints, injectable cron service, and four well-structured operational runbooks. The scoring pipeline in particular is cleanly layered and well-tested for its core paths.
 
-The most urgent issues are: (1) an unauthenticated admin access endpoint reachable in production, (2) real credentials committed to version control, (3) a completely absent backend CI pipeline, (4) no production deployment infrastructure, and (5) a nightly scoring cron that will fail entirely at ~200 users. These are not minor polish items — they are blocking issues for any production rollout.
+However, the review identified **two functional bugs** (mood router never mounted, wrong build arg in `compose.yml`), **two Critical security findings** (hand-rolled session signing, plaintext HTTP deployment), and **three Critical operational findings** (no automated deployment, same two security issues carrying through to ops). The most significant systemic issue is a compound observability gap: Sentry is bypassed by `asyncRoute` (BP-05), the health endpoint reports healthy during DB outages (OPS-09), and scoring errors are silently swallowed as `null` (AR-11) — three independent blind spots that together mean a broken deployment can go undetected for hours.
+
+**Total findings:** 90 across 8 categories
+**Critical:** 7 | **High:** 26 | **Medium:** 36 | **Low:** 21
 
 ---
 
 ## Findings by Priority
 
-### P0 — Critical Issues (Must Fix Before Any Production Deployment)
+---
+
+### P0 — Critical: Fix Immediately
+
+#### SEC-01 — Hand-Rolled Session Cookie Signing (CVSS 9.1, CWE-347)
+**`authController.js` lines 11–15.** `signSessionId()` reimplements `cookie-signature`'s HMAC-SHA256 with manual base64url substitution that the library does NOT perform. If the signatures diverge, every real-browser login silently fails session restoration — or an attacker who discovers the divergence can craft cookies that pass one verification path.
+**Fix:** `import { sign } from 'cookie-signature'` and replace with `'s:' + sign(id, secret)`.
+
+#### SEC-02 / OPS-02 — Plaintext HTTP Deployment with Session Cookies (CVSS 9.0, CWE-319)
+**`compose.http.yml`, `deployment.md`.** Production runs on port 80, `COOKIE_SECURE=false`, HSTS disabled. Session cookies — including for admin accounts — are transmitted in cleartext. On a university campus network, passive session hijacking is trivially easy.
+**Fix:** Switch deployment runbook to `compose.prod.yml` with Caddy automatic TLS, or add Cloudflare Tunnel.
+
+#### OPS-01 — No Automated Deployment
+All releases are manual SSH sessions with no audit trail, no rollback automation, and risk of operator error. A failed mid-deployment build leaves the service down until manually corrected.
+**Fix:** Add a CD GitHub Actions job on push to `main` using `appleboy/ssh-action`. Tag Docker images with the Git SHA for one-command rollback.
+
+#### DOC-03 — Mood Router Never Mounted (Functional Bug)
+**`routes/index.js`.** `mood.js` is never imported or mounted. All mood endpoints are silently unreachable at runtime despite the frontend expecting them.
+**Fix:** Add `import moodRoutes from './mood.js'` and `router.use('/mood', moodRoutes)` to `routes/index.js`.
+
+#### DOC-08 / OPS-03 — Wrong Build Arg in `compose.yml` (Functional Bug)
+**`compose.yml` line 9.** `REACT_APP_API_BASE` is passed but Dockerfile expects `VITE_API_BASE`. The arg is silently discarded; the baked-in API URL may be incorrect in any environment relying on `compose.yml` alone.
+**Fix:** Rename to `VITE_API_BASE: "/api"` in `compose.yml`.
+
+#### SEC-03 — Legacy Login Creates Arbitrary Admin Sessions from User Input (CVSS 8.1, CWE-287)
+**`auth.js` lines 133–147.** `POST /legacy-login` accepts `{ role: 'admin' }` with no credential check. The only guard is `NODE_ENV === 'production'`, which defaults to `'development'` when `NODE_ENV` is unset.
+**Fix:** Remove `/legacy-login` entirely or guard with an explicit `ENABLE_DEMO_LOGIN=true` env var; never derive `role` from user input.
 
 ---
 
-**[SEC-01] Unauthenticated Admin Access via `legacy-login`**
-*Source: Security (Phase 2) · Auth (Phase 1) · Testing (Phase 3)*
-`backend/routes/auth.js:72–83`
+### P1 — High: Fix Before Next Deployment
 
-`POST /api/auth/legacy-login` with `{"role":"admin"}` (no credentials) grants a full admin session. No `NODE_ENV` guard. All admin operations — student PII enumeration, system prompt modification, bulk Moodle sync — are reachable. CVSS 9.8. The endpoint has 0% test coverage and is not documented anywhere.
+#### Security
+- **SEC-04** — Admin role bypasses all rate limiting (`rateLimit.js:11`); compromised admin has unrestricted API access including expensive endpoints. Replace bypass with a higher per-admin limit.
+- **SEC-05** — LLM API key stored in plaintext in the `llm_config` table. Encrypt at rest or move to a secrets manager.
+- **SEC-06** — SSRF via admin-controlled LLM base URL (`admin.js:544`). `new URL()` validation does not block `169.254.169.254`. Add IP range blocklist.
+- **SEC-07** — `POST /surveys/changeJson` has no auth guard (CWE-862). Any unauthenticated caller can overwrite survey JSON. Add `requireAdmin`.
+- **SEC-08** — `POST /results/post` accepts anonymous submissions, inserting `user_id = null` rows (CWE-862). Add `requireAuth`.
 
-**Fix:** Remove the endpoint, or add `if (process.env.NODE_ENV === 'production') return res.status(404).json({ error: 'not_found' })` as the first line.
+#### Architecture
+- **AR-02** — `batchComputeClusterScores` bypasses `_persistClusterResults` and `_computeUserPercentile` helpers, re-implementing the same logic inline. Partial refactor leaves inconsistency and makes percentile logic diverge.
+- **AR-06** — `server.js` imports `{ ensureFixedSurvey }` from `routes/surveys.js`, violating the infrastructure→service→route dependency direction. Move to a service module.
+- **AR-11** — `computeConceptScore` swallows all errors with `return null`, conflating "no data" with "threw an error". Propagate errors to the caller.
 
----
+#### Performance
+- **PERF-01** — O(N²D log N) batch scoring: `batchComputeClusterScores` calls `computeCompositeScore` in an N-user loop, which re-sorts allValues (O(N log N)) per dimension. Pre-computed ranges from `_runConceptClustering` exist but are not passed through.
+- **PERF-02** — `composites.filter(…).sort(…)` runs N times in the batch loop. Pre-group by cluster index once before the loop.
+- **PERF-03 / OPS-05** — DB pool has no explicit `max`, `idleTimeoutMillis`, or `connectionTimeoutMillis`. Add explicit config.
+- **PERF-06** — Missing composite indexes on all hot query paths: `lms_sessions(user_id, is_simulated, session_date)`, `sleep_sessions`, `screen_time_sessions`, `chat_sessions(user_id, is_active, created_at)`, `concept_score_history(user_id, concept_id, score_date)`. Add a migration.
 
-**[DC-C1] Real Credentials Committed to Version Control**
-*Source: CI/CD (Phase 4)*
-`compose.yml:21,25,29` · `.env.example:38`
+#### Testing
+- **TEST-01** — No end-to-end test verifies that the signed cookie from login is accepted by `express-session`'s verify mechanism.
+- **TEST-02** — `/legacy-login` admin attack path is not tested end-to-end.
+- **TEST-03** — No test asserts `401` on unauthenticated `POST /surveys/changeJson`.
+- **TEST-05** — `csvLog` route (5 endpoints, including a manual `BEGIN/COMMIT` transaction) has zero test coverage.
+- **TEST-06** — `computeSRLClusterScores` (130 lines, 0% coverage). The DIAG_SAMPLE cap was not applied to SRL's `storeDiagnostics`, so large SRL cohorts compute full O(N²) silhouette scores.
+- **TEST-07** — `batchComputeClusterScores` and `batchScoreLMSCohort` are completely untested.
+- **TEST-08** — `register` endpoint has no tests at all.
+- **TEST-09** — `logout` endpoint has no tests at all.
 
-`SESSION_SECRET=dev-secret`, `PGPASSWORD=password`, and `MOODLE_TOKEN=c4acddbfba05950afcae5c334c74bc8e` are in git history permanently. The Moodle token allows anyone with repo access to authenticate against the Moodle instance.
+#### Documentation
+- **DOC-04** — Multiple admin endpoints lack Swagger annotations, including the destructive `DELETE /admin/clear-student-data`.
+- **DOC-05** — LMS bulk sync async pattern (202 + jobId polling) undocumented. In-memory job store limitation not surfaced in API docs.
+- **DOC-06** — 6 chat endpoints missing Swagger annotations; `GET /chat/initial` returns two distinct response shapes with no documentation.
+- **DOC-07** — `DEBUG_LLM`, `COOKIE_SECURE`, and `EC2_HOST` missing from `.env.example`.
+- **DOC-09** — Deployment runbook says "4 services" when only 3 exist.
 
-**Fix (immediate):** Rotate the Moodle token. Replace all values in `compose.yml` with `${VAR}` references. Replace `.env.example` token with a placeholder string.
-
----
-
-**[CQ-C1 / SEC-02] SQL Template Literal Injection Pattern (Latent)**
-*Source: Code Quality (Phase 1) · Security (Phase 2) · Framework (Phase 4)*
-`scoreQueryService.js:28,32,36,116,142,166` · `sleepAnnotationService.js:313` · `screenTimeAnnotationService.js:255`
-
-`INTERVAL '${days} days'` interpolates `days` directly. Currently not user-reachable (all call sites pass hardcoded `7`), but one HTTP query parameter addition makes it exploitable. The safe pattern (`$2 * INTERVAL '1 day'`) already exists in `lmsAnnotationService.js:301` but is not consistently applied. CVSS 8.6 (adjusted to 6.5 for current exploitability).
-
-**Fix:** Parameterize all INTERVAL expressions: `WHERE session_date >= CURRENT_DATE - ($2 * INTERVAL '1 day')`.
-
----
-
-**[SEC-03] Rate Limiter Bypass via Legacy Auth Aliases**
-*Source: Security (Phase 2)*
-`backend/routes/index.js:23–25`
-
-`/api/login` calls `login` without `authLimiter` (10 req/15 min). Only the general `apiLimiter` (100 req/15 min) applies — sufficient for credential stuffing. Input validation via `express-validator` is also bypassed on the alias. CVSS 7.5.
-
-**Fix:** Remove legacy aliases, or apply `authLimiter` + `express-validator` validation to each.
-
----
-
-**[P-C1] O(N²) Silhouette Score in Nightly Cron**
-*Source: Performance (Phase 2)*
-`backend/services/scoring/pgmoeAlgorithm.js:599–642`
-
-`computeSilhouetteScore` is O(N²) and runs 4× per user (once per concept) in the nightly job. At 200 users: ~15 minutes; at 500 users: multiple hours. Cron runs permanently overlap. The silhouette metric is diagnostic-only (append-only audit table) and does not affect score correctness.
-
-**Fix:** Decouple silhouette/Davies-Bouldin computation from the user scoring path. Run as a separate low-priority background job, or cap to a random sample of `min(N, 100)`.
+#### CI/CD
+- **OPS-04** — Backup cron not provisioned by IaC; no offsite upload; no verification that backups are actually running. Data loss risk on EC2 instance loss.
 
 ---
 
-**[P-C2] Nightly Cron Is Fully Sequential Across All Users × Concepts**
-*Source: Performance (Phase 2)*
-`backend/services/cronService.js:50–58` · `scoreComputationService.js:83–88`
+### P2 — Medium: Plan for Next Sprint
 
-PGMoE clustering is cohort-level computation. Running 4 model fits per user sequentially means 4N fits total instead of 4. At 50 users: 2.5 minutes. With P-C1 compounding, failure is certain before 200 users.
+#### Security
+- **SEC-09** — Moodle token exposed in GET URL query strings (may appear in server/Moodle logs).
+- **SEC-10** — `DEBUG_LLM=true` logs full chat payloads to stdout; no guard prevents this in production.
+- **SEC-11** — Session secret falls back to hardcoded `'dev-secret'`; generate a random secret on startup instead.
+- **SEC-12** — No CSRF token mechanism beyond `SameSite=Lax`.
 
-**Architectural fix:** Run PGMoE once per concept across all users, then fan out assignment writes in parallel.
+#### Architecture
+- **AR-03** — `SIMULATION_MODE` evaluated at module load time in `scoreQueryService.js`; tests that set this env var after import see stale behaviour.
+- **AR-05** — The ~25-line score-mapping loop is still duplicated between `admin.js` and `scores.js`. Extract a `mapScoreRow()` helper.
+- **AR-09** — `contextManagerService.js` mixes 6+ concerns (session CRUD, AI orchestration, greeting, alignment, summarization). Extract `chatOrchestrationService.js`.
+- **AR-12** — No API response versioning strategy; new fields added to score responses break clients silently.
 
----
+#### Performance
+- **PERF-04** — Nightly cron processes users sequentially; `p-limit` (already a dependency) could parallelize 3–5 users for 3–5× speedup.
+- **PERF-07** — Silent null from scoring errors means failed computations contribute to `successCount` instead of `errorCount`.
+- **PERF-08** — `getOrCreateSession` makes 3 sequential DB round-trips; consolidate into a single CTE query.
+- **PERF-10** — Moodle forum sync cap (`MAX_FORUM_DISCUSSIONS_PER_SYNC = 50`) silently drops posts for active courses.
 
-**[P-C3] 108 Sequential HTTP Calls per Moodle Sync**
-*Source: Performance (Phase 2)*
-`backend/services/moodleService.js:291–334`
+#### Code Quality
+- **CQ-01** — `signSessionId()` reimplements `cookie-signature` (also Critical in security — carry-over).
+- **CQ-02** — `session.save()` + `setSessionCookie()` pattern duplicated in `login` and `register`. Extract a helper.
+- **CQ-05** — `computeCompositeScore` re-sorts allValues per call in the batch path. Pass pre-computed ranges.
+- **CQ-10** — `computeConceptScore` conflates `null` (no data) with `null` (error). Return a discriminated result object.
+- **CQ-11** — `MIN_CLUSTER_USERS = 10` defined in `clusterPeerService.js` but used inline as literal `10` in `admin.js` and `scores.js`. Export and import the constant.
 
-One HTTP call per forum discussion thread, capped at 50 per forum. Worst case (50 students × 108 calls × 200ms): 18 minutes for `sync-all`. The admin HTTP connection remains open for the full duration.
+#### Best Practices
+- **BP-02** — Startup work runs inside `app.listen` callback; no global `unhandledRejection` handler.
+- **BP-04** — All non-AppError exceptions reclassified as misleading `DB_ERROR`.
+- **BP-05** — `asyncRoute` never calls `next(err)`; global error handler and Sentry are dead code for all route errors.
 
-**Fix:** `Promise.all` with `p-limit(5)` for discussion fetches. Enqueue `sync-all` as a background job; return a job ID immediately.
+#### Testing
+- **TEST-10** — `scoreQueryService.js` never tested directly; `EXCLUDE_SIMULATED_USERS` logic untested.
+- **TEST-13** — Rate limiter never fire-tested for actual 429 enforcement.
+- **TEST-14** — `contextManagerService`, `promptAssemblerService`, `summarizationService` have no unit tests.
 
----
+#### Documentation
+- **DOC-10** — `GET /scores/:conceptId` missing Swagger annotation.
+- **DOC-11** — Sleep and screen-time routes undocumented.
+- **DOC-12** — Profile routes undocumented.
+- **DOC-13** — CSV log routes (including `X-Filename` header and two-phase upload workflow) undocumented.
+- **DOC-14** — README references `npm start` and port 3000 post-Vite migration.
+- **DOC-15** — `DATABASE_URL` in `.env.example` points to `localhost:5433` — wrong inside Docker.
+- **DOC-16** — Postgres major-version volume incompatibility not documented in runbook.
+- **DOC-17** — `GET /annotations/chatbot` undocumented in Swagger.
 
-**[P-C4 / SEC-09] `storeUserAssignment` Silently Swallows Errors**
-*Source: Performance (Phase 2) · Security (Phase 2) · Framework (Phase 4)*
-`backend/services/scoring/clusterStorageService.js:62–79`
-
-Inside a `withTransaction` block, `storeClusterResults` commits but `storeUserAssignment` fails silently. Users see real scores with stale dial values (defaulting to `dialMin=0, dialCenter=50, dialMax=100`) indefinitely with no error indicator. No test covers the failure path.
-
-**Fix:** Remove the try/catch when `externalClient` is provided. Let the error propagate to `withTransaction` for rollback.
-
----
-
-**[CI-C1] Backend Test Suite Never Runs in CI**
-*Source: Testing (Phase 3) · CI/CD (Phase 4)*
-`.github/workflows/build-node.js.yml`
-
-The only CI workflow runs React frontend tests only. `backend/package.json` and its Jest suite are never invoked. The 70% line coverage threshold in `backend/jest.config.js` has never enforced anything. No backend change has automated test validation.
-
-**Fix:** Add a `backend` job to the CI workflow (see template below).
-
----
-
-**[DS-C1] No Production Deployment Configuration**
-*Source: CI/CD (Phase 4)*
-
-No `fly.toml`, `Procfile`, `railway.json`, Kubernetes manifests, or deployment workflow. The only runnable artifact is `compose.yml`, which bakes in dev secrets, `DEBUG_LLM=true`, and a localhost Moodle URL. There is no documented procedure for shipping a production release.
-
----
-
-**[DB-C1] No Migration Runner — Schema Changes Require Data Destruction**
-*Source: CI/CD (Phase 4)*
-`postgres/initdb/`
-
-Init scripts only execute on an empty Docker volume. Adding a new SQL file after initial setup requires either manual `ALTER TABLE` or a volume wipe that destroys all data. No migration history, no node-pg-migrate, no Flyway.
-
-**Fix:** Adopt `node-pg-migrate`. Convert the 14 init SQL files to numbered migrations.
-
----
-
-**[PM-C1] No Restart Policy; Single Node.js Process for HTTP + Cron**
-*Source: CI/CD (Phase 4)*
-`compose.yml` · `backend/Dockerfile`
-
-A single unhandled exception kills the Node process permanently. No `restart: unless-stopped` in Compose. No PM2 or process manager. The O(N²) nightly cron shares the event loop with HTTP request handling.
-
-**Fix:** Add `restart: unless-stopped` to the Compose backend service. Separate the cron into a worker process.
+#### CI/CD
+- **OPS-06** — Node 18 EOL in CI and Dockerfiles. Upgrade to Node 20 LTS.
+- **OPS-07** — No staging environment; dev/prod configurations diverge significantly.
+- **OPS-08** — File-based secrets, no rotation mechanism, weak `.env.example` password placeholder.
+- **OPS-09** — Health endpoint returns 200 unconditionally; Docker healthcheck reports healthy during DB outage.
+- **OPS-10** — No Jest coverage threshold in CI; coverage computed but not enforced.
+- **OPS-11** — Migration tooling present but absent from deployment runbook; concurrent-start advisory lock not documented.
 
 ---
 
-**[EM-C1] Weak Credentials Only Warn in Production — Never Block**
-*Source: Security (Phase 2) · CI/CD (Phase 4)*
-`backend/config/envValidation.js` · `backend/config/database.js:9` · `backend/server.js:66`
+### P3 — Low: Track in Backlog
 
-`PGPASSWORD=password` and missing `SESSION_SECRET` are `warnings[]` not `missing[]`. `database.js` silently uses `'password'` as a fallback. A misconfigured production deployment starts successfully with exploitable defaults.
-
-**Fix:** Move to `missing[]` so `validateEnv()` throws at startup in `NODE_ENV=production`.
-
----
-
-**[FW-C1] CommonJS `require()` in ESM-Only Backend Package**
-*Source: Framework (Phase 4)*
-`backend/services/annotators/index.js`
-
-This barrel index uses `require()` and `module.exports` inside a `"type": "module"` package. Currently dead code (no file imports from this barrel — services are imported directly), but any future barrel import would crash the process with `ReferenceError: require is not defined`.
-
-**Fix:** Convert to ESM or delete the file.
-
----
-
-**[DOC-01] Three Architecture Docs Contradict the Live Scoring Model**
-*Source: Documentation (Phase 3)*
-`docs/annotation_pipeline.md:47` · `docs/peer_comparison_scoring_system.md:80,173–174,374`
-
-Three docs still describe the removed `action_mix` / `active_percent` LMS dimension. The live code uses `participation_variety` / `participation_score`. Existing `concept_scores.aspect_breakdown` rows contain `action_mix` keys; new rows contain `participation_variety`. Frontend tooltip lookup silently falls through for old keys.
-
-**Fix:** Update all three files to reflect the current dimension and formula.
-
----
-
-**[CRIT-T1] No Regression Test for `legacy-login` Auth Bypass**
-*Source: Testing (Phase 3)*
-
-The security hole (SEC-01) has 0% test coverage. No test documents or catches the vulnerability being re-introduced.
-
-**Fix:** Add a test that POSTs `{"role":"admin"}` to `/api/auth/legacy-login` and asserts the response is **not** `200`. This test documents the expected secure behavior and will fail (correctly) until the fix is deployed.
-
----
-
-**[CRIT-T2] No IDOR Test for Chat Session History**
-*Source: Testing (Phase 3)*
-
-`GET /api/chat/history?sessionId=UUID` verifies auth but not session ownership. No test verifies that user A cannot read user B's session by supplying B's `sessionId`.
-
----
-
-### P1 — High Priority (Fix Before Next Release)
-
-| ID | Category | Finding | File |
-|---|---|---|---|
-| AR-H1 | Architecture | `router.handle()` anti-pattern on legacy admin shims | `admin.js:248–256` |
-| SEC-04 | Security | Hardcoded DB password fallback `'password'` (CVSS 7.3) | `database.js:9` |
-| SEC-05 | Security | Hardcoded session secret fallback `'dev-secret'` (CVSS 7.5) | `server.js:66` |
-| SEC-06 | Security | Verbose error details leaked to clients in production (CVSS 5.3) | `annotations.js:27` |
-| SEC-07 | Security | Admin cluster-members exposes full student PII, unbounded (CVSS 6.5) | `admin.js:208–245` |
-| SEC-08 | Security | IDOR on `GET /api/chat/history` — no session ownership check (CVSS 5.4) | `chat.js:132–156` |
-| P-H1 | Performance | 4 sequential DB queries per `/api/scores` page load | `routes/scores.js:36–149` |
-| P-H2 | Performance | `cluster_run_diagnostics` has no retention — unbounded growth | `clusterStorageService.js:94–118` |
-| P-H3 | Performance | Admin cluster-members fetched on every mount, no pagination | `admin.js:208–245` |
-| CQ-H2 | Code Quality | Duplicated cluster info query block (25 lines, 2 locations) | `scores.js:63–87`, `admin.js:127–151` |
-| CQ-H3 | Code Quality | Duplicated LMS upsert SQL (25-column INSERT, 2 locations) | `moodleService.js`, `moodleEventSimulator.js` |
-| CQ-H4 | Code Quality | `computeClusterScores` / `computeSRLClusterScores` ~80% duplicate | `clusterPeerService.js:131–422` |
-| FW-H2 | Framework | Raw `try/catch` in `mood.js`, `chat.js`, `annotations.js`, `results.js` — not `asyncRoute()` | 4 route files |
-| HIGH-T1 | Testing | Entire scoring pipeline has 0% test coverage | `clusterPeerService.js`, `conceptScoreService.js`, `scoreComputationService.js`, `clusterStorageService.js` |
-| HIGH-T2 | Testing | `storeUserAssignment` failure path not tested (silent data loss undocumented) | `clusterStorageService.js:62–79` |
-| HIGH-T3 | Testing | Nightly cron has 0% coverage; excluded from coverage config | `cronService.js` |
-| HIGH-T4 | Testing | All 4 LMS admin routes have 0% coverage | `routes/lms.js` |
-| HIGH-T5 | Testing | Survey submission route has 0% coverage | `routes/results.js` |
-| DOC-02 | Docs | Only 1 of ~30 endpoints has a Swagger annotation | `config/swagger.js` |
-| DOC-03 | Docs | `legacy-login` undocumented with no deprecation notice | `auth.js:71–83` |
-| DOC-04 | Docs | Moodle LMS integration absent from README and Developer Guide | `README.md`, `docs/DEVELOPER_GUIDE.md` |
-| CI-H1 | CI/CD | CI triggers only on `main`; `feature/chatbot` has zero automated checks | `.github/workflows/` |
-| CI-H2 | CI/CD | No `npm audit` anywhere; 5 survey packages at `"latest"` | `package.json` |
-| DC-H1 | CI/CD | `COPY . .` in Dockerfile includes test credentials and setup scripts | `backend/Dockerfile` |
-| DC-H2 | CI/CD | No dev/prod Compose split; `DEBUG_LLM=true` baked into only config | `compose.yml` |
-| EM-H1 | CI/CD | `NODE_ENV` not validated — if unset, production runs in dev mode | `envValidation.js` |
-| MO-H1 | CI/CD | Logs written inside container — destroyed on replacement | `backend/utils/logger.js` |
-| MO-H2 | CI/CD | No error tracking (Sentry) or APM | `server.js` |
-| IR-H1 | CI/CD | No runbooks, no rollback procedure, no backup-restore documentation | — |
-| PM-H1 | CI/CD | `sync-all` is a synchronous HTTP handler with no timeout (up to 18 min) | `routes/lms.js` |
-
----
-
-### P2 — Medium Priority (Plan for Next Sprint)
-
-| ID | Category | Finding |
-|---|---|---|
-| CQ-M1 | Code Quality | Redundant `userId` null-checks after `requireAuth` in `chat.js` (6 instances) |
-| CQ-M2 | Code Quality | Silent error swallowing in `storeUserAssignment` without `externalClient` |
-| CQ-M3 | Code Quality | `parseInt` without NaN guard in `chat.js:147` |
-| CQ-M4 | Code Quality | Near-identical `getRawScoresForScoring` pattern repeated in 4 annotation services |
-| CQ-M5 | Code Quality | `getOrCreateBaseline` 3-step pattern repeated in 3 annotation services |
-| CQ-M6 | Code Quality | Hardcoded default DB password in `database.js:9` (also P0 in production context) |
-| CQ-M7 | Code Quality | `days_active_in_period` missing from both LMS upsert `ON CONFLICT DO UPDATE` |
-| CQ-M8 | Code Quality | Raw `fetch()` used in `Home.tsx` and `AdminClusterDiagnosticsPanel.tsx` vs `api` client |
-| CQ-M9 | Code Quality | O(N²) silhouette undocumented scaling comment |
-| CQ-M10 | Code Quality | Sequential forum discussion HTTP requests (also P0 at scale) |
-| CQ-M11 | Code Quality | `ScoreBoard.tsx` deeply nested inline rendering (~100 lines) |
-| AR-M1 | Architecture | Dependency inversion: annotation services dynamically import scoring pipeline |
-| AR-M3 | Architecture | No UUID validation on admin route parameters `studentId`/`userId` |
-| AR-M4 | Architecture | Score response shape duplicated between student and admin routes |
-| AR-M7 | Architecture | Module-level singleton pool import blocks unit testing of scoring services |
-| AR-M8 | Architecture | `clusterPeerService.js` re-exports algorithm internals for "backwards compatibility" |
-| AR-L3 | Architecture | `lms_sessions` missing from cron active-user query (LMS-only users never rescored) |
-| SEC-10 | Security | Helmet CSP not tuned for LLM API and Moodle `connectSrc` |
-| SEC-11 | Security | 5 SurveyJS packages at `"latest"` — supply chain risk |
-| SEC-12 | Security | Moodle `wstoken` in URL query strings logged in proxy/APM |
-| P-M1 | Performance | DB pool has no `max`/`idleTimeout`/`connectionTimeout` config |
-| P-M2 | Performance | N+1 queries in `GET /api/admin/prompts` |
-| P-M4 | Performance | 6–8 DB round-trips per chat message; duplicate session touch |
-| P-M5 | Performance | `computeCompositeScore` re-sorts all users per call (O(N log N) per user) |
-| P-M6 | Performance | `getOrCreateBaseline` uses 3 sequential queries (race condition + extra round-trip) |
-| MEDIUM-T1 | Testing | Auth tests missing: register, logout, input validation |
-| MEDIUM-T2 | Testing | `annotations.js` and `mood.js` routes have 0% coverage |
-| MEDIUM-T3 | Testing | Silhouette and Davies-Bouldin functions untested |
-| MEDIUM-T4 | Testing | `stats.js` `percentile()` has 0% coverage |
-| MEDIUM-T5 | Testing | No `npm audit` in any automated context |
-| DOC-05 | Docs | Dead `lmsDataSimulator.js` neither removed nor marked deprecated |
-| DOC-06 | Docs | `chat.js` deviates from documented `asyncRoute()` pattern without explanation |
-| DOC-07 | Docs | README states "PostgreSQL 18" (version does not exist) |
-| DOC-08 | Docs | No CHANGELOG; `participation_variety` rename is a silent breaking change on `aspect_breakdown` |
-| DOC-09 | Docs | `.env.example` contains real Moodle token value |
-| DOC-10 | Docs | Cold-start behavior (MIN_CLUSTER_USERS=10) undocumented in all user-facing docs |
-| DOC-11 | Docs | Admin endpoint response schemas undocumented |
-| FW-M1 | Framework | `ConceptScore` interface defined 4 times with diverging fields |
-| FW-M3 | Framework | `router.handle()` anti-pattern on admin legacy shim routes |
-| FW-M4 | Framework | `express-validator` only used in `auth.js`; no validation on sleep/screen-time/profile |
-| FW-M5 | Framework | Dual HTTP clients (axios + fetch) with separate credential and error handling |
-| FW-M6 | Framework | Deprecated `onKeyPress` in `Chatbot.tsx` |
-| FW-M7 | Framework | TypeScript `any` in Redux state shapes, thunk params, survey JSON traversal |
-| CI-M1 | CI/CD | No TypeScript type-check or ESLint step in CI |
-| CI-M2 | CI/CD | No `engines` field enforcing Node version |
-| DC-M1–M3 | CI/CD | Postgres unpinned patch version; no health checks; nginx missing `proxy_read_timeout` |
-| EM-M1 | CI/CD | `CORS_ORIGINS` and `SIMULATION_MODE` missing from `.env.example` |
-| DB-M1 | CI/CD | Application connects as PostgreSQL superuser |
-| DB-M2 | CI/CD | No database backup strategy documented or automated |
-
----
-
-### P3 — Low Priority (Track in Backlog)
-
-| ID | Category | Finding |
-|---|---|---|
-| CQ-L1 | Code Quality | Internal `actionMix` variable names not updated after `participation_variety` rename |
-| CQ-L2/AR-L1 | Code Quality | `dbPool` parameter accepted but ignored in `computeClusterScores` |
-| CQ-L3 | Code Quality | Unused `React` import in `src/routes/index.tsx` |
-| CQ-L4 | Code Quality | `setTimeout` retry in `Home.tsx` with no unmount cleanup or `.catch()` |
-| CQ-L5 | Code Quality | Long ternary chains for category mapping in `clusterPeerService.js` |
-| CQ-L6 | Code Quality | `AdminClusterDiagnosticsPanel` monolithic render + duplicated `ordinal` helper |
-| CQ-L7 | Code Quality | Stale `lmsDataSimulator.js` exported but never called |
-| CQ-L8/AR-L2 | Code Quality | `cluster_run_diagnostics` grows at ~400 rows/day with no retention policy |
-| AR-L4 | Architecture | Fire-and-forget `computeAllScores` after sync gives no failure feedback to user |
-| AR-L6 | Architecture | Inline styles in `AdminClusterDiagnosticsPanel` inconsistent with CSS-class pattern |
-| AR-L7 | Architecture | `uuid_generate_v4()` without extension guarantee in migration 013 (use `gen_random_uuid()`) |
-| SEC-13 | Security | `trust proxy` set to `1` — `X-Forwarded-For` spoofable without real reverse proxy |
-| SEC-14 | Security | 30-day session cookie lifetime excessive for sensitive student data |
-| SEC-15 | Security | Swagger UI accessible unauthenticated in production |
-| SEC-16 | Security | No explicit request body size limit (`express.json()` defaults to 100KB) |
-| P-L2 | Performance | `setTimeout` retry in `Home.tsx` with no cleanup |
-| P-L4 | Performance | `selectOptimalModel` fits 12 models every time with no intra-day cache |
-| P-L6 | Performance | No partial index on `is_simulated` — full scans when `SIMULATION_MODE=false` |
-| LOW-T1 | Testing | `App.test.tsx` is vestigial — tests reference UI text that no longer exists |
-| LOW-T2 | Testing | Integration test mocks don't match real SQL result shapes; 500-path assertions omit body |
-| LOW-T3 | Testing | No test isolation strategy for future parallel Jest execution |
-| DOC-12–15 | Docs | Stale simulation diagram; thin route comments; incomplete error factory table |
-| FW-L2 | Framework | `tsconfig.json` `target: "es5"` redundant with CRA/Babel |
-| FW-L3 | Framework | `@types/react-router-dom@^5.3.3` installed for React Router v6 |
-| FW-L4 | Framework | `useEffect` dependency suppression should use `useCallback` |
-| FW-L5 | Framework | `EXCLUDE_SIMULATED_USERS` frozen at module load — test isolation edge case |
+- **CQ-04** — `batchComputeClusterScores` inlines `_mapDomainCategory` logic instead of calling the helper.
+- **CQ-06** — Active-user UNION query duplicated in `cronService.js` and `admin.js`.
+- **CQ-07** — `DURATION_THRESHOLDS.long` is dead code in `sleepAnnotationService.js`.
+- **CQ-09** — Admin rate-limit bypass applies to all API routes including expensive ones.
+- **AR-04** — Unused `dbPool` parameter in `computeClusterScores` signature.
+- **AR-07** — Dual `/lms` router mount obscures API surface.
+- **AR-08** — Legacy `/api/logout` and `/api/me` aliases undocumented.
+- **AR-10** — `getScoresForChatbot` is an unnecessary passthrough with no added logic.
+- **BP-06** — `__filename`/`__dirname` ESM shims redundant on Node ≥ 21.2.
+- **BP-07** — `parseInt` without radix in query-param parsing.
+- **BP-08** — Fire-and-forget `.catch()` repeated ~8 times; no shared utility.
+- **BP-11** — `express` v4 superseded by stable v5; `uuid` v9 EOL.
+- **BP-13** — `express-validator` `validate()` helper inconsistently used.
+- **SEC-14** — Raw DB error messages in non-production responses.
+- **SEC-15** — No per-account login lockout (IP-based rate limit only).
+- **SEC-16** — Unauthenticated survey reads; legacy auth aliases undocumented.
+- **TEST-11** — `storeDiagnostics` error-swallow path untested.
+- **TEST-16** — `storeClusterResults` assertions too shallow.
+- **TEST-18** — Test pyramid route-heavy; service unit tests underrepresented.
+- **DOC-18** — Cron failure not covered in troubleshooting runbook.
+- **DOC-19** — Legacy `/api/logout` and `/api/me` undocumented in Swagger.
+- **OPS-12** — Nightly cron has no external liveness signal (dead-man's-switch).
 
 ---
 
@@ -316,122 +180,65 @@ The security hole (SEC-01) has 0% test coverage. No test documents or catches th
 
 | Category | Critical | High | Medium | Low | Total |
 |---|---|---|---|---|---|
-| Code Quality | 1 | 4 | 11 | 8 | **24** |
-| Architecture | 1 | 1 | 6 | 7 | **15** |
-| Security | 3 | 4 | 5 | 4 | **16** |
-| Performance | 4 | 3 | 5 | 3 | **15** |
-| Testing | 2 | 5 | 5 | 3 | **15** |
-| Documentation | 1 | 3 | 7 | 4 | **15** |
-| Framework & Language | 1 | 3 | 7 | 4 | **15** |
-| CI/CD & DevOps | 6 | 9 | 8 | 0 | **23** |
-| **Total** | **19** | **32** | **54** | **33** | **138** |
-
-*Note: Several findings appear in multiple categories (e.g., SQL injection flagged in Code Quality, Security, and Framework); the table counts each source-phase finding independently. Unique root issues: approximately 17 Critical, 28 High, 42 Medium, 28 Low.*
+| Code Quality | 1 | 1 | 5 | 5 | 12 |
+| Architecture | 0 | 3 | 5 | 4 | 12 |
+| Security | 2 | 4 | 6 | 5 | 17 |
+| Performance | 1 | 5 | 4 | 2 | 12 |
+| Testing | 4 | 5 | 4 | 3 | 16 (18 total incl overlap) |
+| Documentation | 3 | 5 | 7 | 5 | 20 |
+| Best Practices | 0 | 0 | 5 | 8 | 13 |
+| CI/CD & DevOps | 2 | 3 | 6 | 1 | 12 |
+| **Total** | **7** | **26** | **36** | **21** | **90** |
 
 ---
 
 ## Recommended Action Plan
 
-### Sprint 0 — Before Any Deployment (1–2 days)
+### Immediate (this week — before any production data is collected from real students)
 
-1. **[DC-C1] Rotate the Moodle token immediately.** Replace all hardcoded secrets in `compose.yml` with `${ENV_VAR}` references. Replace `.env.example` Moodle token with a placeholder.
-2. **[SEC-01] Remove or gate `legacy-login`.** Add `NODE_ENV` guard as a one-line fix; removal is preferred.
-3. **[SEC-03] Remove or rate-limit legacy auth aliases** in `routes/index.js:23–25`.
-4. **[DOC-01] Fix three stale documentation files** — update `action_mix` → `participation_variety` in `annotation_pipeline.md` and `peer_comparison_scoring_system.md`. Medium effort.
-5. **[DOC-09] Fix `.env.example` Moodle token** — replace with placeholder string.
+1. **Fix `compose.yml` build arg** (OPS-03/DOC-08): one-line rename, unblocks correct frontend builds. _Effort: XS_
+2. **Mount mood router** (DOC-03): two-line change in `routes/index.js`. _Effort: XS_
+3. **Remove or lock down `/legacy-login`** (SEC-03): delete or add `ENABLE_DEMO_LOGIN` guard. _Effort: S_
+4. **Add `requireAdmin` to `POST /surveys/changeJson`** (SEC-07): one-line middleware addition. _Effort: XS_
+5. **Add `requireAuth` to `POST /results/post`** (SEC-08): one-line middleware addition. _Effort: XS_
+6. **Replace hand-rolled session signing** (SEC-01): swap `signSessionId()` body for `cookie-signature.sign()`. Add round-trip test. _Effort: S_
+7. **Fix health endpoint** (OPS-09): add `SELECT 1` probe and return 503 on failure. _Effort: S_
 
-### Sprint 1 — Fix Before Next Release (1–2 weeks)
+### Short-term (next sprint)
 
-6. **[P-C4/SEC-09] Fix `storeUserAssignment` error propagation.** Remove try/catch when `externalClient` provided. Add unit test for the failure path. Small change, high correctness impact.
-7. **[CQ-C1/SEC-02] Parameterize all INTERVAL template literals** in `scoreQueryService.js` and annotation services.
-8. **[CI-C1] Add backend CI job** (see minimum pipeline in `04-best-practices.md`). Backend tests, `npm audit`, coverage reporting.
-9. **[CI-H1] Expand CI trigger** to `feature/**` and `pull_request`.
-10. **[EM-C1] Move weak-credential checks to `missing[]`** in `envValidation.js` so startup fails in production.
-11. **[SEC-08] Add IDOR ownership check** on `GET /api/chat/history` (5-line SQL addition).
-12. **[CRIT-T1/CRIT-T2] Add regression tests** for `legacy-login` auth bypass and chat history IDOR.
-13. **[HIGH-T1/T2/T3] Begin scoring pipeline test coverage:** `conceptScoreService`, `clusterStorageService` failure path, `cronService` basic flow. These are the highest business-risk coverage gaps.
-14. **[DOC-04] Add Moodle LMS Integration section** to README and Developer Guide.
-15. **[DOC-08] Create `CHANGELOG.md`** documenting `participation_variety` rename as a breaking change.
+8. **Add TLS via `compose.prod.yml`/Caddy** (SEC-02/OPS-02): assign a domain, update deployment runbook. _Effort: M_
+9. **Add automated CD deployment** (OPS-01): GitHub Actions job on push to `main`. _Effort: M_
+10. **Fix DB pool configuration** (PERF-03/OPS-05): add `max`, `idleTimeoutMillis`, `connectionTimeoutMillis`. _Effort: XS_
+11. **Add missing composite DB indexes** (PERF-06): write and apply a migration. _Effort: S_
+12. **Fix PERF-01/PERF-02 batch scoring algorithm**: pass pre-computed ranges and pre-group cluster composites. _Effort: M_
+13. **Add SEC-06 SSRF protection**: block private IP ranges in LLM base URL validation. _Effort: S_
+14. **Add test coverage for register, logout, csvLog routes** (TEST-05, TEST-08, TEST-09). _Effort: M_
+15. **Fix BP-05**: call `next(err)` in `asyncRoute` so Sentry and global error handler actually fire. _Effort: S_
+16. **Add missing `.env.example` entries**: `DEBUG_LLM`, `COOKIE_SECURE`, `EC2_HOST`. _Effort: XS_
 
-### Sprint 2 — Architectural Work (2–4 weeks)
+### Medium-term (next quarter)
 
-16. **[P-C1/P-C2] Redesign nightly cron scoring pipeline.** Run PGMoE once per concept across all users (4 fits total instead of 4N). Decouple silhouette computation to a separate background task. This is the most impactful performance fix.
-17. **[P-C3/PM-H1] Convert `sync-all` to a background job.** Return job ID immediately; poll for completion. Apply `p-limit(5)` concurrency to per-user forum requests.
-18. **[DB-C1] Adopt a migration runner** (`node-pg-migrate`). Convert `postgres/initdb/` scripts to numbered migrations.
-19. **[PM-C1] Separate the cron into a worker process.** Add `restart: unless-stopped` to Compose.
-20. **[DS-C1] Create a production deployment configuration.** Define `compose.prod.yml` with proper secret references, health checks, and log volume mounts.
-21. **[FW-H2] Migrate `chat.js`, `mood.js`, `annotations.js`, `results.js`** to use `asyncRoute()`.
-
-### Ongoing Backlog
-
-- Resolve `ConceptScore` interface duplication (FW-M1) — import from canonical `models/scores.ts`
-- Add `express-validator` to all data-submission routes (FW-M4)
-- Remove axios; consolidate on `api/client.ts` (FW-M5)
-- Add retention policy on `cluster_run_diagnostics` (delete rows older than 90 days)
-- Add `lms_sessions` to cron active-user UNION query (AR-L3) — users with LMS-only data are never rescored
-- Pin survey-* packages to specific versions; add `npm audit` to CI
-- Remove `lmsDataSimulator.js` dead code (CQ-L7)
-- Fix `App.test.tsx` to match current UI
-- Add documentation checklist to PR template
-
----
-
-## Minimum CI Pipeline (Add Immediately)
-
-```yaml
-# .github/workflows/ci.yml — replace build-node.js.yml
-name: CI
-on:
-  push:
-    branches: [ "main", "feature/**" ]
-  pull_request:
-
-jobs:
-  frontend:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 18, cache: npm }
-      - run: npm ci
-      - run: npx tsc --noEmit
-      - run: npm audit --audit-level=high
-      - run: CI=true npm test -- --watchAll=false
-      - run: npm run build
-
-  backend:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 18
-          cache: npm
-          cache-dependency-path: backend/package-lock.json
-      - run: npm ci
-        working-directory: backend
-      - run: npm audit --audit-level=high
-        working-directory: backend
-      - run: npm test -- --coverage
-        working-directory: backend
-        env:
-          NODE_ENV: test
-          PGPASSWORD: test
-          SESSION_SECRET: test-secret-for-ci
-```
+17. Provision offsite backup automation with S3 upload (OPS-04). _Effort: M_
+18. Upgrade Node to 20 LTS in Dockerfiles and CI (OPS-06). _Effort: S_
+19. Add SRL cluster scoring tests and batch scoring tests (TEST-06, TEST-07). _Effort: M_
+20. Complete Swagger annotation coverage for all routes (DOC-01–DOC-17). _Effort: L_
+21. Extract `contextManagerService` concerns into `chatOrchestrationService` (AR-09). _Effort: L_
+22. Create `compose.staging.yml` and document pre-release smoke-test procedure (OPS-07). _Effort: M_
+23. Migrate to Express 5 (BP-11): eliminates `asyncRoute`, native async error propagation. _Effort: M_
+24. Add Jest coverage threshold enforcement (OPS-10). _Effort: XS_
 
 ---
 
 ## Review Metadata
 
-- **Review date:** 2026-02-28
-- **Branch:** `feature/chatbot` (eb21911)
-- **Phases completed:** Code Quality, Architecture, Security, Performance, Testing, Documentation, Framework Best Practices, CI/CD & DevOps
-- **Flags applied:** None
+- **Review date:** 2026-03-11
+- **Phases completed:** Code Quality, Architecture, Security, Performance, Testing, Documentation, Best Practices, CI/CD
+- **Flags applied:** None (standard review)
 - **Output files:**
-  - `.full-review/00-scope.md`
-  - `.full-review/01-quality-architecture.md`
-  - `.full-review/02-security-performance.md`
-  - `.full-review/03-testing-documentation.md`
-  - `.full-review/04-best-practices.md`
-  - `.full-review/05-final-report.md`
+  - `.full-review/00-scope.md` — Review scope
+  - `.full-review/01-quality-architecture.md` — Code quality & architecture findings
+  - `.full-review/01-architecture.md` — Full architecture findings detail
+  - `.full-review/02-security-performance.md` — Security & performance findings
+  - `.full-review/03-testing-documentation.md` — Testing & documentation findings
+  - `.full-review/04-best-practices.md` — Best practices & CI/CD findings
+  - `.full-review/05-final-report.md` — This report

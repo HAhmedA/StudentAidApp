@@ -1,295 +1,260 @@
 # Phase 4: Best Practices & Standards
 
-## Framework & Language Findings
-
-### Executive Summary
-
-The backend is cleanly ESM-only (`"type": "module"`) with consistent `import`/`export` — except one critical outlier. The frontend uses React 18 functional components, Redux Toolkit, and TypeScript, but has meaningful type-safety gaps and one deprecated API. The `mood.js` `${dateFilter}` SQL injection concern from Phase 3 was investigated and **confirmed safe** (pure string-constant whitelist; user input never flows into the SQL fragment directly).
+_Review date: 2026-03-11._
 
 ---
 
-### Critical
+## Framework & Language Findings
 
-#### FW-C1 — CommonJS Module in ESM-Only Package
-**File:** `backend/services/annotators/index.js`
+### BP-01 — Severity: Medium
+**`app._sentryErrorHandler` Monkey-Patches the Express Application Object**
 
-This barrel index file uses `require()` and `module.exports` inside a package declared `"type": "module"`. Node.js will throw `ReferenceError: require is not defined in ES module scope` if this file is ever imported. All four services it re-exports are valid ESM files; the index itself was never converted.
+`server.js` stashes the Sentry handler on a custom property of the Express `app` instance (`app._sentryErrorHandler`). Writing arbitrary properties to a framework object is fragile: it will fail TypeScript strict mode if types are ever added, and the control flow is split across two distant code blocks.
 
-Currently no other file imports from `services/annotators/index.js` (each service is imported directly), so this is latent dead code. But any future barrel import would crash the process.
-
-**Fix:** Replace the entire file with ESM or delete it:
+**Recommendation**: Use a module-scoped variable:
 ```js
-export { computeJudgments, composeSentences } from './lmsAnnotationService.js'
-export { computeAnnotations } from './sleepAnnotationService.js'
-// etc.
+let sentryErrorHandler = null
+if (process.env.SENTRY_DSN) { … sentryErrorHandler = Sentry.Handlers.errorHandler() }
+if (sentryErrorHandler) app.use(sentryErrorHandler)
 ```
 
 ---
 
-### High
+### BP-02 — Severity: Medium
+**Startup Awaits Inside `app.listen` Callback; No `unhandledRejection` Handler**
 
-#### FW-H1 — SQL Template Literal Interpolation Pattern (Latent Injection)
-**Files:** `scoreQueryService.js:28,32,36,116,142,166`, `sleepAnnotationService.js:313`, `screenTimeAnnotationService.js:255`
+`server.js` runs `initializeSystemPrompt`, `ensureFixedSurvey`, and `seedTestAccountData` inside an `async () => {}` listen callback. The server accepts connections while seeding is in progress. Errors inside the async callback that escape the per-block `try/catch` propagate to Node's default unhandled-rejection handler with no explicit recovery. The project has `"type": "module"` — true top-level await is available.
 
-`INTERVAL '${days} days'` interpolates `days` directly. All call sites currently pass hardcoded `7` — not user-controlled — but the pattern is one refactor away from an exploitable injection. `lmsAnnotationService.js:301` already uses the safe form (`$2 * INTERVAL '1 day'`).
-
-**Fix:** `WHERE session_date >= CURRENT_DATE - ($2 * INTERVAL '1 day')` with `days` as a bound parameter. (Confirmed: `mood.js` `${dateFilter}` is safe — whitelist only.)
-
-#### FW-H2 — `asyncRoute()` Not Used in `mood.js`, `chat.js`, `annotations.js`, `results.js`
-**Files:** `backend/routes/mood.js`, `chat.js`, `annotations.js`, `results.js`
-
-Four route files use raw `try/catch` with non-standard error shape (`{ error: 'db_error', details: String(e) }`). This leaks stack traces in production and bypasses the global error handler. All other route files use `asyncRoute()`.
-
-**Fix:** Migrate all handlers to `asyncRoute()` + `Errors.*` factories.
-
-#### FW-H3 — `storeUserAssignment` Silently Swallows Errors Inside Transaction
-**File:** `backend/services/scoring/clusterStorageService.js:62–79` *(confirmed again)*
-
-The try/catch prevents `withTransaction`'s rollback from firing. Cluster results persist; user assignment is silently lost. Fix: remove the try/catch when `externalClient` is provided.
+**Recommendation**: Await startup work at the top level; add a global handler:
+```js
+process.on('unhandledRejection', (reason) => { logger.error('Unhandled rejection:', reason); process.exit(1) })
+await new Promise(resolve => app.listen(PORT, resolve))
+await initializeSystemPrompt()
+// …
+startCronJobs()
+```
 
 ---
 
-### Medium
+### BP-03 — Severity: Medium
+**DB Pool Has No `max`/Timeout Configuration**
 
-#### FW-M1 — `ConceptScore` Interface Defined in 4 Separate Files with Diverging Fields
-**Files:** `src/models/scores.ts` (canonical), `src/api/scores.ts`, `src/pages/Home.tsx`, `src/components/ScoreBoard.tsx`
+`config/database.js` creates `new Pool(…)` with no explicit `max`, `idleTimeoutMillis`, `connectionTimeoutMillis`, or `statement_timeout`. The default `max: 10` on a t2.micro with PGMoE batch operations that hold multiple clients simultaneously can silently queue or timeout (cross-references PERF-03).
 
-`api/scores.ts` is missing `clusterIndex`, `totalClusters`, `percentilePosition`, `clusterUserCount`, `previousBreakdown`. TypeScript cannot enforce the contract between components using different local copies.
-
-**Fix:** Import `ConceptScore` from `src/models/scores.ts` in all files; delete local redefinitions.
-
-#### FW-M2 — `days_active_in_period` Missing from Both LMS Upsert `ON CONFLICT DO UPDATE`
-**Files:** `moodleEventSimulator.js:159–179`, `moodleService.js:449–467`
-
-Column appears in INSERT but not in the UPDATE clause. Re-syncing the same date leaves it stale.
-
-**Fix:** Add `days_active_in_period = EXCLUDED.days_active_in_period` to both conflict clauses.
-
-#### FW-M3 — `router.handle()` Anti-Pattern for Legacy Shim Routes
-**File:** `backend/routes/admin.js:248–256`
-
-`router.handle(req, res)` is an undocumented Express internal. Can cause infinite loops or double-response errors.
-
-**Fix:** Extract shared handler logic into a named function and call it directly.
-
-#### FW-M4 — `express-validator` Only Used in `auth.js`
-All other routes accepting user input (sleep, screen-time, chat, profile, mood) use ad-hoc manual checks or no validation. `screen-time.js` does not validate that `totalMinutes`, `longestSession`, `preSleepMinutes` are non-negative integers.
-
-**Fix:** Apply `express-validator` consistently across all data-submission routes.
-
-#### FW-M5 — Dual HTTP Clients: Axios (Redux slices) + Fetch (`api/client.ts`)
-Redux slices (`auth.ts`, `surveys.ts`, `results.ts`, `profile.ts`) use axios with `axios.defaults.withCredentials = true`. All newer API modules use the fetch-based `api` client. Two credential-handling configs must be kept in sync; `ApiError` is not used for Redux calls.
-
-**Fix:** Migrate remaining Redux slices from axios to the `api` client; remove axios dependency.
-
-#### FW-M6 — Deprecated `onKeyPress` Event Handler
-**File:** `src/components/Chatbot.tsx:506`
-
-`onKeyPress` was deprecated in React 17. The handler already checks `e.key === 'Enter'`, so it is compatible with `onKeyDown`.
-
-**Fix:** `onKeyDown={handleKeyPress}`
-
-#### FW-M7 — TypeScript `any` Spread Across State, Thunks, and Survey JSON
-| File | Usage |
-|---|---|
-| `src/models/survey.ts:4` | `json: any` — survey JSON schema untyped |
-| `src/redux/surveys.ts:8,53` | `error: any`, `json: any` in thunk parameter |
-| `src/redux/profile.ts:32` | `profileData: any` |
-| `src/pages/Run.tsx:26,28` | `page: any`, `element: any` in JSON traversal |
-| `src/App.tsx:44` | `store.dispatch<any>(me())` |
-
-**Fix priorities:** Define `SurveyJson` type; define `ProfileData` interface; use `AppDispatch` for the dispatch type.
+**Recommendation**:
+```js
+const pool = new Pool({
+    …,
+    max: Number(process.env.PG_POOL_MAX) || 5,
+    idleTimeoutMillis: 30_000,
+    connectionTimeoutMillis: 5_000,
+})
+```
 
 ---
 
-### Low
+### BP-04 — Severity: Medium
+**`asyncRoute` Recasts All Non-`AppError` Throws as Misleading `DB_ERROR`**
 
-#### FW-L1 — 5 SurveyJS Packages at `"latest"` *(confirmed again)*
-All five `survey-*` packages must share the same version. Pin to a specific version range and lock with `package-lock.json`.
+`errors.js` line 39: `err instanceof AppError ? err : Errors.DB_ERROR(err.message)`. A `TypeError`, network error, or validation library exception always surfaces as `DB_ERROR` HTTP 500, making triage and client-side error handling worse.
 
-#### FW-L2 — `tsconfig.json` `target: "es5"` Is Redundant with CRA/Babel
-CRA uses Babel for browser downleveling; the TypeScript `target` is bypassed. Setting `target: "es2020"` or higher enables modern syntax in TS output and stops TypeScript from lowering optional chaining and nullish coalescing.
+**Recommendation**: Preserve the original class name in the log message and use a more general `INTERNAL_ERROR` code for non-AppError exceptions.
 
-#### FW-L3 — `@types/react-router-dom@^5.3.3` Installed for React Router v6
-React Router v6 ships its own type definitions. The v5 `@types` packages contradict the installed library version. Remove `@types/react-router` and `@types/react-router-dom`.
+---
 
-#### FW-L4 — `useEffect` Dependency Suppression in `Chatbot.tsx` Should Use `useCallback`
-`// eslint-disable-next-line react-hooks/exhaustive-deps` suppresses a real dependency on `prefetchGreeting`. The correct fix is `useCallback` so the stable reference can safely be included in the array.
+### BP-05 — Severity: Medium
+**`asyncRoute` Never Calls `next(err)` — Global Error Handler and Sentry Are Dead Code**
 
-#### FW-L5 — `EXCLUDE_SIMULATED_USERS` Evaluated at Module Load — Frozen for Test Isolation
-**File:** `scoreQueryService.js:9–11`
+`asyncRoute` catches all errors and writes a JSON response directly, bypassing the Express error-handler chain. This means:
+- The global error handler in `server.js` (lines 137–143) is never reached
+- The Sentry error handler registered in `server.js` never receives route errors
+- Every route error is handled by `asyncRoute`'s private JSON logic, not the centralized handler
 
-Evaluated once at import time. Tests toggling `SIMULATION_MODE` between cases get a frozen constant. Document as a test caveat or convert to a runtime function call.
+**Recommendation**: Either call `next(err)` from `asyncRoute` and let the central handler format the response, or explicitly invoke Sentry inside `asyncRoute`. Migrating to Express 5 (BP-11) resolves this automatically via native async error propagation.
+
+---
+
+### BP-06 — Severity: Low
+**`__filename`/`__dirname` Shims Are Redundant on Node ≥ 21.2**
+
+`logger.js` and several service files use the 4-line `fileURLToPath` / `path.dirname` shim. Node 21.2 introduced `import.meta.dirname` and `import.meta.filename` as first-class ESM equivalents.
+
+**Recommendation**: Replace with `import.meta.dirname` on Node ≥ 21. Add `"engines": { "node": ">=20" }` to `package.json` to document the minimum version.
+
+---
+
+### BP-07 — Severity: Low
+**`parseInt` Without Radix in Query-Param Parsing**
+
+`chat.js` line 164: `parseInt(limit)` without a radix. For numeric query params, `Number()` is idiomatic, avoids the octal edge case, and is consistent with how the pg driver already returns numeric string values.
+
+**Recommendation**: Replace with `Number(limit) || 20`.
+
+---
+
+### BP-08 — Severity: Low
+**Fire-and-Forget `.catch()` Pattern Repeated ~8 Times Without a Shared Utility**
+
+`computeAllScores(userId).catch(err => logger.error(…))` appears identically across sleep, screen-time, results, csvLog, and moodleService routes. Adding structured logging or Sentry capture to all fire-and-forget paths requires editing 8+ call sites.
+
+**Recommendation**: Extract `fireAndForget(promise, label)` to `utils/fireAndForget.js`.
+
+---
+
+### BP-09 — Severity: Low
+**Synchronous PGMoE Model Selection Loop Blocks the Event Loop**
+
+`pgmoeAlgorithm.js`: `selectOptimalModel` runs up to 20 synchronous EM fits (4 cov types × 5 K values) with no yielding. During a user-triggered score recompute, this can block the HTTP event loop for hundreds of milliseconds.
+
+**Recommendation**: Yield between model fits with `await setImmediatePromise()`, or move to a `worker_threads` worker for CPU-bound computation.
+
+---
+
+### BP-10 — Severity: Low
+**`surveyRoutes` and `resultRoutes` Mounted at `/` — Silent Collision Risk**
+
+`routes/index.js` lines 27–29 mount two routers at the root namespace. Any route naming conflict silently resolves to whichever was mounted first. The routing table is opaque to code reviewers.
+
+**Recommendation**: Namespace explicitly (`/surveys`, `/results`) or add a comment listing all paths exported by each router.
+
+---
+
+### BP-11 — Severity: Low
+**`express` v4 and `uuid` v9 Are Superseded by Stable Releases**
+
+`express` v5.1.0 is stable (released Oct 2024). Express 5 natively propagates rejected async route handler promises to the error-handler chain, making the entire `asyncRoute` wrapper (BP-04, BP-05) unnecessary. `uuid` v9 is EOL; v11 adds time-ordered UUIDs and drops CJS shims.
+
+**Recommendation**: Plan an Express 5 migration. It is a small-surface change for this codebase since all routes already use `async` functions.
+
+---
+
+### BP-12 — Severity: Low
+**No `engines` Field; Jest ESM Flag Undocumented in Source**
+
+`package.json` has no `engines` field. The `--experimental-vm-modules` flag required for `jest.unstable_mockModule` is only documented in `MEMORY.md`, not in code. New contributors running `npm test` get the flag automatically (embedded in the script), but there is no explanation of why.
+
+**Recommendation**: Add `"engines": { "node": ">=20" }` and an inline comment in the test script.
+
+---
+
+### BP-13 — Severity: Low
+**`express-validator` `validate()` Helper Exists but Is Inconsistently Used**
+
+Most routes perform ad-hoc inline validation (`if (!message || typeof message !== 'string'`). Only auth routes use the `validate()` middleware consistently. This dual-pattern means `express-validator` sanitisation (`escape()`, `trim()`) is not applied uniformly.
+
+**Recommendation**: Adopt `validate()` uniformly across all user-facing inputs, especially `chat.js`, `admin.js`, and `profile.js`.
 
 ---
 
 ## CI/CD & DevOps Findings
 
-### Executive Summary
+### OPS-01 — Severity: Critical
+**No Automated Deployment — All Releases Are Manual SSH**
 
-The application has a single GitHub Actions workflow that only tests the React frontend. The backend test suite, coverage threshold, and `npm audit` are never enforced in CI. Production deployment configuration does not exist. Secrets are committed to version control in both `compose.yml` and `.env.example`. No migration runner, no backup strategy, no restart policy, and no production process manager are in place.
+The CI workflow (`.github/workflows/build-node.js.yml`) builds and tests but has no CD step. Every release requires a human to SSH into the EC2 instance and manually run `git pull` + `docker compose build` + `docker compose up -d`. There is no audit trail, no rollback automation, and a failed mid-deployment build can leave the service down for several minutes.
+
+**Recommendation**: Add a `deploy` GitHub Actions job on push to `main` using `appleboy/ssh-action`. Tag Docker images with the Git SHA and push to GHCR (free tier). Reference image tags in compose files so rollback is a tag change.
 
 ---
 
-### Critical
+### OPS-02 — Severity: Critical (Carry-over SEC-02, CVSS 9.0)
+**Production Runs on Plain HTTP with `COOKIE_SECURE=false`**
 
-#### DC-C1 — Real Credentials Committed to `compose.yml` and `.env.example`
-**Files:** `compose.yml:21,25,29`, `.env.example:38`
+The deployment runbook directs operators to `compose.http.yml` exclusively. The `compose.prod.yml` with Caddy/Let's Encrypt exists but is documented as an alternative. All student credentials and session cookies traverse the network in cleartext.
 
+**Recommendation**: Switch the primary documented deployment path to `compose.prod.yml` with Caddy automatic TLS. Cloudflare Tunnel is a zero-config alternative if a domain is unavailable.
+
+---
+
+### OPS-03 — Severity: High (Carry-over DOC-08)
+**`compose.yml` Passes `REACT_APP_API_BASE` but Dockerfile Expects `VITE_API_BASE`**
+
+`REACT_APP_API_BASE` is silently discarded. `VITE_API_BASE` is empty at build time. Any environment relying on `compose.yml` alone gets the wrong API base URL baked into the frontend bundle.
+
+**Immediate fix**: Rename in `compose.yml`:
 ```yaml
-SESSION_SECRET=dev-secret
-PGPASSWORD=password
-MOODLE_TOKEN=c4acddbfba05950afcae5c334c74bc8e
+VITE_API_BASE: "/api"
 ```
 
-The real Moodle token value is permanently in git history across both files. Anyone with repository read access can authenticate against the Moodle instance. `dev-secret` and `password` as literal defaults also enable session forgery and DB access if these Compose defaults are used in production.
+---
 
-**Fix (immediate):** Rotate the Moodle token. Replace all hardcoded values in `compose.yml` with `${ENV_VAR}` references. Replace `.env.example` token with a placeholder. Use a `.env` file outside version control for local dev secrets.
+### OPS-04 — Severity: High
+**Backup Cron Is Not Provisioned by IaC; No Offsite Upload; No Verification**
 
-#### CI-C1 — Backend Test Suite Never Runs in CI
-**File:** `.github/workflows/build-node.js.yml`
+The backup runbook describes a manual cron job setup. There is no automation confirming the cron is running, that dumps are non-empty, or that files are uploaded off-server. An EC2 instance loss means permanent data loss.
 
-The workflow runs `npm install && npm build && npm test` from the root — the React frontend only. `backend/package.json` and its Jest suite are never invoked. The 70% coverage threshold in `backend/jest.config.js` is enforced nowhere.
-
-**Fix:** Add a `backend` CI job (see minimum pipeline below).
-
-#### DS-C1 — No Production Deployment Configuration
-No `fly.toml`, `Procfile`, `railway.json`, Kubernetes manifests, or deployment workflow. The only runnable artifact is `compose.yml`, which is a development-only configuration and is not safe for production use (bakes in dev secrets, debug settings, localhost Moodle URL).
-
-#### DB-C1 — No Migration Runner — Schema Changes Require Data Destruction
-`postgres/initdb/` scripts execute only on an empty volume. Once `pgdata` exists, adding `014_new_column.sql` requires either a manual `ALTER TABLE` or a volume wipe. There is no migration history table, no node-pg-migrate, no Flyway, no Liquibase.
-
-**Fix:** Adopt `node-pg-migrate` or similar. Convert `initdb/` files to numbered migrations.
-
-#### PM-C1 — No Restart Policy; No Process Manager; Single Node.js Process
-`backend/Dockerfile` runs `node` directly with no restart policy in `compose.yml`. A single unhandled exception kills the process permanently until a manual restart. The nightly O(N²) cron runs in the same event loop as HTTP request handling.
-
-**Fix:** Add `restart: unless-stopped` to the backend Compose service. Use PM2 in cluster mode or a separate worker process for the cron.
-
-#### EM-C1 — Weak DB Password and Session Secret Only Warn, Never Block
-`envValidation.js` adds these to `warnings[]` not `missing[]`. `database.js` silently falls back to `'password'`. A production deployment with a missing `PGPASSWORD` env var uses the default DB password silently.
-
-**Fix:** Move weak/missing production credentials to `missing[]` so `validateEnv()` throws at startup.
+**Recommendation**: Add `scripts/setup-host.sh` with an idempotent crontab entry + AWS CLI S3 upload step. Add a weekly health-check cron confirming the most recent dump is < 25 hours old and > 1 KB.
 
 ---
 
-### High
+### OPS-05 — Severity: High (Carry-over PERF-03)
+**DB Pool Has No Explicit Limits or Statement Timeout**
 
-#### CI-H1 — CI Triggers Only on `main`; `feature/chatbot` Has Zero Automated Checks
-**File:** `.github/workflows/build-node.js.yml:3–5`
+Default `max: 10` connections consumes 33% of the `max_connections=30` Postgres instance. No `statement_timeout` means a stalled PGMoE query can hold a connection indefinitely.
 
-```yaml
-on:
-  push:
-    branches: [ "main" ]
+---
+
+### OPS-06 — Severity: Medium
+**Node 18 is EOL in CI and Dockerfiles; ESM Test Flags Incorrect in CI**
+
+Node 18 reached end-of-life on 30 April 2025 — no more security patches. The CI backend test step invokes `npm test -- --coverage` without the required `NODE_OPTIONS='--experimental-vm-modules'` flag, potentially masking ESM-related test failures.
+
+**Recommendation**: Upgrade to Node 20 LTS. Fix CI test step to: `NODE_OPTIONS='--experimental-vm-modules' npm test -- --coverage`.
+
+---
+
+### OPS-07 — Severity: Medium
+**No Staging Environment; Dev/Prod Configurations Diverge Significantly**
+
+Dev uses `SIMULATION_MODE=true`, `DEBUG_LLM=true`, exposed DB port, and a permissive session secret. Production differs on all of these. Changes are tested once in dev then deployed directly to the instance holding real student data.
+
+**Recommendation**: Create `compose.staging.yml` mirroring production settings. Document a pre-release checklist: start staging stack → smoke test → deploy to EC2.
+
+---
+
+### OPS-08 — Severity: Medium
+**File-Based Secrets with No Rotation Mechanism or Documentation**
+
+All secrets are in a plaintext `.env` file on the EC2 instance. No rotation runbook exists. `.env.example` uses `PGPASSWORD=password` — a weak default that could be copy-pasted to production. `SESSION_SECRET` rotation invalidates all active sessions simultaneously with no graceful migration path.
+
+**Recommendation**: Replace `PGPASSWORD=password` with `PGPASSWORD=CHANGE_ME_STRONG_PASSWORD`. Document a secret rotation runbook. Add `SESSION_SECRET_LEGACY` support for graceful session rotation.
+
+---
+
+### OPS-09 — Severity: Medium
+**Health Endpoint Returns 200 Unconditionally — Reports Healthy During DB Outage**
+
+`GET /api/health` always returns `{"status":"ok"}`. Docker's healthcheck uses this endpoint, so the container is marked `healthy` even when Postgres is unreachable.
+
+**Recommendation**: Add a `SELECT 1` DB probe with a 2-second timeout. Return `503` with `{"status":"degraded","db":"unreachable"}` on failure. Optionally include `cron_last_run` and `uptime_seconds` fields.
+
+---
+
+### OPS-10 — Severity: Medium
+**No Test Coverage Threshold in CI — Coverage Is Computed but Not Enforced**
+
+The CI job produces a coverage report that is discarded. No Jest threshold is configured. New code can be merged with 0% coverage and CI stays green.
+
+**Recommendation**: Add to `jest.config.js`:
+```json
+"coverageThreshold": { "global": { "lines": 60, "functions": 60 } }
 ```
 
-The active development branch receives no automated feedback. Bugs introduced on `feature/chatbot` are only caught when merged to `main`.
+---
 
-**Fix:** `branches: [ "main", "feature/**" ]` or `on: [push, pull_request]`.
+### OPS-11 — Severity: Medium
+**Migration Tooling Present but Not Described in Runbook; Concurrent-Start Risk**
 
-#### CI-H2 — No `npm audit` in CI; Five Packages at `"latest"`
-No automated vulnerability scanning. Supply-chain compromise via `survey-*` packages would be pulled in silently.
+`node-pg-migrate` is used (20 migration files) and the Dockerfile CMD runs migrations before starting the server. But the deployment runbook only mentions `CREATE TABLE IF NOT EXISTS` auto-migrations, and there is no documentation of the advisory lock that prevents concurrent migration runs.
 
-#### DC-H1 — `COPY . .` in `backend/Dockerfile` Includes Test Credentials and Scripts
-`backend/scripts/` contains Moodle test setup scripts with student credentials. `backend/tests/` is included in the production image. These should be excluded via `.dockerignore`.
-
-#### DC-H2 — No Dev/Prod Compose Split
-`DEBUG_LLM=true` and a localhost Moodle URL are baked into the only Compose file. A production deployment using this file exposes debug logging and an incorrect Moodle URL.
-
-**Fix:** `compose.yml` (dev defaults) + `compose.prod.yml` (overrides) pattern.
-
-#### EM-H1 — `NODE_ENV` Not Validated at Startup
-If `NODE_ENV` is unset, `isProduction = false` disables secure cookies, allows `dev-secret`, exposes Swagger UI, and leaks error details. `envValidation.js` does not check for `NODE_ENV` presence.
-
-#### MO-H1 — Logs Written Inside Container; Destroyed on Container Replacement
-Winston writes to `backend/logs/error.log` and `backend/logs/combined.log`. These paths are inside the container filesystem with no volume mount. Container replacement or `docker compose down` destroys all logs permanently.
-
-**Fix:** Mount `backend/logs/` as a named volume, or switch to stdout-only logging and collect via a log aggregator.
-
-#### MO-H2 — No Error Tracking (Sentry) or APM
-Cron failures and uncaught exceptions disappear into local log files with no alert. The cron loop logs per-user errors but does not surface them to any monitoring system.
-
-#### IR-H1 — No Runbooks or Operational Documentation
-No documented restart procedure, rollback plan, backup-restore procedure, cron-failure response, or database recovery steps.
-
-#### PM-H1 — `sync-all` Is a Synchronous HTTP Handler with No Timeout
-`POST /api/lms/admin/sync-all` makes sequential Moodle API calls for all users with no HTTP timeout, no abort signal, and no background job. The admin client's connection must remain open for the full duration (up to 18 minutes at 50 users per P-C3).
-
-**Fix:** Enqueue sync work to a background job; return a job ID immediately; poll for completion.
+**Recommendation**: Clarify the runbook. Consider an init-container pattern (a separate `migrate` compose service that runs and exits before the backend starts).
 
 ---
 
-### Medium
+### OPS-12 — Severity: Low
+**Nightly Cron Has No External Liveness Signal or Missed-Run Detection**
 
-#### CI-M1 — No TypeScript Type-Check or ESLint in CI
-The existing frontend CI step runs `react-scripts test` but not `tsc --noEmit` or `eslint`. Type errors only surface during `npm run build`.
+If the cron stops executing (event loop crash, container restart), the only way to discover it is to manually check `docker logs backend`. No alerting fires.
 
-#### CI-M2 — No `engines` Field Enforcing Node Version
-Neither `package.json` specifies `"engines": { "node": ">=18" }`. Developers running Node 16 or 20 may encounter silent behavior differences.
+**Recommendation**: Send a ping to a free dead-man's-switch service (Healthchecks.io) at the end of each successful cron run, and expose last-cron-run timestamp in the health endpoint.
 
-#### DC-M1 — PostgreSQL Pinned to Major Version Only
-`compose.yml` uses `postgres:16-alpine` without a patch version. A minor PostgreSQL upgrade could silently change behavior.
-
-#### DC-M2 — No Health Checks on Backend or Frontend Containers
-`compose.yml` has no `healthcheck:` on the web or backend services. Docker does not know the app is actually serving traffic before routing requests to it.
-
-#### DC-M3 — nginx Missing `proxy_read_timeout`
-Long-running requests (Moodle sync, LLM streaming) will be cut off by nginx's default 60-second read timeout with no error surfaced to the client.
-
-#### EM-M1 — `CORS_ORIGINS` and `SIMULATION_MODE` Missing from `.env.example`
-Both variables affect production behavior but are absent from the environment documentation file.
-
-#### DB-M1 — Application Connects as PostgreSQL Superuser (`postgres`)
-All queries run with superuser privileges. A SQL injection or connection compromise grants unrestricted DB access.
-
-**Fix:** Create a `wellbeing_app` role with only `SELECT/INSERT/UPDATE/DELETE` on relevant tables.
-
-#### DB-M2 — No Backup Strategy Documented or Automated
-`pgdata` named volume has no `pg_dump` cron, no snapshot policy, and no restore procedure.
-
----
-
-### Minimum Recommended CI Pipeline
-
-```yaml
-# .github/workflows/ci.yml
-name: CI
-on:
-  push:
-    branches: [ "main", "feature/**" ]
-  pull_request:
-
-jobs:
-  frontend:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 18, cache: npm }
-      - run: npm ci
-      - run: npx tsc --noEmit
-      - run: npm audit --audit-level=high
-      - run: CI=true npm test -- --watchAll=false
-      - run: npm run build
-
-  backend:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 18
-          cache: npm
-          cache-dependency-path: backend/package-lock.json
-      - run: npm ci
-        working-directory: backend
-      - run: npm audit --audit-level=high
-        working-directory: backend
-      - run: npm test -- --coverage
-        working-directory: backend
-        env:
-          NODE_ENV: test
-          PGPASSWORD: test
-          SESSION_SECRET: test-secret-for-ci
-```

@@ -29,7 +29,8 @@ jest.unstable_mockModule('../../config/database.js', () => ({
 
 // ── Mock scoreComputationService (not used directly — injected per test) ─────
 jest.unstable_mockModule('../../services/scoring/scoreComputationService.js', () => ({
-    computeAllScores: jest.fn()
+    computeAllScores: jest.fn(),
+    batchScoreSRLCohort: jest.fn().mockResolvedValue({ usersScored: 0 })
 }))
 
 // ── Dynamic imports after mocks ──────────────────────────────────────────────

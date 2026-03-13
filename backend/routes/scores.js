@@ -60,10 +60,6 @@ router.use(requireAuth)
  *                       computedAt:   { type: string, nullable: true }
  *       401: { description: Not authenticated }
  *       500: { description: Server error }
- *
- * GET /api/scores
- * Get all concept scores for the current user
- * Returns array of { conceptId, score, trend, computedAt }
  */
 router.get('/', asyncRoute(async (req, res) => {
         const userId = req.session.user?.id
@@ -77,11 +73,16 @@ router.get('/', asyncRoute(async (req, res) => {
             [userId]
         )
 
-        // Get yesterday's score + breakdown for each concept (for needle and self-comparison)
+        // Get the most recent pre-today score + breakdown for each concept.
+        // Using DISTINCT ON (concept_id) with ORDER BY score_date DESC instead of
+        // an exact CURRENT_DATE - 1 match so the Previous needle survives missed days
+        // (weekends, gaps in simulated data, etc.).
         const { rows: yesterdayRows } = await pool.query(
-            `SELECT concept_id, score, aspect_breakdown
+            `SELECT DISTINCT ON (concept_id) concept_id, score, aspect_breakdown
              FROM public.concept_score_history
-             WHERE user_id = $1 AND score_date = CURRENT_DATE - 1`,
+             WHERE user_id = $1
+               AND score_date < CURRENT_DATE
+             ORDER BY concept_id, score_date DESC`,
             [userId]
         )
         const yesterdayScores = {}

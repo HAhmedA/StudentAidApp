@@ -10,6 +10,18 @@ const EXCLUDE_SIMULATED_USERS = process.env.SIMULATION_MODE === 'false'
     ? `AND user_id NOT IN (SELECT user_id FROM public.student_profiles WHERE simulated_profile IS NOT NULL)`
     : '';
 
+// When SIMULATION_MODE is enabled (default), include simulated rows in metric queries
+// so test/seed accounts contribute to clustering. In production (SIMULATION_MODE=false),
+// only real user-submitted data is used.
+const SIM_FILTER = process.env.SIMULATION_MODE === 'false' ? `AND is_simulated = false` : ``;
+
+// Always exclude users that an admin has opted out of the clustering pool,
+// regardless of SIMULATION_MODE. This lets admins remove test accounts that were
+// accidentally included in a real cohort without changing SIMULATION_MODE.
+const EXCLUDE_OPTED_OUT = `AND user_id NOT IN (
+    SELECT user_id FROM public.student_profiles WHERE exclude_from_clustering = true
+)`;
+
 // =============================================================================
 // POOL SIZE QUERIES
 // =============================================================================
@@ -25,19 +37,19 @@ export async function getConceptPoolSizes(days = 7) {
     const { rows } = await pool.query(`
         SELECT 'sleep' as concept, COUNT(DISTINCT user_id) as user_count
         FROM public.sleep_sessions
-        WHERE session_date >= CURRENT_DATE - ($1 * INTERVAL '1 day') AND is_simulated = false
+        WHERE session_date >= CURRENT_DATE - ($1 * INTERVAL '1 day') ${SIM_FILTER} ${EXCLUDE_OPTED_OUT}
         UNION ALL
         SELECT 'screen_time', COUNT(DISTINCT user_id)
         FROM public.screen_time_sessions
-        WHERE session_date >= CURRENT_DATE - ($1 * INTERVAL '1 day') AND is_simulated = false
+        WHERE session_date >= CURRENT_DATE - ($1 * INTERVAL '1 day') ${SIM_FILTER} ${EXCLUDE_OPTED_OUT}
         UNION ALL
         SELECT 'lms', COUNT(DISTINCT user_id)
         FROM public.lms_sessions
-        WHERE session_date >= CURRENT_DATE - ($1 * INTERVAL '1 day') AND is_simulated = false
+        WHERE session_date >= CURRENT_DATE - ($1 * INTERVAL '1 day') ${SIM_FILTER} ${EXCLUDE_OPTED_OUT}
         UNION ALL
         SELECT 'srl', COUNT(DISTINCT user_id)
         FROM public.srl_annotations
-        WHERE time_window = '7d' AND response_count > 0
+        WHERE time_window = '7d' AND response_count > 0 ${EXCLUDE_OPTED_OUT}
     `, [days])
     const sizes = {}
     for (const r of rows) {
@@ -58,11 +70,11 @@ export async function getConceptPoolSizes(days = 7) {
  */
 export async function getUserConceptDataSet(userId) {
     const { rows } = await pool.query(`
-        (SELECT 'sleep' as concept FROM public.sleep_sessions WHERE user_id = $1 AND is_simulated = false LIMIT 1)
+        (SELECT 'sleep' as concept FROM public.sleep_sessions WHERE user_id = $1 ${SIM_FILTER} LIMIT 1)
         UNION
-        (SELECT 'screen_time' FROM public.screen_time_sessions WHERE user_id = $1 AND is_simulated = false LIMIT 1)
+        (SELECT 'screen_time' FROM public.screen_time_sessions WHERE user_id = $1 ${SIM_FILTER} LIMIT 1)
         UNION
-        (SELECT 'lms' FROM public.lms_sessions WHERE user_id = $1 AND is_simulated = false LIMIT 1)
+        (SELECT 'lms' FROM public.lms_sessions WHERE user_id = $1 ${SIM_FILTER} LIMIT 1)
         UNION
         (SELECT 'srl' FROM public.srl_annotations WHERE user_id = $1 AND response_count > 0 LIMIT 1)
     `, [userId])
@@ -114,7 +126,8 @@ async function getLMSMetrics(days) {
                AS participation_score
         FROM public.lms_sessions
         WHERE ($1::int IS NULL OR session_date >= CURRENT_DATE - ($1 * INTERVAL '1 day'))
-        AND is_simulated = false
+        ${SIM_FILTER}
+        ${EXCLUDE_OPTED_OUT}
         GROUP BY user_id
     `, [days])
     const metrics = {}
@@ -140,7 +153,8 @@ async function getSleepMetrics(days) {
                STDDEV_POP(EXTRACT(HOUR FROM bedtime) + EXTRACT(MINUTE FROM bedtime) / 60.0) as bedtime_stddev
         FROM public.sleep_sessions
         WHERE session_date >= CURRENT_DATE - ($1 * INTERVAL '1 day')
-        AND is_simulated = false
+        ${SIM_FILTER}
+        ${EXCLUDE_OPTED_OUT}
         GROUP BY user_id
     `, [days])
     const metrics = {}
@@ -164,7 +178,8 @@ async function getScreenTimeMetrics(days) {
                AVG(late_night_screen_minutes) as avg_late_night
         FROM public.screen_time_sessions
         WHERE session_date >= CURRENT_DATE - ($1 * INTERVAL '1 day')
-        AND is_simulated = false
+        ${SIM_FILTER}
+        ${EXCLUDE_OPTED_OUT}
         GROUP BY user_id
     `, [days])
     const metrics = {}
@@ -224,6 +239,7 @@ async function getSRLMetrics() {
         SELECT user_id, concept_key, avg_score, is_inverted
         FROM public.srl_annotations
         WHERE time_window = '7d' AND response_count > 0
+        ${EXCLUDE_OPTED_OUT}
         ORDER BY user_id, concept_key
     `)
     const metrics = {}

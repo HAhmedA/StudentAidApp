@@ -123,6 +123,31 @@ async function batchScoreLMSCohort() {
 }
 
 /**
+ * Batch-score all users for the SRL concept in a single PGMoE run.
+ * Call this instead of (or after) per-user computeAllScores so that
+ * the SRL peer_clusters model and every user_cluster_assignments row
+ * are written atomically and consistently.
+ *
+ * @returns {Promise<{coldStart?: boolean, usersScored: number}>}
+ */
+async function batchScoreSRLCohort() {
+    logger.info('batchScoreSRLCohort: scoring all users (single PGMoE run)');
+    const result = await batchComputeClusterScores('srl');
+
+    if (!result.coldStart && result.userResults?.length > 0) {
+        for (const { userId, domains } of result.userResults) {
+            await computeAndStoreRawScore(userId, 'srl', domains).catch(err =>
+                logger.error(`batchScoreSRLCohort: concept_scores write failed for ${userId}: ${err.message}`)
+            );
+        }
+        logger.info(`batchScoreSRLCohort: concept_scores written for ${result.userResults.length} users`);
+    }
+
+    logger.info(`batchScoreSRLCohort complete: ${result?.usersScored ?? 0} users scored`);
+    return result;
+}
+
+/**
  * Get formatted scores for chatbot prompt
  * This replaces the individual getJudgmentsForChatbot calls
  *
@@ -141,5 +166,6 @@ export {
     computeConceptScore,
     computeAllScores,
     batchScoreLMSCohort,
+    batchScoreSRLCohort,
     getScoresForChatbot
 };

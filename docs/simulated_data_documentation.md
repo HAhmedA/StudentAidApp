@@ -54,7 +54,6 @@ The system generates data for 4 domains, each based on student achievement profi
 | **Timing** | `schedule_consistent` | <30 min deviation from baseline | ok |
 | | `timing_slightly_irregular` | 30-60 min deviation | warning |
 | | `schedule_inconsistent` | >60 min deviation | poor |
-
 ---
 
 ## 2. SRL (Self-Regulated Learning) Data

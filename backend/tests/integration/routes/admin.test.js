@@ -30,7 +30,8 @@ jest.unstable_mockModule('../../../services/alignmentService.js', () => ({
     DEFAULT_ALIGNMENT_PROMPT: 'default alignment prompt'
 }))
 jest.unstable_mockModule('../../../services/annotators/srlAnnotationService.js', () => ({
-    getAnnotations: mockGetAnnotations
+    getAnnotations: mockGetAnnotations,
+    getRawScoresForScoring: jest.fn()
 }))
 
 // ── Dynamic imports after mocks ────────────────────────────────────────────────

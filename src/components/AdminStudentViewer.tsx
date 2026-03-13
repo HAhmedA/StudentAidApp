@@ -11,7 +11,7 @@ import {
 
 const API_BASE = '/api'
 
-interface StudentInfo { id: string; name: string; email: string }
+interface StudentInfo { id: string; name: string; email: string; exclude_from_clustering: boolean }
 
 interface Props {
     onStudentSelect: (studentId: string, studentName: string) => void
@@ -30,6 +30,7 @@ const AdminStudentViewer = ({ onStudentSelect, selectedStudentId }: Props) => {
     const [syncAllResult, setSyncAllResult] = useState<SyncAllResult | null>(null)
     const [perStudentSyncing, setPerStudentSyncing] = useState<Set<string>>(new Set())
     const [syncSearch, setSyncSearch] = useState('')
+    const [excludeLoading, setExcludeLoading] = useState<Set<string>>(new Set())
 
     useEffect(() => {
         // Load students for dropdown
@@ -91,6 +92,26 @@ const AdminStudentViewer = ({ onStudentSelect, selectedStudentId }: Props) => {
         }
     }
 
+    const handleToggleExclusion = async (userId: string, currentExcluded: boolean) => {
+        const newValue = !currentExcluded
+        // Optimistic update
+        setStudents(prev => prev.map(s => s.id === userId ? { ...s, exclude_from_clustering: newValue } : s))
+        setExcludeLoading(prev => new Set(prev).add(userId))
+        try {
+            await fetch(`${API_BASE}/admin/students/${userId}/cluster-exclusion`, {
+                method: 'PATCH',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ exclude: newValue })
+            })
+        } catch {
+            // Roll back on network error
+            setStudents(prev => prev.map(s => s.id === userId ? { ...s, exclude_from_clustering: currentExcluded } : s))
+        } finally {
+            setExcludeLoading(prev => { const next = new Set(prev); next.delete(userId); return next })
+        }
+    }
+
     const formatLastSync = (ts: string | null) => {
         if (!ts) return '—'
         return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
@@ -140,6 +161,8 @@ const AdminStudentViewer = ({ onStudentSelect, selectedStudentId }: Props) => {
                     ? syncStatuses.filter(s => s.name.toLowerCase().includes(q) || s.email.toLowerCase().includes(q))
                     : syncStatuses
                 const syncedCount = syncStatuses.filter(s => s.hasMoodleData).length
+                // Build exclusion lookup from the students list (now includes exclude_from_clustering)
+                const exclusionByUserId = new Map(students.map(s => [s.id, s.exclude_from_clustering]))
                 return (
                     <div className='admin-lms-section'>
                         <div className='admin-lms-search-row'>
@@ -160,31 +183,49 @@ const AdminStudentViewer = ({ onStudentSelect, selectedStudentId }: Props) => {
                                         <th>Email</th>
                                         <th>LMS</th>
                                         <th>Last Sync</th>
+                                        <th>Cluster</th>
                                         <th></th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {filtered.length === 0 ? (
-                                        <tr><td colSpan={5} className='admin-lms-empty'>No students match</td></tr>
-                                    ) : filtered.map(s => (
-                                        <tr key={s.userId}>
-                                            <td>{s.name}</td>
-                                            <td className='admin-lms-email'>{s.email}</td>
-                                            <td className={s.hasMoodleData ? 'lms-synced' : 'lms-none'}>
-                                                {s.hasMoodleData ? '✓' : '—'}
-                                            </td>
-                                            <td className='admin-lms-date'>{formatLastSync(s.lastSync)}</td>
-                                            <td>
-                                                <button
-                                                    className='admin-sync-row-btn'
-                                                    onClick={() => handleSyncStudent(s.userId)}
-                                                    disabled={perStudentSyncing.has(s.userId) || !connectionStatus?.connected}
-                                                >
-                                                    {perStudentSyncing.has(s.userId) ? '…' : 'Sync'}
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    ))}
+                                        <tr><td colSpan={6} className='admin-lms-empty'>No students match</td></tr>
+                                    ) : filtered.map(s => {
+                                        const isExcluded = exclusionByUserId.get(s.userId) ?? false
+                                        return (
+                                            <tr key={s.userId} className={isExcluded ? 'cluster-excluded-row' : ''}>
+                                                <td>{s.name}</td>
+                                                <td className='admin-lms-email'>{s.email}</td>
+                                                <td className={s.hasMoodleData ? 'lms-synced' : 'lms-none'}>
+                                                    {s.hasMoodleData ? '✓' : '—'}
+                                                </td>
+                                                <td className='admin-lms-date'>{formatLastSync(s.lastSync)}</td>
+                                                <td>
+                                                    {isExcluded
+                                                        ? <span className='cluster-excluded-badge'>Excluded</span>
+                                                        : <span className='cluster-included-badge'>Included</span>
+                                                    }
+                                                </td>
+                                                <td className='admin-lms-actions'>
+                                                    <button
+                                                        className='admin-sync-row-btn'
+                                                        onClick={() => handleSyncStudent(s.userId)}
+                                                        disabled={perStudentSyncing.has(s.userId) || !connectionStatus?.connected}
+                                                    >
+                                                        {perStudentSyncing.has(s.userId) ? '…' : 'Sync'}
+                                                    </button>
+                                                    <button
+                                                        className={`admin-exclude-row-btn ${isExcluded ? 'is-excluded' : ''}`}
+                                                        onClick={() => handleToggleExclusion(s.userId, isExcluded)}
+                                                        disabled={excludeLoading.has(s.userId)}
+                                                        title={isExcluded ? 'Re-include in clustering pool' : 'Exclude from clustering pool'}
+                                                    >
+                                                        {excludeLoading.has(s.userId) ? '…' : isExcluded ? 'Include' : 'Exclude'}
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        )
+                                    })}
                                 </tbody>
                             </table>
                         </div>

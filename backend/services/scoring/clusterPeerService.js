@@ -475,15 +475,129 @@ async function computeSRLClusterScores(allMetrics, userId) {
 }
 
 /**
+ * Batch-score ALL users for the SRL concept in a single PGMoE run.
+ * Mirrors batchComputeClusterScores but handles SRL's variable concept dimensions.
+ * Writes all cluster assignments atomically in one transaction so the peer_clusters
+ * model and all user_cluster_assignments stay in sync.
+ *
+ * @returns {Promise<{coldStart?: boolean, usersScored: number, userResults?: Array}>}
+ */
+async function batchComputeSRLClusterScores() {
+    const allMetrics = await getAllUserMetrics('srl');
+    const userIds = Object.keys(allMetrics);
+
+    if (userIds.length < MIN_CLUSTER_USERS) {
+        logger.info(`batchComputeSRLClusterScores: cold start (${userIds.length}/${MIN_CLUSTER_USERS} users)`);
+        return { coldStart: true, usersScored: 0 };
+    }
+
+    // Collect all concept keys that appear across any user
+    const allConceptKeys = new Set();
+    for (const dims of Object.values(allMetrics)) {
+        for (const key of Object.keys(dims)) allConceptKeys.add(key);
+    }
+    const conceptKeys = [...allConceptKeys].sort();
+    if (conceptKeys.length === 0) return { coldStart: true, usersScored: 0 };
+
+    // Build feature matrix: normalise from 1–5 scale to 0–1, flip inverted dims
+    const featureMatrix = userIds.map(uid =>
+        conceptKeys.map(ck => {
+            const data = allMetrics[uid]?.[ck];
+            if (!data) return 0.5;
+            let score = data.score / 5;
+            if (data.isInverted) score = 1 - score;
+            return score;
+        })
+    );
+
+    const { centered } = centerNormalize(featureMatrix);
+    const { k, model, diagnostics } = selectOptimalModel(centered, 2, 4);
+    logger.info(`batchComputeSRLClusterScores: K=${k} for ${userIds.length} users`);
+
+    // Diagnostics — fire-and-forget (same pattern as non-SRL)
+    {
+        const silhouette    = computeSilhouetteScore(centered, model.assignments, k);
+        const daviesBouldin = computeDaviesBouldinIndex(centered, model.assignments, k, model.means);
+        const clusterSizes  = [];
+        for (let c = 0; c < k; c++) clusterSizes.push(model.assignments.filter(a => a === c).length);
+        storeDiagnostics('srl', {
+            silhouette, daviesBouldin, diagnostics, clusterSizes,
+            nUsers: userIds.length, nDimensions: conceptKeys.length
+        }).catch(err => logger.error(`storeDiagnostics(srl) batch error: ${err.message}`));
+    }
+
+    // Composite score for each user (0–100 average across SRL dimensions)
+    const composites = userIds.map((uid, idx) => {
+        const scores = conceptKeys.map(ck => {
+            const data = allMetrics[uid]?.[ck];
+            if (!data) return 50;
+            let s = (data.score / 5) * 100;
+            if (data.isInverted) s = 100 - s;
+            return s;
+        });
+        return {
+            userId: uid,
+            composite: scores.reduce((a, b) => a + b, 0) / scores.length,
+            cluster: model.assignments[idx]
+        };
+    });
+
+    const { clusterMeans, clusterRemap } = _orderClusters(composites, k);
+    const srlLabels = generateClusterLabels(k, 'srl');
+
+    // Atomic transaction: write peer_clusters + ALL user assignments in one shot
+    await withTransaction(pool, async (client) => {
+        await storeClusterResults('srl', composites, clusterRemap, clusterMeans, k, model, client);
+
+        for (let i = 0; i < userIds.length; i++) {
+            const uid          = userIds[i];
+            const origCluster  = model.assignments[i];
+            const orderedCluster = clusterRemap[origCluster];
+            const userComposite  = composites[i].composite;
+
+            const clusterComposites = composites
+                .filter(u => u.cluster === origCluster)
+                .map(u => u.composite)
+                .sort((a, b) => a - b);
+
+            const p5  = percentile(clusterComposites, 5);
+            const p95 = percentile(clusterComposites, 95);
+            const userPercentile = mapToRange(userComposite, p5, p95);
+            const clusterLabel   = srlLabels[Math.min(orderedCluster, srlLabels.length - 1)];
+
+            await storeUserAssignment(uid, 'srl', orderedCluster, clusterLabel, userPercentile, client);
+        }
+    });
+
+    // Build per-user domain results so callers can write concept_scores without re-running PGMoE
+    const userResults = userIds.map((uid) => {
+        const domains = conceptKeys.map(ck => {
+            const data = allMetrics[uid]?.[ck];
+            if (!data) return { domain: ck, numericScore: 50, category: 'good', categoryLabel: 'Good' };
+            let s = (data.score / 5) * 100;
+            if (data.isInverted) s = 100 - s;
+            const numericScore = Math.round(s * 100) / 100;
+            const { category, categoryLabel } = _mapDomainCategory(numericScore);
+            return { domain: ck, numericScore, category, categoryLabel };
+        });
+        return { userId: uid, domains };
+    });
+
+    logger.info(`batchComputeSRLClusterScores: ${userIds.length} users scored in one run`);
+    return { usersScored: userIds.length, userResults };
+}
+
+/**
  * Batch-score ALL users for a concept in a single PGMoE run.
  * Use after bulk data writes (e.g. CSV import) so every user is clustered
  * against the same complete, stable pool.
  *
- * @param {string} conceptId - 'lms', 'sleep', or 'screen_time' (not 'srl')
- * @param {number} days - Look-back window (default 7)
+ * @param {string} conceptId - 'lms', 'sleep', 'screen_time', or 'srl'
+ * @param {number} days - Look-back window (default 7; ignored for srl)
  * @returns {Promise<{coldStart?: boolean, usersScored: number, conceptId?: string}>}
  */
 async function batchComputeClusterScores(conceptId, days = 7) {
+    if (conceptId === 'srl') return batchComputeSRLClusterScores();
     const fit = await _runConceptClustering(conceptId, days);
     if (!fit) {
         logger.info(`batchComputeClusterScores: cold start for ${conceptId}`);

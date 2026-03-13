@@ -14,13 +14,15 @@ jest.unstable_mockModule('../utils/logger.js', () => ({
     default: { info: jest.fn(), warn: jest.fn(), error: jest.fn() }
 }))
 jest.unstable_mockModule('../services/llmConfigService.js', () => ({
-    getLlmConfig: mockGetLlmConfig
+    getLlmConfig: mockGetLlmConfig,
+    clearLlmConfigCache: jest.fn()
 }))
 jest.unstable_mockModule('../services/alignmentService.js', () => ({
     DEFAULT_ALIGNMENT_PROMPT: 'default alignment'
 }))
 jest.unstable_mockModule('../services/annotators/srlAnnotationService.js', () => ({
-    getAnnotations: jest.fn()
+    getAnnotations: jest.fn(),
+    getRawScoresForScoring: jest.fn()
 }))
 jest.unstable_mockModule('../config/concepts.js', () => ({
     CONCEPT_NAMES: {}, CONCEPT_IDS: {}

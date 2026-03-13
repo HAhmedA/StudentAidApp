@@ -9,7 +9,12 @@
 import cron from 'node-cron';
 import pool from '../config/database.js';
 import logger from '../utils/logger.js';
-import { computeAllScores } from './scoring/scoreComputationService.js';
+import { computeAllScores, batchScoreSRLCohort } from './scoring/scoreComputationService.js';
+
+// Mirror the SIM_FILTER pattern from scoreQueryService: only exclude simulated rows
+// when SIMULATION_MODE is explicitly 'false' (production). In dev/test mode all users
+// (including simulated ones) are rescored so the Previous needle has data.
+const SIM_FILTER_CRON = process.env.SIMULATION_MODE === 'false' ? `AND is_simulated = false` : ``;
 
 /**
  * Recompute scores for all users who have been active in the last 30 days.
@@ -30,20 +35,23 @@ export async function recomputeAllActiveUserScores(dbPool = pool, computeAllScor
         const { rows } = await dbPool.query(`
             SELECT DISTINCT user_id FROM (
                 SELECT user_id FROM public.sleep_sessions
-                    WHERE is_simulated = false
-                    AND session_date >= CURRENT_DATE - INTERVAL '30 days'
+                    WHERE session_date >= CURRENT_DATE - INTERVAL '30 days'
+                    ${SIM_FILTER_CRON}
                 UNION
                 SELECT user_id FROM public.screen_time_sessions
-                    WHERE is_simulated = false
-                    AND session_date >= CURRENT_DATE - INTERVAL '30 days'
+                    WHERE session_date >= CURRENT_DATE - INTERVAL '30 days'
+                    ${SIM_FILTER_CRON}
                 UNION
                 SELECT user_id FROM public.srl_responses
                     WHERE submitted_at >= NOW() - INTERVAL '30 days'
                 UNION
                 SELECT user_id FROM public.lms_sessions
-                    WHERE is_simulated = false
-                    AND session_date >= CURRENT_DATE - INTERVAL '30 days'
+                    WHERE session_date >= CURRENT_DATE - INTERVAL '30 days'
+                    ${SIM_FILTER_CRON}
             ) active_users
+            WHERE user_id NOT IN (
+                SELECT user_id FROM public.student_profiles WHERE exclude_from_clustering = true
+            )
         `);
 
         if (rows.length === 0) {
@@ -67,6 +75,12 @@ export async function recomputeAllActiveUserScores(dbPool = pool, computeAllScor
         }
 
         logger.info(`Cron: Nightly recomputation complete. ✓ ${successCount} succeeded, ✗ ${errorCount} failed.`);
+
+        // SRL requires a single batch run so peer_clusters and all user_cluster_assignments
+        // are written from the same model (one PGMoE fit, one atomic transaction).
+        await batchScoreSRLCohort().catch(err =>
+            logger.error(`Cron: SRL batch scoring failed: ${err.message}`)
+        );
     } catch (err) {
         logger.error(`Cron: Nightly recomputation error: ${err.message}`);
     }

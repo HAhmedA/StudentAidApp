@@ -1,301 +1,309 @@
 # Phase 2: Security & Performance Review
 
+_Review date: 2026-03-11._
+
+---
+
 ## Security Findings
 
-### Critical
+### SEC-01 — Severity: Critical (CVSS 9.1) | CWE-347
+**Hand-Rolled Session Cookie Signing**
 
-#### SEC-01 — Unauthenticated Admin Session via `legacy-login` Endpoint
-**CVSS:** 9.8 | **CWE:** CWE-287 (Improper Authentication)
-**File:** `backend/routes/auth.js:72–83`
+`authController.js` lines 11–15 re-implements `cookie-signature`'s HMAC-SHA256 signing with manual base64url substitution (`.replace(/\+/g, '-')`, `.replace(/\//g, '_')`). The `cookie-signature` library does NOT perform these substitutions — it uses plain base64 with only `=` padding stripped. The hand-rolled function produces a different signature than what `express-session` generates, meaning the manual override is the canonical signing path. Any subtle divergence from the library's format risks authentication bypass or universal session forgery given knowledge of the session secret.
 
-`/api/auth/legacy-login` creates an authenticated admin session with zero credentials. Calling it with `{"role":"admin"}` (no email/password) sets `req.session.user = { id: 'demo-user', role: 'admin' }`. No `NODE_ENV` guard, no IP allowlist, reachable in production.
-
-**Full exploit chain:** Any internet-accessible attacker can gain admin access and then enumerate all student PII, view/modify system prompts (prompt injection), trigger bulk Moodle sync, and read all cluster assignments via a single unauthenticated POST.
-
-**Fix:** Remove the endpoint entirely, or gate with `if (process.env.NODE_ENV === 'production') return res.status(404).json({ error: 'not_found' })`.
+**Remediation**: `import { sign } from 'cookie-signature'` and replace the manual function with `'s:' + sign(id, secret)`. Investigate whether the root cause (nginx not firing `res.end()` hook) still applies — the explicit `session.save()` await may have already resolved it, making the manual override unnecessary.
 
 ---
 
-#### SEC-02 — SQL Injection via String Interpolation
-**CVSS:** 8.6 (adjusted 6.5 — currently not user-reachable) | **CWE:** CWE-89
-**Files:** `scoreQueryService.js:28,32,36,116,142,166`, `sleepAnnotationService.js:313`, `screenTimeAnnotationService.js:255`, `srlAnnotationService.js:297`
+### SEC-02 — Severity: Critical (CVSS 9.0) | CWE-319
+**Plaintext HTTP Deployment with Session Cookies**
 
-Template literals interpolate `days` and the `EXCLUDE_SIMULATED_USERS` raw SQL fragment directly into queries. All `days` values are currently hardcoded to `7` at call sites — not user-controlled. However, one code change (e.g., adding `?days=` query param) creates an immediately exploitable SQL injection. `lmsAnnotationService.js:301` already uses the correct parameterized form.
+Production runs on port 80 (`compose.http.yml`) with `COOKIE_SECURE=false` and HSTS explicitly disabled. Session cookies with full auth credentials are transmitted in cleartext, enabling passive network sniffing on any shared network (university campus Wi-Fi is the primary deployment environment).
 
-**Fix:** `WHERE session_date >= CURRENT_DATE - ($2 * INTERVAL '1 day')`, passing `days` as a bound parameter.
-
----
-
-#### SEC-03 — Rate Limiter Bypass via Legacy Auth Aliases
-**CVSS:** 7.5 | **CWE:** CWE-307
-**File:** `backend/routes/index.js:23–25`
-
-`/api/login`, `/api/logout`, `/api/me` call the same handlers as `/api/auth/*` but bypass `authLimiter` (10 req/15 min) and `express-validator`. Only the general `apiLimiter` (100 req/15 min) applies — sufficient for credential stuffing or brute-force.
-
-**Fix:** Remove legacy aliases, or apply `authLimiter` + validation to each one.
+**Remediation**: Add TLS termination via AWS ALB, Cloudflare tunnel, or nginx + Let's Encrypt. Set `COOKIE_SECURE=true`, re-enable HSTS (`max-age: 31536000`), and re-enable `upgrade-insecure-requests` CSP directive.
 
 ---
 
-### High
+### SEC-03 — Severity: High (CVSS 8.1) | CWE-287
+**Legacy Login Creates Arbitrary Admin Sessions From User Input**
 
-#### SEC-04 — Hardcoded Default Database Password
-**CVSS:** 7.3 | **CWE:** CWE-798
-**File:** `backend/config/database.js:9`
+`auth.js` lines 133–147: the `/legacy-login` endpoint accepts `req.body.role` directly and sets `req.session.user = { id: 'demo-user', role }`. The only guard is `NODE_ENV === 'production'`, but `NODE_ENV` defaults to `'development'` when unset (per `envValidation.js`). Any unauthenticated request to `POST /api/auth/legacy-login` with `{ "role": "admin" }` on a non-explicitly-configured production server grants full admin privileges including data deletion and API key reveal.
 
-`password: process.env.PGPASSWORD || 'password'` — `envValidation.js` emits a *warning* but does not block startup when `PGPASSWORD` is absent. A deployment with a missing env var silently uses `'password'`.
-
-**Fix:** Fail pool creation (not just warn) in `NODE_ENV=production` if `PGPASSWORD` is unset or weak.
+**Remediation**: Remove `/legacy-login` entirely. If needed for development, guard with an explicit `ENABLE_DEMO_LOGIN=true` env var and fix the hardcoded `'demo-user'` ID which breaks any downstream user lookups.
 
 ---
 
-#### SEC-05 — Hardcoded Fallback Session Secret
-**CVSS:** 7.5 | **CWE:** CWE-798
-**File:** `backend/server.js:66`
+### SEC-04 — Severity: High (CVSS 7.5) | CWE-770
+**Admin Role Bypasses All API Rate Limiting**
 
-`secret: process.env.SESSION_SECRET || 'dev-secret'` — with a known secret, an attacker can forge arbitrary session cookies for any user including admin. `envValidation.js` only catches the literal string `'dev-secret'`, not a missing `SESSION_SECRET`.
+`rateLimit.js` line 11: `skip: (req) => req.session?.user?.role === 'admin'`. Combined with SEC-03, a compromised or forged admin session has zero rate limiting across all endpoints including expensive ones: `/admin/recompute-scores` (full DB scan + PGMoE for all users), `/chat/message` (LLM API call), and Moodle sync endpoints (unbounded external HTTP calls).
 
-**Fix:** `if (isProduction && !sessionSecret) throw new Error('SESSION_SECRET is required in production')`.
-
----
-
-#### SEC-06 — Verbose Error Details Leaked to Clients
-**CVSS:** 5.3 | **CWE:** CWE-209
-**File:** `backend/routes/annotations.js:27`
-
-`res.status(500).json({ error: 'db_error', details: String(e) })` exposes database connection strings, table names, column names, and SQL errors to clients. The global error handler correctly hides this in production, but this inline handler bypasses it.
-
-**Fix:** `...(process.env.NODE_ENV !== 'production' && { details: String(e) })`.
+**Remediation**: Replace the blanket skip with a higher per-admin limit (e.g., 2000 req/15min) instead of no limit.
 
 ---
 
-#### SEC-07 — Admin Cluster-Members Endpoint Exposes Student PII
-**CVSS:** 6.5 | **CWE:** CWE-200
-**File:** `backend/routes/admin.js:208–245`
+### SEC-05 — Severity: High (CVSS 7.5) | CWE-312
+**LLM API Key Stored in Plaintext in Database**
 
-Returns full email, name, scores, trend data, and cluster assignments for all students in a single response with no pagination. Combined with SEC-01, this enables complete PII exfiltration in one request.
+The `llm_config` table stores `api_key` in plaintext (`admin.js` line 512). Any database read access (backup, log, or future injection) exposes the LLM provider key. The `/admin/llm-config/reveal-key` endpoint returns it verbatim.
 
-**Fix:** Mask emails (return only local part), add pagination, add audit logging for admin data access.
-
----
-
-### Medium
-
-#### SEC-08 — IDOR on Chat Session History
-**CVSS:** 5.4 | **CWE:** CWE-639
-**File:** `backend/routes/chat.js:132–156`
-
-`GET /api/chat/history?sessionId=UUID` verifies the user is authenticated but does not verify the requested `sessionId` belongs to the authenticated user. Attacker can enumerate session IDs to read other students' private chat conversations.
-
-**Fix:** Add `SELECT id FROM chat_sessions WHERE id = $1 AND user_id = $2` ownership check before returning history.
+**Remediation**: Encrypt at rest using envelope encryption or move to a secrets manager. Redact from all logs. At minimum, add a note to the `reveal-key` endpoint's audit log.
 
 ---
 
-#### SEC-09 — `storeUserAssignment` Silently Swallows Errors
-**CVSS:** 4.0 | **CWE:** CWE-754
-**File:** `backend/services/scoring/clusterStorageService.js:62–79`
+### SEC-06 — Severity: High (CVSS 7.2) | CWE-918
+**SSRF via Admin-Controlled LLM Base URL**
 
-Errors are logged but not re-thrown. Inside a transaction (`clusterPeerService.js:261`), `storeClusterResults` can succeed while `storeUserAssignment` fails silently, leaving peer_clusters updated but user_cluster_assignments stale. Users see real scores but with incorrect peer-context dials indefinitely.
+`admin.js` lines 544–576: the `/llm-config/test` endpoint makes an HTTP GET to `${resolvedBaseUrl}/models`. Validation is only `new URL(resolvedBaseUrl)`, which accepts `http://169.254.169.254/latest/meta-data/` (AWS instance metadata), `http://localhost:5432` (PostgreSQL), and any internal service. The response body is returned to the client, enabling full read SSRF.
 
-**Fix:** `if (externalClient) throw err` — propagate failures to the transaction wrapper for rollback.
-
----
-
-#### SEC-10 — Missing CSP Directive Tuning
-**CVSS:** 4.3 | **CWE:** CWE-1021
-**File:** `backend/server.js:27`
-
-`helmet()` uses default CSP configuration. An application communicating with an external LLM API and Moodle instance should restrict `connectSrc` and `scriptSrc` explicitly.
-
-**Fix:** Configure `contentSecurityPolicy.directives` with `connectSrc: ["'self'", LLM_BASE_URL, MOODLE_BASE_URL]` and `frameAncestors: ["'none'"]`.
+**Remediation**: Block private IP ranges and cloud metadata addresses at URL parse time. Maintain an allowlist of permitted URL schemes (HTTPS only) and — if the LLM service is always a known provider — consider a domain allowlist.
 
 ---
 
-#### SEC-11 — Five Survey Packages Pinned to `"latest"`
-**CVSS:** 5.3 | **CWE:** CWE-1395
-**File:** `package.json:24–28`
+### SEC-07 — Severity: Medium (CVSS 6.5) | CWE-862
+**Survey Modification Without Authentication**
 
-`survey-core`, `survey-react-ui`, `survey-analytics`, `survey-creator-core`, `survey-creator-react` are all `"latest"`. Every `npm install` pulls whatever is current — breaking changes and supply-chain compromise are pulled automatically.
+`surveys.js` has no `requireAuth` or `requireAdmin` guard. The `POST /api/changeJson` endpoint (line 93) allows unauthenticated modification of survey JSON, including potential XSS injection into survey titles rendered by the React frontend.
 
-**Fix:** Pin to specific version ranges; add `npm audit` to CI/CD.
-
----
-
-#### SEC-12 — Moodle Token in URL Query String
-**CVSS:** 5.0 | **CWE:** CWE-598
-**File:** `backend/services/moodleService.js:126–141`
-
-`wstoken=...` appears in every Moodle REST call URL. Tokens are recorded in proxy logs, APM tools, and web server access logs. This is Moodle's design — cannot be changed on the client side — but requires log redaction and short token rotation.
-
-**Fix:** Redact `wstoken` in all log configurations; rotate the token regularly; document as accepted risk.
+**Remediation**: Add `requireAdmin` to the `/changeJson` route. Consider `requireAuth` for all survey reads.
 
 ---
 
-### Low
+### SEC-08 — Severity: Medium (CVSS 5.3) | CWE-862
+**Survey Result Submission Accepts Unauthenticated Requests**
 
-#### SEC-13 — `trust proxy` Set to `1` Without Validation
-`backend/server.js:35` — In deployments without a reverse proxy, `X-Forwarded-For` can be spoofed, bypassing IP-based rate limiting.
+`results.js` `POST /api/post` falls back to `userId = null` for unauthenticated submissions, inserting rows with `user_id = null`. This allows DB pollution with fake results.
 
-#### SEC-14 — 30-Day Session Cookie Lifetime
-`backend/server.js:73` — Excessive for a student wellbeing app handling sensitive data. A stolen cookie has a 30-day exploitation window.
+**Remediation**: Add `requireAuth` and throw `Errors.UNAUTHORIZED()` instead of using `null` fallback.
 
-#### SEC-15 — Swagger UI Exposed Without Authentication
-`backend/server.js:87` — Reveals full API surface to unauthenticated users. Disable in production.
+---
 
-#### SEC-16 — No Explicit Request Body Size Limit
-`backend/server.js:55` — Default Express 100KB limit is larger than required for this application; should be reduced to `'50kb'`.
+### SEC-09 — Severity: Medium (CVSS 5.5) | CWE-598
+**Moodle Token Passed as URL Query Parameter**
+
+`moodleService.js` passes `wstoken=<token>` in GET URL query strings by Moodle REST convention. The token appears in server logs if request URLs are logged at debug level, and in Moodle's own access logs.
+
+**Remediation**: Ensure the constructed URL is never logged verbatim. Use POST requests where possible. Rotate the Moodle token periodically.
+
+---
+
+### SEC-10 — Severity: Medium (CVSS 5.0) | CWE-532
+**Debug LLM Logging Leaks Full Chat Payloads**
+
+`apiConnectorService.js` lines 44–47: `if (DEBUG_LLM) console.log(JSON.stringify(requestBody))` dumps the full LLM request including all student messages and system prompts to stdout. No guard prevents this in production if `DEBUG_LLM=true` is accidentally set.
+
+**Remediation**: Replace with `logger.debug(...)`, add `if (process.env.NODE_ENV === 'production') throw` or warn if `DEBUG_LLM=true` in production, and redact message content from debug logs.
+
+---
+
+### SEC-11 — Severity: Medium (CVSS 6.1) | CWE-798
+**Hardcoded `'dev-secret'` Session Secret Fallback**
+
+`server.js` line 103: falls back to `'dev-secret'` in non-production. All development/staging deployments share a predictable, publicly known session secret. Combined with SEC-02 (no TLS), anyone who knows `'dev-secret'` can forge sessions on staging.
+
+**Remediation**: Generate a random secret at startup when not provided: `const secret = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex')`. Log a warning that sessions won't survive restarts.
+
+---
+
+### SEC-12 — Severity: Medium (CVSS 5.4) | CWE-352
+**No CSRF Token Mechanism**
+
+All state-changing endpoints rely solely on `SameSite=Lax`. This does not protect against attacks from subdomains or older browsers. No CSRF token is implemented.
+
+**Remediation**: `SameSite=Lax` is adequate for this threat model, but document this as an accepted risk. Add `Origin` header validation on state-changing requests as defense in depth.
+
+---
+
+### SEC-13 — Severity: Low (CVSS 3.7) | CWE-20
+**Missing Input Validation on Data Entry Endpoints**
+
+`sleep.js`, `screen-time.js`, and `profile.js` lack express-validator rules. Sleep `start`/`end` strings are parsed with `.split(':').map(Number)` without format validation, potentially producing `NaN`. Screen time fields have no positivity constraints. Profile string fields have no length limits.
+
+**Remediation**: Add express-validator rules to all data entry routes, consistent with the pattern in `auth.js`.
+
+---
+
+### SEC-14 — Severity: Low (CVSS 3.1) | CWE-209
+**Raw Database Error Messages in Non-Production Error Responses**
+
+`asyncRoute` maps non-AppError exceptions to `Errors.DB_ERROR(err.message)`, which stores the raw PostgreSQL error (containing table/column names, constraint names) in `details` and returns it to the client in non-production environments.
+
+**Remediation**: Sanitize the `details` field even in non-production: strip PostgreSQL-specific error text, keeping only the generic message.
+
+---
+
+### SEC-15 — Severity: Low (CVSS 3.7) | CWE-307
+**No Per-Account Login Lockout**
+
+`authLimiter` applies 50 attempts per IP per 15 min. Distributed brute-force attacks from multiple IPs face no per-account lockout.
+
+**Remediation**: Track failed login attempts per email in the database. After 10 consecutive failures, require CAPTCHA or add a temporary lock. This is low-priority given bcrypt's inherent slowness.
+
+---
+
+### SEC-16 — Severity: Low (CVSS 4.3) | CWE-862
+**Unauthenticated Survey Reads and Redundant Legacy Auth Routes**
+
+Survey GET endpoints (`/getActive`, `/getSurvey`) require no authentication. Legacy `/api/logout` and `/api/me` routes are unguarded aliases.
+
+**Remediation**: Add `requireAuth` to survey reads. Remove legacy auth aliases.
+
+---
+
+### SEC-17 — Severity: Low (CVSS 2.4) | CWE-1021
+**Dynamic Env Vars Injected Directly into CSP `connect-src`**
+
+`server.js` lines 52–56 include `MOODLE_BASE_URL` and `LLM_BASE_URL` in the CSP policy without domain validation. A compromised env var could inject an attacker-controlled domain into the allowlist.
+
+**Remediation**: Validate URL format/domain before including in CSP. Low priority given the env var compromise prerequisite.
 
 ---
 
 ## Performance Findings
 
-### Critical
+### PERF-01 — Severity: Critical
+**O(N²D log N) Composite Score Computation in Batch Path**
 
-#### P-C1 — O(N²) Silhouette Score Computation in Nightly Cron
-**File:** `backend/services/scoring/pgmoeAlgorithm.js:599–642`
+`clusterPeerService.js` lines 498–534: `batchComputeClusterScores` calls `computeCompositeScore(allMetrics[uid], allMetrics, dims)` inside a loop over N users. Inside `computeCompositeScore`, for each of D dimensions the entire `allValues` array is reconstructed and sorted (`O(N log N)`) on every call. Total: `O(N² × D × log N)` vs. optimal `O(N × D × log N)`. For 100 users and 4 dimensions: 40,000 sort operations vs. 400.
 
-`computeSilhouetteScore` is O(N²) and runs 4× per user (once per concept) inside the nightly sequential cron. Total complexity: O(U × 4 × N²) where U = active users, N = cohort size.
-
-- 50 users: ~1 second (invisible)
-- 200 users: ~15 minutes (nightly job may not finish before next trigger)
-- 500 users: **multiple hours** — cron runs are permanently overlapping
-
-The silhouette metric is only used for the append-only `cluster_run_diagnostics` audit table (fire-and-forget path). It does not affect score correctness.
-
-**Fix:** Move silhouette/Davies-Bouldin calculations to a separate low-priority background job decoupled from the user scoring path. Or cap to a random sample of `min(N, 100)` points.
+**Remediation**: Pre-compute sorted value arrays and P5/P95 ranges once in `_runConceptClustering` (they already exist in `ranges`), and pass them as a parameter to `computeCompositeScore`. Cache is already available — the batch path simply doesn't use it.
 
 ---
 
-#### P-C2 — Nightly Cron Is Fully Sequential Across All Users and All Concepts
-**Files:** `backend/services/cronService.js:50–58`, `backend/services/scoring/scoreComputationService.js:83–88`
+### PERF-02 — Severity: High
+**Redundant Per-Cluster Filter+Sort for Every User in Batch Loop**
 
-`computeAllScores(userId)` iterates 4 concepts sequentially for each user, and the cron iterates all active users sequentially. At 50 users each taking ~3s (12 EM fits), the nightly job takes 2.5 minutes. With P-C1 compounding this, failure is guaranteed before reaching 200 users.
+`clusterPeerService.js` lines 504–507: inside the N-user batch loop, `composites.filter(u => u.cluster === origCluster).sort(...)` runs N times. Cluster composition doesn't change within the loop. Total: `O(N² log N)` vs. `O(N log N)`.
 
-**Architectural fix:** The clustering is cohort-level computation — run PGMoE once per concept across all users, then fan out assignment writes in parallel. This reduces 4N model fits to 4 model fits total.
-
----
-
-#### P-C3 — Sequential Moodle Forum HTTP Requests
-**File:** `backend/services/moodleService.js:291–334`
-
-One HTTP call per discussion thread, capped at 50 per forum. With 2 forums: up to 108 HTTP calls per user sync. The admin `sync-all` runs users sequentially.
-
-**Worst case:** 50 students × 108 calls × 200ms = **18 minutes** for bulk sync. The Express HTTP connection from the admin client remains open for the full duration.
-
-**Fix:** `Promise.all` with `p-limit(5)` for discussion post fetches; run user syncs in parallel with bounded concurrency (3–5) in `sync-all`.
+**Remediation**: Pre-group composites by cluster index before the loop:
+```js
+const clustersByOrigIndex = {}
+for (let c = 0; c < k; c++) {
+    clustersByOrigIndex[c] = composites
+        .filter(u => u.cluster === c).map(u => u.composite).sort((a, b) => a - b)
+}
+```
+Then use `clustersByOrigIndex[origCluster]` inside the loop.
 
 ---
 
-#### P-C4 — `storeUserAssignment` Silently Swallows Errors — Stale Dials Shown to Users
-*(Same root cause as SEC-09)*
+### PERF-03 — Severity: High
+**PostgreSQL Connection Pool Uses All-Default Settings**
 
-When `storeUserAssignment` fails inside a `withTransaction` block, `storeClusterResults` has already committed the peer_clusters rows. The user's `user_cluster_assignments` row is stale. The scores route falls back to `dialMin=0, dialCenter=50, dialMax=100` — generic placeholder values — displayed silently with no error indicator. This can persist indefinitely through nightly re-failures.
+`config/database.js` creates a `Pool` with no explicit `max`, `idleTimeoutMillis`, `connectionTimeoutMillis`, or `statement_timeout`. The `pg` default of 10 connections is undersized for concurrent scoring runs, Moodle syncs, and chat operations on t2.micro (1 GB RAM). No `statement_timeout` means a hung query blocks a connection indefinitely.
 
-**Fix:** Remove the try/catch from `storeUserAssignment`; let errors propagate and roll back the entire transaction.
-
----
-
-### High
-
-#### P-H1 — 4 Sequential DB Queries Per `/api/scores` Request
-**File:** `backend/routes/scores.js:36–149`
-
-Three sequential queries (concept_scores, score_history, cluster_assignments JOIN peer_clusters) before the parallelized pool-size check. ~23ms minimum DB time per page load, saturating the default pool under concurrent requests.
-
-**Fix:** Merge queries 1–3 into a single LEFT JOIN query; total DB round-trips drop from 4 to 2.
+**Remediation**: Explicitly configure the pool:
+```js
+max: parseInt(process.env.DB_POOL_SIZE || '5'),  // conservative for t2.micro
+idleTimeoutMillis: 30000,
+connectionTimeoutMillis: 10000,
+statement_timeout: 30000,
+application_name: 'studentaid-backend'
+```
+Expose `DB_POOL_SIZE` in `.env.example`.
 
 ---
 
-#### P-H2 — `cluster_run_diagnostics` Table Has No Retention Policy
-**Files:** `postgres/initdb/013_cluster_diagnostics.sql`, `clusterStorageService.js:94–118`
+### PERF-04 — Severity: High
+**Sequential User Scoring Loop in Nightly Cron**
 
-Append-only, no ON CONFLICT. At 50 students × 4 concepts × 2 triggers/day = 400 rows/day → **146,000 rows/year**. The `DISTINCT ON` admin query uses the index correctly but the table will reach millions of rows.
+`cronService.js` lines 59–67 processes users sequentially with `await computeAllScoresFn(user_id)`. With 100 users at ~2–3 s each (4 concepts × clustering), cron runtime is 3–5 minutes. `p-limit` is already in the dependency tree (used by `moodleService.js`).
 
-**Fix:** Add nightly `DELETE FROM cluster_run_diagnostics WHERE computed_at < NOW() - INTERVAL '90 days'`.
-
----
-
-#### P-H3 — `/api/admin/cluster-members` Fetched on Every Admin Mount, No Pagination
-**Files:** `backend/routes/admin.js:208–245`, `src/components/AdminClusterDiagnosticsPanel.tsx`
-
-Returns all students' emails, scores, and cluster data unbounded. `useEffect` fires on mount unconditionally — even when the panel is collapsed. At 100 students × 4 concepts, this is 400 JSONB rows (~200–400KB) on every admin page load.
-
-**Fix:** Lazy-load on panel expand; add server-side pagination (`?concept_id=lms&limit=50&offset=0`).
-
----
-
-### Medium
-
-#### P-M1 — No DB Pool Configuration (Connection Pool Will Exhaust Under Load)
-**File:** `backend/config/database.js`
-
-`pg.Pool` created with no `max`, `min`, `idleTimeoutMillis`, or `connectionTimeoutMillis`. Default `max: 10` is insufficient given concurrent scoring runs, session store connections, and chat endpoints (4–6 queries per message).
-
-**Fix:** `max: parseInt(process.env.DB_POOL_MAX || '20')`, `idleTimeoutMillis: 30000`, `connectionTimeoutMillis: 5000`.
+**Remediation**: Import `pLimit` and run 3–5 users concurrently:
+```js
+const limit = pLimit(3)
+await Promise.all(rows.map(({ user_id }) =>
+    limit(() => computeAllScoresFn(user_id).catch(err => {
+        logger.error(`Cron: failed for ${user_id}: ${err.message}`)
+        errorCount++
+    }))
+))
+```
+Estimated 3–5× speedup. Note: `successCount`/`errorCount` tracking needs thread-safe increments (not truly threaded in Node, so `++` is safe).
 
 ---
 
-#### P-M2 — N+1 Loop in `/api/admin/prompts`
-**File:** `backend/routes/admin.js:44–64`
+### PERF-05 — Severity: High
+**`_computeUserPercentile` Filters and Sorts Full Composites Array on Each Single-User Call**
 
-Sequential `SELECT LIMIT 1` per prompt type. Replace with single `DISTINCT ON (prompt_type) ... ORDER BY prompt_type, updated_at DESC`.
+`clusterPeerService.js` lines 136–146: called once per single-user scoring run, but re-sorts the cluster's composite array from scratch each time. In the single-user path (`computeClusterScores`) this is called after a full `_runConceptClustering` that already computed composites. The sort result is discarded after one use.
 
----
-
-#### P-M3 — INTERVAL SQL String Interpolation (Performance Angle)
-*(Same as SEC-02 for performance)* — `days` parameter not validated as integer before interpolation; accidental `NaN` or float would cause a PostgreSQL parse error mid-query rather than a clean validation failure.
+**Remediation**: Pass pre-sorted per-cluster arrays from `_runConceptClustering` to callers. Same fix as PERF-02 but for the single-user path.
 
 ---
 
-#### P-M4 — 3+ Sequential DB Queries Per Chat Message
-**File:** `backend/services/contextManagerService.js:26–64`
+### PERF-06 — Severity: High
+**Missing Composite Indexes on Hot Query Paths**
 
-`getOrCreateSession` = 3 queries (expire → find → touch). Then `saveMessage` (INSERT + UPDATE), `assemblePrompt` (multiple queries), LLM call, another `saveMessage`, and a second `last_activity_at` UPDATE. The session touch fires **twice** per message. With 10 concurrent chatters: 6–8 DB round-trips before LLM latency begins.
+Multiple high-frequency queries filter on combinations of columns that have no composite index:
+- `lms_sessions(user_id, is_simulated, session_date)` — used in every scoring and pool-size query
+- `sleep_sessions(user_id, is_simulated, session_date)` — same
+- `screen_time_sessions(user_id, is_simulated, session_date)` — same
+- `chat_sessions(user_id, is_active, created_at DESC)` — used on every chat message
+- `concept_score_history(user_id, concept_id, score_date)` — used on every scores page load
 
-**Fix:** Cache active session ID server-side; remove duplicate `last_activity_at` update; combine saveMessage + invalidateSummary in one transaction.
+Without composite indexes, every query does a sequential scan of the entire table.
 
----
-
-#### P-M5 — `computeCompositeScore` Re-Sorts All Users Per Call
-**File:** `backend/services/scoring/clusterPeerService.js:87–111`
-
-O(N log N) sort runs for every user × every call (called 2× per user in `composites` build), even though P5/P95 ranges are identical for all users. Precompute ranges once and pass them as an argument.
-
----
-
-#### P-M6 — `getOrCreateBaseline` Issues 3 Sequential DB Queries
-**Files:** `lmsAnnotationService.js:372–396`, `sleepAnnotationService.js:269–292`
-
-SELECT → INSERT ON CONFLICT DO NOTHING → SELECT pattern. Race condition under concurrent requests and an extra round-trip. Replace with a single `INSERT ... ON CONFLICT ... RETURNING *` + CTE fallback SELECT.
-
----
-
-### Low
-
-| ID | Issue | File |
-|----|-------|------|
-| P-L1 | `ConceptScore` interface defined in 3 files — type drift risk | `Home.tsx`, `ScoreBoard.tsx` |
-| P-L2 | `setTimeout` retry in `Home.tsx` with no unmount cleanup | `src/pages/Home.tsx:97–99` |
-| P-L3 | Second LLM call for follow-up prompts when XML not embedded | `contextManagerService.js:394` |
-| P-L4 | `selectOptimalModel` fits 12 models every time; no intra-day cache | `pgmoeAlgorithm.js:429–518` |
-| P-L5 | Dynamic `import()` in hot annotation path — obfuscates dep graph | annotation services |
-| P-L6 | No partial index on `is_simulated` — full scan when SIMULATION_MODE=false | `scoreQueryService.js:117` |
+**Remediation**: Add a migration:
+```sql
+CREATE INDEX idx_lms_sessions_scoring ON public.lms_sessions(user_id, is_simulated, session_date DESC);
+CREATE INDEX idx_sleep_sessions_scoring ON public.sleep_sessions(user_id, is_simulated, session_date DESC);
+CREATE INDEX idx_screent_sessions_scoring ON public.screen_time_sessions(user_id, is_simulated, session_date DESC);
+CREATE INDEX idx_chat_sessions_active ON public.chat_sessions(user_id, is_active, created_at DESC);
+CREATE INDEX idx_concept_score_history ON public.concept_score_history(user_id, concept_id, score_date DESC);
+```
 
 ---
 
-### Scalability Architecture Notes
+### PERF-07 — Severity: Medium
+**Silent Null Returns Mask Scoring Failures — No Retry or Alerting**
 
-**S-1:** Single-process Node.js — CPU-bound EM loops share event loop with HTTP handlers. The nightly cron must be moved to a separate worker/container to prevent scoring work from blocking request serving.
+`scoreComputationService.js` lines 65–68: errors are caught, logged, and `null` returned. `null` is indistinguishable from "no data". No retry is attempted, no metric is incremented, and the cron job's `successCount` is never decremented for the failed concept.
 
-**S-2:** Rate limiter is IP-based — in a university environment (shared campus NAT), one chatty student can exhaust the global rate limit for all students on the same IP. Use session/user-ID-based limiting on authenticated routes.
+**Remediation**: Throw errors to the caller or return a discriminated `{ status: 'error' | 'no_data' | 'cold_start' }` object. Let the cron job count errors per concept, not just per user.
 
-**S-3:** `computeAllScores` fires fire-and-forget on every data submission event (sleep, screen-time, SRL, Moodle sync, simulation). A user submitting all three forms triggers 3 parallel PGMoE runs against the same unchanged cohort data. Add per-user debouncing (30s minimum interval) or a job queue.
+---
+
+### PERF-08 — Severity: Medium
+**3 Sequential DB Round-Trips on Every Chat Session Creation**
+
+`contextManagerService.js` lines 27–65: `getOrCreateSession` makes three sequential queries (expire timed-out sessions → check for active session → update/insert). This adds 30–100 ms per chat message on network-latency DB connections.
+
+**Remediation**: Consolidate into a single CTE query that expires stale sessions and returns or creates the active session in one round-trip.
+
+---
+
+### PERF-09 — Severity: Medium
+**No Pagination on Chat Session History**
+
+`contextManagerService.js` `getSessionHistory`: for users with 500+ messages, the query loads the full message history before `LIMIT`-ing. Large histories consume significant memory per request.
+
+**Remediation**: Use keyset pagination (`WHERE id > $lastId ORDER BY id ASC LIMIT $n`) and return `hasMore` so the frontend can load older messages lazily.
+
+---
+
+### PERF-10 — Severity: Medium
+**Moodle Forum Traversal Cap Is a Data-Loss Threshold, Not a Performance Guard**
+
+`moodleService.js` line 25: `MAX_FORUM_DISCUSSIONS_PER_SYNC = 50`. For active courses with >50 forum discussions, posts beyond the first 50 are silently skipped on every sync. This is not an observable truncation — it is silent data loss.
+
+**Remediation**: Track last-synced discussion ID per forum per user to resume from the correct position. Until then, document the cap explicitly in admin UI.
+
+---
+
+### PERF-11 — Severity: Low
+**LLM Completion Retry Strategy Undocumented**
+
+`apiConnectorService.js` `chatCompletionWithRetry`: retry logic is used throughout the chatbot pipeline but the backoff strategy is not verified. During LLM outages, unbounded or non-backoff retries could saturate the endpoint.
+
+**Remediation**: Ensure exponential backoff with jitter and a hard maximum delay (≤2 s). Log retry attempts at `warn` level.
 
 ---
 
 ## Critical Issues for Phase 3 Context
 
-1. **SEC-01 (unauthenticated admin)** — Testing phase should verify there are no other zero-auth endpoints; document the legacy-login removal test case.
-2. **SEC-08 (IDOR on chat history)** — Chat endpoints have no ownership tests. Test coverage gap is likely systemic.
-3. **P-C1/P-C2 (nightly cron scalability)** — No performance or load tests exist for the scoring pipeline. Critical path with no regression safety net.
-4. **P-C4 / SEC-09 (silent storeUserAssignment failure)** — No test verifies that a failed assignment write is visible to callers. The bug is undetectable without explicit negative tests.
-5. **SEC-11 (survey packages at "latest")** — Documentation should capture the pinned-version policy decision.
+1. **SEC-03** and **SEC-07/SEC-08**: Auth gaps on survey modification and result submission should drive test cases for unauthenticated access paths.
+2. **SEC-01**: Cookie signing divergence — tests should verify that cookies issued by `authController` are accepted by `express-session`'s verify mechanism.
+3. **PERF-06**: Missing DB indexes — no performance tests exist for scoring pipeline under realistic data volumes; this should be called out as a test gap.
+4. **PERF-01/PERF-02**: Algorithm complexity regressions — the batch scoring path has no benchmarks. A test that validates O(N) scaling would catch this class of bug early.
+5. **SEC-10**: LLM debug logging — should be tested that `DEBUG_LLM=true` in production emits a warning/error at startup.
