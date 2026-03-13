@@ -9,7 +9,7 @@ import { asyncRoute, Errors } from '../utils/errors.js'
 import { CONCEPT_NAMES, CONCEPT_IDS } from '../config/concepts.js'
 import { getConceptPoolSizes, getUserConceptDataSet, getClusterInfoByUser } from '../services/scoring/scoreQueryService.js'
 import { getLlmConfig, clearLlmConfigCache } from '../services/llmConfigService.js'
-import { computeAllScores } from '../services/scoring/scoreComputationService.js'
+import { computeAllScores, batchScoreSRLCohort } from '../services/scoring/scoreComputationService.js'
 
 const router = Router()
 
@@ -148,10 +148,15 @@ router.put('/prompt', asyncRoute(handleUpdatePrompt))
  *       401: { description: Not authenticated }
  *       403: { description: Not an admin }
  */
-// List all student users
+// List all student users (includes cluster exclusion flag for admin UI)
 router.get('/students', asyncRoute(async (req, res) => {
         const { rows } = await pool.query(
-            `SELECT id, name, email FROM public.users WHERE role = 'student' ORDER BY created_at DESC`
+            `SELECT u.id, u.name, u.email,
+                    COALESCE(sp.exclude_from_clustering, false) AS exclude_from_clustering
+             FROM public.users u
+             LEFT JOIN public.student_profiles sp ON sp.user_id = u.id
+             WHERE u.role = 'student'
+             ORDER BY u.created_at DESC`
         )
         res.json({ students: rows })
 }))
@@ -195,11 +200,13 @@ router.get('/students/:studentId/scores', asyncRoute(async (req, res) => {
             [studentId]
         )
 
-        // Yesterday scores
+        // Most recent pre-today score per concept (fallback prevents needle gap on missed days)
         const { rows: yesterdayRows } = await pool.query(
-            `SELECT concept_id, score
+            `SELECT DISTINCT ON (concept_id) concept_id, score
              FROM public.concept_score_history
-             WHERE user_id = $1 AND score_date = CURRENT_DATE - 1`,
+             WHERE user_id = $1
+               AND score_date < CURRENT_DATE
+             ORDER BY concept_id, score_date DESC`,
             [studentId]
         )
         const yesterdayScores = {}
@@ -259,6 +266,32 @@ router.get('/students/:studentId/scores', asyncRoute(async (req, res) => {
         }
 
         res.json({ scores })
+}))
+
+// Toggle cluster exclusion for a specific student
+// Body: { exclude: true | false }
+router.patch('/students/:studentId/cluster-exclusion', asyncRoute(async (req, res) => {
+        const { studentId } = req.params
+        const { exclude } = req.body
+        if (typeof exclude !== 'boolean') throw Errors.VALIDATION('exclude must be a boolean')
+
+        await pool.query(
+            `INSERT INTO public.student_profiles (user_id, exclude_from_clustering)
+             VALUES ($1, $2)
+             ON CONFLICT (user_id) DO UPDATE SET exclude_from_clustering = EXCLUDED.exclude_from_clustering`,
+            [studentId, exclude]
+        )
+        // When a user is excluded, remove their stale cluster assignments so they
+        // no longer appear in the cluster-members view. Re-enabling re-populates
+        // them on the next scoring run.
+        if (exclude) {
+            await pool.query(
+                `DELETE FROM public.user_cluster_assignments WHERE user_id = $1`,
+                [studentId]
+            )
+        }
+        logger.info(`Admin ${req.session.user?.email} set exclude_from_clustering=${exclude} for user ${studentId}`)
+        res.json({ success: true, studentId, excludeFromClustering: exclude })
 }))
 
 // Get annotations for a specific student
@@ -346,6 +379,7 @@ router.get('/cluster-members', asyncRoute(async (req, res) => {
                 uca.cluster_label,
                 uca.percentile_position,
                 u.id          AS user_id,
+                u.name,
                 u.email,
                 cs.score,
                 cs.trend,
@@ -358,7 +392,9 @@ router.get('/cluster-members', asyncRoute(async (req, res) => {
                  ON cs.user_id = uca.user_id AND cs.concept_id = uca.concept_id
              JOIN public.peer_clusters pc
                  ON pc.concept_id = uca.concept_id AND pc.cluster_index = uca.cluster_index
-             WHERE 1=1 ${conceptFilter}
+             LEFT JOIN public.student_profiles sp
+                 ON sp.user_id = uca.user_id
+             WHERE COALESCE(sp.exclude_from_clustering, false) = false ${conceptFilter}
              ORDER BY uca.concept_id, uca.cluster_index, uca.percentile_position DESC
              LIMIT $1 OFFSET $2`,
             queryParams
@@ -366,7 +402,9 @@ router.get('/cluster-members', asyncRoute(async (req, res) => {
         pool.query(
             `SELECT COUNT(*) AS total
              FROM public.user_cluster_assignments uca
-             WHERE 1=1 ${conceptId ? 'AND uca.concept_id = $1' : ''}`,
+             LEFT JOIN public.student_profiles sp ON sp.user_id = uca.user_id
+             WHERE COALESCE(sp.exclude_from_clustering, false) = false
+             ${conceptId ? 'AND uca.concept_id = $1' : ''}`,
             conceptId ? [conceptId] : []
         )
     ])
@@ -377,7 +415,8 @@ router.get('/cluster-members', asyncRoute(async (req, res) => {
         clusterLabel: r.cluster_label,
         clusterP50: r.cluster_p50 != null ? parseFloat(r.cluster_p50) : null,
         userId: r.user_id,
-        username: r.email.split('@')[0],
+        name: r.name,
+        email: r.email,
         score: r.score != null ? parseFloat(r.score) : null,
         trend: r.trend,
         percentilePosition: r.percentile_position != null ? parseFloat(r.percentile_position) : null,
@@ -445,6 +484,12 @@ router.post('/recompute-scores', asyncRoute(async (req, res) => {
             errors++
         }
     }
+
+    // SRL requires a single batch run (one PGMoE fit for all users) to keep
+    // peer_clusters and user_cluster_assignments in sync.
+    await batchScoreSRLCohort().catch(err =>
+        logger.error(`recompute-scores: SRL batch scoring failed: ${err.message}`)
+    )
 
     logger.info(`Admin ${req.session.user?.email} triggered score recomputation: ${recomputed} ok, ${errors} errors`)
     res.json({ recomputed, errors, total: rows.length })

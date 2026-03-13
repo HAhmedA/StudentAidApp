@@ -135,14 +135,17 @@ const AdminClusterDiagnosticsPanel = () => {
 
     const loadMembers = () => {
         setMembersLoading(true)
-        api.get<{ members: ClusterMember[] }>('/admin/cluster-members')
-            .then(data => {
-                setMembers(data.members || [])
-                setMembersLoading(false)
-            })
-            .catch(() => {
-                setMembersLoading(false)
-            })
+        const concepts = ['lms', 'screen_time', 'sleep', 'srl']
+        Promise.all(
+            concepts.map(c =>
+                api.get<{ members: ClusterMember[] }>(`/admin/cluster-members?conceptId=${c}&limit=200`)
+                    .then(d => d.members || [])
+                    .catch(() => [] as ClusterMember[])
+            )
+        ).then(results => {
+            setMembers(results.flat())
+            setMembersLoading(false)
+        })
     }
 
     useEffect(() => { loadDiagnostics() }, [])

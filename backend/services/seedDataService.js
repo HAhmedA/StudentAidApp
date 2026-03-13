@@ -7,7 +7,7 @@
 import pool from '../config/database.js';
 import logger from '../utils/logger.js';
 import { generateStudentData } from './simulationOrchestratorService.js';
-import { computeAllScores } from './scoring/scoreComputationService.js';
+import { computeAllScores, batchScoreSRLCohort } from './scoring/scoreComputationService.js';
 
 /**
  * Recompute scores for all seeded test accounts (fire-and-forget helper).
@@ -30,6 +30,11 @@ async function recomputeAllSeedScores() {
             catch (err) { logger.error(`Seed data: score recompute failed for ${id}: ${err.message}`); }
         }
         logger.info(`Seed data: Score recomputation complete — ${ok}/${rows.length} updated.`);
+        // Run SRL batch after individual per-user passes so all assignments come from
+        // one atomic PGMoE fit (individual runs each write only their own assignment).
+        await batchScoreSRLCohort().catch(err =>
+            logger.error(`Seed data: SRL batch scoring failed: ${err.message}`)
+        );
     } catch (err) {
         logger.error(`Seed data: score recomputation pass error: ${err.message}`);
     }
