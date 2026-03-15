@@ -7,33 +7,33 @@ import './DailyWizard.css'
 
 // API helpers
 const getConsentStatus = async () => {
-    const res = await api.get('/consent')
+    const res = await api.get<{ consentGiven: boolean }>('/consent')
     return res.consentGiven === true
 }
 const giveConsent = async () => {
     await api.post('/consent', { consentGiven: true })
 }
 const getTodaySRL = async () => {
-    const res = await api.get('/results/today')
+    const res = await api.get<{ submitted: boolean }>('/results/today')
     return res.submitted === true
 }
 const getTodayScreenTime = async () => {
-    const res = await api.get('/screen-time/today')
+    const res = await api.get<{ logged: boolean }>('/screen-time/today')
     return !!res.logged
 }
 const getTodaySleep = async () => {
-    const res = await api.get('/sleep/today')
+    const res = await api.get<{ logged: boolean }>('/sleep/today')
     return !!res.logged
 }
 const getProfile = async () => {
     try {
-        return await api.get('/profile')
+        return await api.get<{ onboarding_completed?: boolean }>('/profile')
     } catch {
         return null
     }
 }
 const completeOnboarding = async () => {
-    try { await api.post('/profile/onboarding-complete') } catch { /* silent */ }
+    try { await api.post('/profile/onboarding-complete', {}) } catch { /* silent */ }
 }
 
 type WizardStep = 'consent' | 'intro' | 'questionnaire' | 'screen_time' | 'sleep' | 'profile' | 'done'

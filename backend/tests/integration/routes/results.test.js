@@ -11,6 +11,7 @@ import session from 'express-session'
 // ── Mock functions ─────────────────────────────────────────────────────────────
 const mockQuery               = jest.fn()
 const mockSaveResponses       = jest.fn().mockResolvedValue(undefined)
+const mockSaveWellbeing       = jest.fn().mockResolvedValue(undefined)
 const mockComputeAnnotations  = jest.fn().mockResolvedValue(undefined)
 const mockComputeAllScores    = jest.fn().mockResolvedValue(undefined)
 const mockLogInfo  = jest.fn()
@@ -24,8 +25,9 @@ jest.unstable_mockModule('../../../utils/logger.js', () => ({
     default: { info: mockLogInfo, error: mockLogError, warn: jest.fn(), debug: jest.fn() }
 }))
 jest.unstable_mockModule('../../../services/annotators/srlAnnotationService.js', () => ({
-    saveResponses:      mockSaveResponses,
-    computeAnnotations: mockComputeAnnotations
+    saveResponses:            mockSaveResponses,
+    saveWellbeingResponses:   mockSaveWellbeing,
+    computeAnnotations:       mockComputeAnnotations
 }))
 jest.unstable_mockModule('../../../services/scoring/scoreComputationService.js', () => ({
     computeAllScores: mockComputeAllScores

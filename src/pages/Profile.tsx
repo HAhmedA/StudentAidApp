@@ -416,7 +416,7 @@ const Profile = () => {
                             onClick={async () => {
                                 if (window.confirm('Are you sure? This will permanently delete ALL your data and log you out. This cannot be undone.')) {
                                     try {
-                                        await api.post('/consent/revoke');
+                                        await api.post('/consent/revoke', {});
                                         window.location.href = '/login';
                                     } catch (err) {
                                         alert('Failed to revoke consent. Please try again.');
