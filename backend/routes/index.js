@@ -12,6 +12,7 @@ import sleepRoutes from './sleep.js'
 import screenTimeRoutes from './screen-time.js'
 import lmsRoutes from './lms.js'
 import csvLogRoutes from './csvLog.js'
+import consentRoutes from './consent.js'
 
 import { logout, getMe } from '../controllers/authController.js'
 
@@ -38,6 +39,7 @@ router.use('/sleep', sleepRoutes)
 router.use('/screen-time', screenTimeRoutes)
 router.use('/lms', lmsRoutes)
 router.use('/lms', csvLogRoutes)
+router.use('/consent', consentRoutes)
 
 export default router
 

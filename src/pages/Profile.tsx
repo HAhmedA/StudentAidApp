@@ -11,6 +11,7 @@ import {
     disabilityCategoriesDSM5,
     DISABILITY_LEGACY_MAP
 } from '../models/profile-constants'
+import { api } from '../api/client'
 import './Profile.css'
 
 const Profile = () => {
@@ -403,6 +404,33 @@ const Profile = () => {
                         {profileState.error && profileState.status === 'failed' && <p className="error-message" style={{ color: 'red', marginTop: '10px' }}>{profileState.error}</p>}
                         {showStudentSuccess && <p className="success-message" style={{ color: 'green', marginTop: '10px' }}>Profile saved successfully!</p>}
                     </form>
+
+                    {/* Consent & Data Management */}
+                    <div style={{ marginTop: '32px', padding: '16px', border: '1px solid #ef4444', borderRadius: '8px', backgroundColor: '#fef2f2' }}>
+                        <h3 style={{ margin: '0 0 8px', color: '#dc2626', fontSize: '14px' }}>Data & Consent</h3>
+                        <p style={{ fontSize: '13px', color: '#6b7280', margin: '0 0 12px' }}>
+                            Revoking consent will permanently delete all your data including questionnaire responses,
+                            sleep logs, screen time logs, chat history, and scores. This cannot be undone.
+                        </p>
+                        <button
+                            onClick={async () => {
+                                if (window.confirm('Are you sure? This will permanently delete ALL your data and log you out. This cannot be undone.')) {
+                                    try {
+                                        await api.post('/consent/revoke');
+                                        window.location.href = '/login';
+                                    } catch (err) {
+                                        alert('Failed to revoke consent. Please try again.');
+                                    }
+                                }
+                            }}
+                            style={{
+                                padding: '8px 16px', backgroundColor: '#dc2626', color: 'white',
+                                border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '13px'
+                            }}
+                        >
+                            Revoke Consent & Delete My Data
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
