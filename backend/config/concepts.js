@@ -12,7 +12,7 @@ export const CONCEPTS = {
         id: 'srl',
         displayName: 'Self-Regulated Learning',
         table: 'srl_annotations',
-        dimensions: ['efficiency', 'anxiety', 'planning', 'monitoring', 'motivation']
+        dimensions: ['efficiency', 'importance', 'tracking', 'effort', 'help_seeking', 'community', 'timeliness', 'motivation', 'anxiety', 'reflection']
     },
     lms: {
         id: 'lms',

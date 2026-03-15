@@ -62,11 +62,10 @@ const DEFAULT_PROFILE = 'average';
 // Concept groupings for generating correlated biases
 // Keys must match CONCEPT_SHORT_NAMES in srlAnnotationService.js
 const CONCEPT_GROUPS = {
-    planning: ['efficiency', 'tracking', 'clarity', 'timeliness'],
+    planning: ['efficiency', 'tracking', 'timeliness'],
     motivation: ['motivation', 'effort', 'importance'],
-    social: ['help_seeking', 'community', 'learning_from_feedback'],
-    affect: ['anxiety', 'enjoyment'],
-    metacognition: ['focus', 'self_assessment']
+    social: ['help_seeking', 'community', 'reflection'],
+    affect: ['anxiety']
 };
 
 // =============================================================================
@@ -299,10 +298,27 @@ async function generateSRLData(pool, userId, profile, days = 14) {
             );
         }
 
+        // 3. Simulate wellbeing responses (WHO-5 style)
+        const wellbeingScores = {
+            cheerfulness: clampScore(3 + (profile === 'high_achiever' ? 1 : profile === 'low_achiever' ? -1 : 0) + (Math.random() - 0.5) * 2),
+            calmness: clampScore(3 + (profile === 'high_achiever' ? 0.5 : profile === 'low_achiever' ? -0.5 : 0) + (Math.random() - 0.5) * 2),
+            vitality: clampScore(3 + (profile === 'high_achiever' ? 1 : profile === 'low_achiever' ? -1 : 0) + (Math.random() - 0.5) * 2),
+            restedness: clampScore(3 + (profile === 'high_achiever' ? 0.5 : profile === 'low_achiever' ? -1 : 0) + (Math.random() - 0.5) * 2),
+            interest: clampScore(3 + (profile === 'high_achiever' ? 1 : profile === 'low_achiever' ? -0.5 : 0) + (Math.random() - 0.5) * 2)
+        };
+
+        await pool.query(
+            `INSERT INTO public.wellbeing_responses
+                (user_id, questionnaire_id, cheerfulness, calmness, vitality, restedness, interest, submitted_at, is_simulated)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true)`,
+            [userId, questionnaireId, wellbeingScores.cheerfulness, wellbeingScores.calmness,
+             wellbeingScores.vitality, wellbeingScores.restedness, wellbeingScores.interest, date]
+        );
+
         responsesGenerated++;
     }
 
-    // 3. Compute annotations (derived insights)
+    // 4. Compute annotations (derived insights)
     const mockSurveyStructure = {
         pages: [{
             elements: Object.keys(CONCEPT_SHORT_NAMES).map(key => ({
