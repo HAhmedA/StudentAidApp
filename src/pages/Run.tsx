@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useParams, useNavigate } from 'react-router'
+import { useParams, useNavigate, useLocation } from 'react-router'
 import { useReduxDispatch } from '../redux'
 import { post } from '../redux/results'
 import { get } from '../redux/surveys'
@@ -11,6 +11,8 @@ import './Run.css'
 const Run = () => {
     const dispatch = useReduxDispatch()
     const navigate = useNavigate()
+    const location = useLocation()
+    const fromWizard = location.state?.fromWizard === true
     const { id } = useParams();
     const [surveyData, surveyDataSet] = useState<any>(null)
     const [surveyModel, surveyModelSet] = useState<Model>()
@@ -47,7 +49,11 @@ const Run = () => {
             model.onComplete.add(async (sender: Model) => {
                 await dispatch(post({postId: id as string, surveyResult: sender.data, surveyResultText: JSON.stringify(sender.data)}))
                 window.dispatchEvent(new CustomEvent('chatbot:dataUpdated', { detail: { dataType: 'SRL questionnaire' } }))
-                navigate('/')
+                if (fromWizard) {
+                    navigate('/', { state: { wizardReturning: true } })
+                } else {
+                    navigate('/')
+                }
             })
             
             surveyModelSet(model)

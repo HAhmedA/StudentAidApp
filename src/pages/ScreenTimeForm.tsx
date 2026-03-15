@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate, useLocation, Link } from 'react-router-dom'
 import './ScreenTimeForm.css'
 import { getTodayScreenTime, saveScreenTime } from '../api/screenTime'
 
@@ -45,6 +45,8 @@ interface SavedEntry {
 // ── Component ────────────────────────────────────────────────
 const ScreenTimeForm = () => {
     const navigate = useNavigate()
+    const location = useLocation()
+    const fromWizard = location.state?.fromWizard === true
 
     const [totalMinutes, setTotalMinutes] = useState<number | null>(null)
     const [longestSession, setLongestSession] = useState<number | null>(null)
@@ -99,6 +101,10 @@ const ScreenTimeForm = () => {
             setEditMode(false)
             setSubmitMsg({ text: 'Screen time logged!', type: 'success' })
             window.dispatchEvent(new CustomEvent('chatbot:dataUpdated', { detail: { dataType: 'screen time' } }))
+            if (fromWizard) {
+                navigate('/', { state: { wizardReturning: true } })
+                return
+            }
         } catch {
             setSubmitMsg({ text: 'Network error', type: 'error' })
         } finally {

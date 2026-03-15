@@ -1,9 +1,13 @@
 import { useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { useLocation, useNavigate, Link } from 'react-router-dom'
 import SleepSlider from '../components/SleepSlider'
 import './SleepPage.css'
 
 const SleepPage = () => {
+    const location = useLocation()
+    const navigate = useNavigate()
+    const fromWizard = location.state?.fromWizard === true
+
     useEffect(() => {
         const el = document.querySelector('.sjs-app__content')
         if (el) el.classList.add('mood-content-override')
@@ -16,7 +20,7 @@ const SleepPage = () => {
                 <Link to='/' className='sleep-page-back-btn'>
                     ← Back to Home
                 </Link>
-                <SleepSlider />
+                <SleepSlider onSaved={fromWizard ? () => navigate('/', { state: { wizardReturning: true } }) : undefined} />
             </div>
         </div>
     )

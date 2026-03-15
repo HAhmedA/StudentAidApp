@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
+import DailyWizard from '../components/DailyWizard'
 import Surveys from '../components/Surveys'
 import AdminStudentViewer from '../components/AdminStudentViewer'
 import AdminClusterDiagnosticsPanel from '../components/AdminClusterDiagnosticsPanel'
@@ -49,6 +50,9 @@ const Home = () => {
     const surveysStatus = useReduxSelector(state => state.surveys.status)
     const dispatch = useReduxDispatch()
     const isAdmin = user?.role === 'admin'
+    const location = useLocation()
+    const navigate = useNavigate()
+    const [showWizard, setShowWizard] = useState(!isAdmin)
     const title = isAdmin ? 'My Surveys' : 'Available Surveys'
 
     // Concept scores state
@@ -125,6 +129,14 @@ const Home = () => {
         })
     }, [isAdmin, user])
 
+    // Handle wizard return from data entry pages
+    useEffect(() => {
+        if (location.state?.wizardReturning && !isAdmin) {
+            setShowWizard(true)
+            navigate('/', { replace: true })
+        }
+    }, [location.state]) // eslint-disable-line react-hooks/exhaustive-deps
+
     // Add class to parent main element for mood layout
     useEffect(() => {
         const mainElement = document.querySelector('.sjs-app__content')
@@ -137,6 +149,11 @@ const Home = () => {
             }
         }
     }, [isAdmin])
+
+    // Show wizard for students (checks APIs internally, auto-skips if all done)
+    if (showWizard && !isAdmin) {
+        return <DailyWizard onComplete={() => setShowWizard(false)} />
+    }
 
     // For admin users, show student selector + student dashboard
     if (isAdmin) {
