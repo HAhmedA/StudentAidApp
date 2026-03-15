@@ -578,17 +578,80 @@ async function getSeveritiesForScoring(pool, userId) {
     }));
 }
 
+// ============================================================================
+// WELLBEING (WHO-5) — stored only, sent to chatbot, NOT displayed on dashboard
+// ============================================================================
+
+const WELLBEING_KEYS = ['cheerfulness', 'calmness', 'vitality', 'restedness', 'interest'];
+
+async function saveWellbeingResponses(pool, questionnaireId, userId, answers, submittedAt) {
+    const values = WELLBEING_KEYS.map(k => answers[k] || null);
+    if (values.every(v => v === null)) return;
+
+    await pool.query(
+        `INSERT INTO public.wellbeing_responses
+            (user_id, questionnaire_id, cheerfulness, calmness, vitality, restedness, interest, submitted_at, is_simulated)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, false)`,
+        [userId, questionnaireId, ...values, submittedAt]
+    );
+}
+
+async function getWellbeingForChatbot(pool, userId) {
+    const { rows } = await pool.query(
+        `SELECT cheerfulness, calmness, vitality, restedness, interest, submitted_at
+         FROM public.wellbeing_responses
+         WHERE user_id = $1
+         ORDER BY submitted_at DESC
+         LIMIT 7`,
+        [userId]
+    );
+
+    if (rows.length === 0) return '';
+
+    const latest = rows[0];
+    const labels = {
+        cheerfulness: 'Cheerful & in good spirits',
+        calmness: 'Calm & relaxed',
+        vitality: 'Active & vigorous',
+        restedness: 'Woke up fresh & rested',
+        interest: 'Daily life filled with interesting things'
+    };
+
+    let text = '## Student Wellbeing (WHO-5 Style)\n\n';
+    text += '### Most Recent:\n';
+    for (const [key, label] of Object.entries(labels)) {
+        text += `- ${label}: ${latest[key]}/5\n`;
+    }
+
+    if (rows.length > 1) {
+        const avgOf = (key) => {
+            const vals = rows.map(r => r[key]).filter(v => v != null);
+            return vals.length ? (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1) : 'N/A';
+        };
+        text += `\n### Past ${rows.length} days averages:\n`;
+        for (const [key, label] of Object.entries(labels)) {
+            text += `- ${label}: avg ${avgOf(key)}/5\n`;
+        }
+    }
+
+    text += '\nNote: This data reflects the student\'s subjective daily wellbeing. Use it to gauge emotional state and tailor your tone — e.g., be more supportive if wellbeing scores are low.';
+    return text;
+}
+
 export {
     calculateTrend,
     computeAnnotations,
     saveResponses,
+    saveWellbeingResponses,
     getAnnotations,
     getAnnotationsForChatbot,
+    getWellbeingForChatbot,
     hasSRLData,
     getSeveritiesForScoring,
     getRawScoresForScoring,
     INVERTED_CONCEPTS,
-    CONCEPT_SHORT_NAMES
+    CONCEPT_SHORT_NAMES,
+    WELLBEING_KEYS
 };
 
 

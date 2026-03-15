@@ -10,7 +10,7 @@ import logger from '../utils/logger.js'
 import { getSummariesForChatbot, hasHistory } from './summarizationService.js'
 import { getScoresForChatbot } from './scoring/index.js'
 import { estimateTokens } from './apiConnectorService.js'
-import { getAnnotationsForChatbot } from './annotators/srlAnnotationService.js'
+import { getAnnotationsForChatbot, getWellbeingForChatbot } from './annotators/srlAnnotationService.js'
 import { getJudgmentsForChatbot as getSleepAnnotations } from './annotators/sleepAnnotationService.js'
 import { getJudgmentsForChatbot as getScreenTimeAnnotations } from './annotators/screenTimeAnnotationService.js'
 import { getJudgmentsForChatbot as getLMSAnnotations } from './annotators/lmsAnnotationService.js'
@@ -218,7 +218,7 @@ function formatPersonaSection(prefs) {
  * Builds the DATA AVAILABILITY block so the LLM knows which dimensions have data.
  * Checks whether each annotation string contains actual content vs. a placeholder.
  */
-function formatDataAvailability(srlAnnotations, sleepAnnotations, screenTimeAnnotations, lmsAnnotations) {
+function formatDataAvailability(srlAnnotations, sleepAnnotations, screenTimeAnnotations, lmsAnnotations, wellbeingAnnotations) {
     const isAvailable = (text) => text && text.trim().length > 0 &&
         !text.includes('No data') && !text.includes('no data') &&
         !text.includes('not yet') && !text.includes('not available')
@@ -227,9 +227,11 @@ function formatDataAvailability(srlAnnotations, sleepAnnotations, screenTimeAnno
     const sleepStatus = isAvailable(sleepAnnotations) ? 'Available' : 'Not yet logged by student'
     const screenStatus = isAvailable(screenTimeAnnotations) ? 'Available' : 'Not yet logged by student'
     const lmsStatus = isAvailable(lmsAnnotations) ? 'Available' : 'Not yet synced from LMS'
+    const wellbeingStatus = isAvailable(wellbeingAnnotations) ? 'Available' : 'Not yet submitted by student'
 
     return [
         `- SRL (Self-Regulated Learning): ${srlStatus}`,
+        `- Wellbeing: ${wellbeingStatus}`,
         `- Sleep: ${sleepStatus}`,
         `- Screen Time: ${screenStatus}`,
         `- LMS Activity: ${lmsStatus}`,
@@ -252,7 +254,7 @@ async function assemblePrompt(userId, sessionId, userMessage = null) {
     // Gather all data sources in parallel
     const [systemPrompt, userContext, conceptScores, summaries,
            srlAnnotations, sleepAnnotations, screenTimeAnnotations, lmsAnnotations,
-           prefs] = await Promise.all([
+           prefs, wellbeingAnnotations] = await Promise.all([
         getSystemPrompt(),
         getUserContext(userId),
         getScoresForChatbot(userId),
@@ -261,7 +263,8 @@ async function assemblePrompt(userId, sessionId, userMessage = null) {
         getSleepAnnotations(pool, userId),
         getScreenTimeAnnotations(pool, userId),
         getLMSAnnotations(pool, userId),
-        getPreferences(userId)
+        getPreferences(userId),
+        getWellbeingForChatbot(pool, userId)
     ])
 
     // Log what data we have
@@ -292,7 +295,7 @@ async function assemblePrompt(userId, sessionId, userMessage = null) {
 
     // 2. Context Sections (Prioritized: User Context > Scores+Annotations > Summaries)
     const personaSection = formatPersonaSection(prefs)
-    const dataAvailSection = formatDataAvailability(srlAnnotations, sleepAnnotations, screenTimeAnnotations, lmsAnnotations)
+    const dataAvailSection = formatDataAvailability(srlAnnotations, sleepAnnotations, screenTimeAnnotations, lmsAnnotations, wellbeingAnnotations)
 
     const contextSections = [
         { name: 'USER CONTEXT & PREFERENCES', content: userContext, priority: 1 },
@@ -301,6 +304,7 @@ async function assemblePrompt(userId, sessionId, userMessage = null) {
         { name: 'DATA AVAILABILITY', content: dataAvailSection, priority: 2 },
         { name: 'STUDENT DATA SUMMARY (scores)', content: conceptScores, priority: 2 },
         { name: 'ANNOTATED QUESTIONNAIRE INSIGHTS (SRL Data)', content: srlAnnotations, priority: 2 },
+        { name: 'STUDENT WELLBEING STATUS', content: wellbeingAnnotations, priority: 2 },
         { name: 'SLEEP ANALYSIS', content: sleepAnnotations, priority: 2 },
         { name: 'SCREEN TIME ANALYSIS', content: screenTimeAnnotations, priority: 2 },
         { name: 'LMS ACTIVITY ANALYSIS', content: lmsAnnotations, priority: 2 },
@@ -397,7 +401,7 @@ async function assembleInitialGreetingPrompt(userId) {
 
     const [systemPrompt, userContext, conceptScores, summaries,
            srlAnnotations, sleepAnnotations, screenTimeAnnotations, lmsAnnotations,
-           prefs] = await Promise.all([
+           prefs, wellbeingAnnotations] = await Promise.all([
         getSystemPrompt(),
         getUserContext(userId),
         getScoresForChatbot(userId),
@@ -406,7 +410,8 @@ async function assembleInitialGreetingPrompt(userId) {
         getSleepAnnotations(pool, userId),
         getScreenTimeAnnotations(pool, userId),
         getLMSAnnotations(pool, userId),
-        getPreferences(userId)
+        getPreferences(userId),
+        getWellbeingForChatbot(pool, userId)
     ])
 
     const userHasHistory = await hasHistory(userId)
@@ -424,7 +429,7 @@ async function assembleInitialGreetingPrompt(userId) {
     })
 
     const personaSection = formatPersonaSection(prefs)
-    const dataAvailSection = formatDataAvailability(srlAnnotations, sleepAnnotations, screenTimeAnnotations, lmsAnnotations)
+    const dataAvailSection = formatDataAvailability(srlAnnotations, sleepAnnotations, screenTimeAnnotations, lmsAnnotations, wellbeingAnnotations)
 
     // Note: Greeting behavior is defined in system_prompt.txt under Greeting Rules
     const assembledSystem = `${systemPrompt}
@@ -445,7 +450,7 @@ ${conceptScores}
 
 ANNOTATED QUESTIONNAIRE INSIGHTS (SRL Data):
 ${srlAnnotations}
-
+${wellbeingAnnotations ? `\nSTUDENT WELLBEING STATUS:\n${wellbeingAnnotations}\n` : ''}
 SLEEP ANALYSIS:
 ${sleepAnnotations}
 

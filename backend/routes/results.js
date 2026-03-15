@@ -3,7 +3,7 @@ import { Router } from 'express'
 import { v4 as uuidv4 } from 'uuid'
 import pool from '../config/database.js'
 import logger from '../utils/logger.js'
-import { saveResponses, computeAnnotations } from '../services/annotators/srlAnnotationService.js'
+import { saveResponses, saveWellbeingResponses, computeAnnotations } from '../services/annotators/srlAnnotationService.js'
 import { computeAllScores } from '../services/scoring/scoreComputationService.js'
 import { asyncRoute } from '../utils/errors.js'
 import { updateDataVersion } from '../services/chatbotPreferencesService.js'
@@ -38,6 +38,7 @@ router.post('/post', asyncRoute(async (req, res) => {
 
     if (userId) {
         await saveResponses(pool, id, userId, surveyResult, submittedAt)
+        await saveWellbeingResponses(pool, id, userId, surveyResult, submittedAt)
 
         const surveyQuery = await pool.query('SELECT json FROM public.surveys WHERE id = $1', [postId])
         if (surveyQuery.rows[0]) {
