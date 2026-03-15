@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import ScoreGauge from './ScoreGauge'
-import { CONCEPT_IDS, CONCEPT_DISPLAY_NAMES, DOMAIN_DESCRIPTIONS, DOMAIN_TIPS } from '../constants/concepts'
+import { CONCEPT_IDS, CONCEPT_DISPLAY_NAMES } from '../constants/concepts'
 
 // Inline interface — will be centralized in Phase 7
 interface ConceptScore {
@@ -60,12 +60,6 @@ function ordinal(n: number): string {
     if (mod10 === 2) return `${abs}nd`
     if (mod10 === 3) return `${abs}rd`
     return `${abs}th`
-}
-
-function formatAspectName(key: string) {
-    return key.split('_')
-        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-        .join(' ')
 }
 
 function formatLastUpdated(computedAt?: string | null): { text: string; stale: boolean } {
@@ -233,41 +227,12 @@ const ScoreBoard = ({
             </>
         )
 
-        // Tips list: dimension names + actionable tips
-        const tipsBlock = (
-            <ul className='gauge-expanded-breakdown-list'>
-                {Object.entries(score.breakdown).map(([key]) => (
-                    <li key={key} style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '3px' }}>
-                        <span className='detail-label' style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            {formatAspectName(key)}
-                            {DOMAIN_DESCRIPTIONS[key] && (
-                                <span className='domain-info-wrapper'>
-                                    <span className='domain-info-icon'>ℹ</span>
-                                    <span className='domain-info-tooltip'>{DOMAIN_DESCRIPTIONS[key]}</span>
-                                </span>
-                            )}
-                        </span>
-                        {DOMAIN_TIPS[key] && (
-                            <span style={{ fontSize: '11px', color: '#6b7280', lineHeight: '1.4', paddingLeft: '2px' }}>
-                                💡 {DOMAIN_TIPS[key]}
-                            </span>
-                        )}
-                    </li>
-                ))}
-            </ul>
-        )
-
         if (twoColumns) {
             return (
                 <div className='breakdown-two-col'>
-                    <div className='breakdown-col-left'>
+                    <div className='breakdown-col-left' style={{ flex: 1 }}>
                         <div className='score-details-title' style={{ marginBottom: '12px' }}>Your Status</div>
                         {summaryBlock}
-                    </div>
-                    <div className='breakdown-col-divider' />
-                    <div className='breakdown-col-right'>
-                        <div className='score-details-title' style={{ marginBottom: '12px' }}>Focus Areas</div>
-                        {tipsBlock}
                     </div>
                 </div>
             )
@@ -275,9 +240,8 @@ const ScoreBoard = ({
 
         return (
             <>
-                <div className='score-details-title' style={{ marginBottom: '12px' }}>Detailed Breakdown</div>
+                <div className='score-details-title' style={{ marginBottom: '12px' }}>Your Status</div>
                 {summaryBlock}
-                {tipsBlock}
             </>
         )
     }
