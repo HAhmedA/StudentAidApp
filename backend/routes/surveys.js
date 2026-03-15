@@ -16,24 +16,37 @@ const mapSurveyRow = (row) => ({ id: row.id, name: row.name, json: row.json })
 // Default survey template with title
 const getDefaultSurveyTemplate = () => ({
     title: FIXED_SURVEY_NAME,
-    pages: [{
-        elements: [
-            { type: 'rating', name: 'efficiency', title: 'I believe I can accomplish my learning duties and learning tasks efficiently:', mininumRateDescription: 'Strongly disagree', maximumRateDescription: 'Strongly agree' },
-            { type: 'rating', name: 'importance', title: 'I believe that my learning tasks are very important to me:', mininumRateDescription: 'Not important', maximumRateDescription: 'Very important' },
-            { type: 'rating', name: 'tracking', title: 'I am keeping track of what I need to do or accomplish:', mininumRateDescription: 'Never', maximumRateDescription: 'Always' },
-            { type: 'rating', name: 'clarity', title: 'I know what I have to do to accomplish my learning tasks:', mininumRateDescription: 'Not clear', maximumRateDescription: 'Very clear' },
-            { type: 'rating', name: 'effort', title: 'I am putting enough effort into my learning tasks to accomplish them well:', mininumRateDescription: 'Not enough effort', maximumRateDescription: 'A lot of effort' },
-            { type: 'rating', name: 'focus', title: 'I am focusing on performing my learning tasks today and resisting distractions:', mininumRateDescription: 'Easily distracted', maximumRateDescription: 'Highly focused' },
-            { type: 'rating', name: 'help_seeking', title: 'I seek help from teachers, friends, or the internet when I need explanation or help with difficult tasks:', mininumRateDescription: 'Never seek help', maximumRateDescription: 'Always seek help' },
-            { type: 'rating', name: 'community', title: 'I am having nice interactions and feeling at home within the college community:', mininumRateDescription: 'Not at all', maximumRateDescription: 'Very much' },
-            { type: 'rating', name: 'timeliness', title: 'I am doing my studies on time and keeping up with tasks/deadlines:', mininumRateDescription: 'Always late', maximumRateDescription: 'Always on time' },
-            { type: 'rating', name: 'motivation', title: 'I feel enthusiastic/motivated to learn, understand, and get better grades:', mininumRateDescription: 'Not motivated', maximumRateDescription: 'Highly motivated' },
-            { type: 'rating', name: 'anxiety', title: 'I feel anxious/stressed working on learning tasks, assignments, or in class:', mininumRateDescription: 'Never anxious', maximumRateDescription: 'Very anxious' },
-            { type: 'rating', name: 'enjoyment', title: 'I enjoy my tasks and feel happy about my achievements/work/accomplishment:', mininumRateDescription: 'Do not enjoy', maximumRateDescription: 'Enjoy a lot' },
-            { type: 'rating', name: 'learning_from_feedback', title: 'I am learning from feedback and mistakes to accomplish my learning:', mininumRateDescription: 'Rarely learn from feedback', maximumRateDescription: 'Always learn from feedback' },
-            { type: 'rating', name: 'self_assessment', title: 'I always assess my performance or work on tasks to improve my skills:', mininumRateDescription: 'Never assess', maximumRateDescription: 'Always assess' }
-        ]
-    }]
+    pages: [
+        {
+            name: 'wellbeing',
+            title: 'How are you feeling today?',
+            description: 'Rate how you have felt over the past day.',
+            elements: [
+                { type: 'rating', name: 'cheerfulness', title: 'I have felt cheerful and in good spirits.', mininumRateDescription: 'Not at all', maximumRateDescription: 'All the time' },
+                { type: 'rating', name: 'calmness', title: 'I have felt calm and relaxed.', mininumRateDescription: 'Not at all', maximumRateDescription: 'All the time' },
+                { type: 'rating', name: 'vitality', title: 'I have felt active and vigorous.', mininumRateDescription: 'Not at all', maximumRateDescription: 'All the time' },
+                { type: 'rating', name: 'restedness', title: 'I woke up feeling fresh and rested.', mininumRateDescription: 'Not at all', maximumRateDescription: 'All the time' },
+                { type: 'rating', name: 'interest', title: 'My daily life has been filled with things that interest me.', mininumRateDescription: 'Not at all', maximumRateDescription: 'All the time' }
+            ]
+        },
+        {
+            name: 'learning',
+            title: 'Your Learning Today',
+            description: 'Reflect on your learning strategies and experience.',
+            elements: [
+                { type: 'rating', name: 'efficiency', title: 'I believe I can accomplish my learning duties and learning tasks efficiently.', mininumRateDescription: 'Strongly disagree', maximumRateDescription: 'Strongly agree' },
+                { type: 'rating', name: 'importance', title: 'I believe that my learning tasks are very important to me.', mininumRateDescription: 'Not important', maximumRateDescription: 'Very important' },
+                { type: 'rating', name: 'tracking', title: 'I keep track of what I need to do and understand what I must do to accomplish my learning tasks.', mininumRateDescription: 'Never', maximumRateDescription: 'Always' },
+                { type: 'rating', name: 'effort', title: 'I put enough effort into my learning tasks and stay focused while working on them.', mininumRateDescription: 'Not enough effort', maximumRateDescription: 'A lot of effort' },
+                { type: 'rating', name: 'help_seeking', title: 'I seek help from teachers, friends, or the internet when I need explanation or help with difficult tasks.', mininumRateDescription: 'Never seek help', maximumRateDescription: 'Always seek help' },
+                { type: 'rating', name: 'community', title: 'I am having nice interactions and feeling at home within the college community.', mininumRateDescription: 'Not at all', maximumRateDescription: 'Very much' },
+                { type: 'rating', name: 'timeliness', title: 'I am doing my studies on time and keeping up with tasks/deadlines.', mininumRateDescription: 'Always late', maximumRateDescription: 'Always on time' },
+                { type: 'rating', name: 'motivation', title: 'I feel motivated to learn and enjoy working on my learning tasks.', mininumRateDescription: 'Not motivated', maximumRateDescription: 'Highly motivated' },
+                { type: 'rating', name: 'anxiety', title: 'I feel anxious or stressed working on learning tasks, assignments, or in class.', mininumRateDescription: 'Never anxious', maximumRateDescription: 'Very anxious' },
+                { type: 'rating', name: 'reflection', title: 'I reflect on my performance and learn from feedback or mistakes to improve my learning.', mininumRateDescription: 'Never reflect', maximumRateDescription: 'Always reflect' }
+            ]
+        }
+    ]
 })
 
 /**
@@ -55,20 +68,16 @@ export const ensureFixedSurvey = async () => {
             )
             logger.info(`Fixed survey "${FIXED_SURVEY_NAME}" created with id: ${id}`)
         } else {
-            // Update existing survey to have the correct title in JSON
-            const existingSurvey = await pool.query('SELECT id, json FROM public.surveys LIMIT 1')
+            // Always overwrite survey JSON with current template
+            const existingSurvey = await pool.query('SELECT id FROM public.surveys LIMIT 1')
             if (existingSurvey.rows[0]) {
-                const surveyJson = existingSurvey.rows[0].json || {}
-                if (!surveyJson.title || surveyJson.title !== FIXED_SURVEY_NAME) {
-                    surveyJson.title = FIXED_SURVEY_NAME
-                    await pool.query(
-                        'UPDATE public.surveys SET name = $2, json = $3::jsonb WHERE id = $1',
-                        [existingSurvey.rows[0].id, FIXED_SURVEY_NAME, JSON.stringify(surveyJson)]
-                    )
-                    logger.info(`Updated existing survey to "${FIXED_SURVEY_NAME}"`)
-                }
+                const newJson = getDefaultSurveyTemplate()
+                await pool.query(
+                    'UPDATE public.surveys SET name = $2, json = $3::jsonb WHERE id = $1',
+                    [existingSurvey.rows[0].id, FIXED_SURVEY_NAME, JSON.stringify(newJson)]
+                )
+                logger.info(`Updated survey JSON to latest template`)
             }
-            logger.info(`Fixed survey "${FIXED_SURVEY_NAME}" already exists`)
         }
     } catch (e) {
         logger.error(`Error ensuring fixed survey: ${e.message}`)

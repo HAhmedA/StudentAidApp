@@ -13,17 +13,13 @@ const CONCEPT_SHORT_NAMES = {
     efficiency: 'Efficiency',
     importance: 'Perceived Importance',
     tracking: 'Progress Tracking',
-    clarity: 'Task Clarity',
-    effort: 'Effort',
-    focus: 'Focus',
+    effort: 'Effort & Focus',
     help_seeking: 'Help Seeking',
     community: 'Peer Learning',
     timeliness: 'Timeliness',
-    motivation: 'Motivation',
+    motivation: 'Motivation & Enjoyment',
     anxiety: 'Anxiety',
-    enjoyment: 'Enjoyment',
-    learning_from_feedback: 'Learning from Feedback',
-    self_assessment: 'Self Assessment'
+    reflection: 'Reflection'
 };
 
 // Trend descriptions for annotation text
