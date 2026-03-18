@@ -106,7 +106,7 @@ export async function updateDataVersion(userId) {
  */
 export async function isGreetingStale(sessionId) {
     const { rows } = await pool.query(
-        `SELECT cs.greeting_generated_at, cp.data_last_updated_at
+        `SELECT cs.greeting_generated_at, cp.data_last_updated_at, cp.updated_at AS prefs_updated_at
          FROM public.chat_sessions cs
          LEFT JOIN public.chatbot_preferences cp ON cp.user_id = cs.user_id
          WHERE cs.id = $1`,
@@ -115,9 +115,14 @@ export async function isGreetingStale(sessionId) {
 
     if (rows.length === 0) return false
 
-    const { greeting_generated_at, data_last_updated_at } = rows[0]
+    const { greeting_generated_at, data_last_updated_at, prefs_updated_at } = rows[0]
 
-    if (!greeting_generated_at || !data_last_updated_at) return false
+    if (!greeting_generated_at) return false
 
-    return data_last_updated_at > greeting_generated_at
+    // Stale if data was updated OR persona preferences (tone/style/length) changed
+    // after the greeting was generated
+    if (data_last_updated_at && data_last_updated_at > greeting_generated_at) return true
+    if (prefs_updated_at && prefs_updated_at > greeting_generated_at) return true
+
+    return false
 }

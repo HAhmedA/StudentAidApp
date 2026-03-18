@@ -1,8 +1,8 @@
-# Multi-stage build for React app (Create React App style)
+# Multi-stage build for React app (Vite)
 
 # 1) Build stage
 # Stage 1: Build static assets using Node
-FROM node:18-alpine AS build
+FROM node:22-alpine AS build
 WORKDIR /app
 
 # Install dependencies first to leverage Docker layer cache

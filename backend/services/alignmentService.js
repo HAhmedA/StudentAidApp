@@ -10,7 +10,7 @@ import logger from '../utils/logger.js'
 import { chatCompletion, getLlmConfig } from './apiConnectorService.js'
 
 // Configuration
-const MAX_ALIGNMENT_RETRIES = 1
+const MAX_ALIGNMENT_RETRIES = 2
 
 // Contextual alignment failure messages based on failure category
 const ALIGNMENT_MESSAGES = {
@@ -158,10 +158,11 @@ Output ONLY valid JSON: {"passed": true, "reason": "..."} or {"passed": false, "
             temperature: 0.0
         })
 
-        // Handle empty response from judge (model compatibility issue)
+        // Fail closed on empty/garbage judge responses — a misconfigured but
+        // reachable judge should not silently pass unchecked content through.
         if (!judgeResponse || judgeResponse.trim().length === 0) {
-            logger.warn('Judge returned empty response - failing open to allow response through')
-            return { passed: true, reason: 'Judge unavailable (empty response) - allowing response' }
+            logger.warn('Judge returned empty response - failing closed')
+            return { passed: false, reason: 'Judge unavailable (empty response)' }
         }
 
         // Parse JSON from response (look for JSON object anywhere in the response)
@@ -178,12 +179,12 @@ Output ONLY valid JSON: {"passed": true, "reason": "..."} or {"passed": false, "
             }
         }
 
-        // If we can't parse JSON, fail open to avoid blocking good responses
-        logger.warn('Could not parse judge response as JSON, failing open:', judgeResponse.substring(0, 200))
-        return { passed: true, reason: 'Judge returned non-JSON response - allowing response' }
+        // Can't parse JSON — fail closed to protect student-facing content
+        logger.warn('Could not parse judge response as JSON, failing closed:', judgeResponse.substring(0, 200))
+        return { passed: false, reason: 'Judge returned non-JSON response' }
     } catch (error) {
         logger.error('Alignment check failed:', error.message)
-        // On error, we're cautious and mark as failed
+        // Network/timeout errors also fail closed for consistency
         return { passed: false, reason: `Alignment check error: ${error.message}` }
     }
 }
@@ -197,6 +198,9 @@ Output ONLY valid JSON: {"passed": true, "reason": "..."} or {"passed": false, "
  * @param {string} systemInstructions - The admin's system prompt
  * @returns {Promise<{content: string, passed: boolean, retries: number}>}
  */
+const REFINEMENT_PREFIX = 'Your previous response was rejected because: '
+const REFINEMENT_SUFFIX = '. Please regenerate your response avoiding this issue.'
+
 async function getAlignedResponse(generateResponse, userQuery, systemInstructions) {
     let retries = 0
     let lastResponse = ''
@@ -204,9 +208,21 @@ async function getAlignedResponse(generateResponse, userQuery, systemInstruction
 
     while (retries <= MAX_ALIGNMENT_RETRIES) {
         try {
-            // Generate response
-            const response = await generateResponse()
+            // On retry, pass the judge's reason as feedback context
+            const feedbackContext = retries > 0
+                ? `${REFINEMENT_PREFIX}${lastReason}${REFINEMENT_SUFFIX}`
+                : undefined
+
+            const response = await generateResponse(feedbackContext)
             lastResponse = response
+
+            // Short-circuit: skip alignment judge for empty/whitespace-only responses
+            if (!response || response.trim().length === 0) {
+                logger.warn(`LLM returned empty response (attempt ${retries + 1}/${MAX_ALIGNMENT_RETRIES + 1}), retrying`)
+                lastReason = 'Empty response from LLM'
+                retries++
+                continue
+            }
 
             // Check alignment
             const alignmentResult = await checkAlignment(userQuery, response, systemInstructions)
@@ -253,21 +269,32 @@ function quickValidation(response) {
         return { passed: false, reason: 'Empty response' }
     }
 
-    // Check for accidentally exposed internal markers
+    // Check for accidentally exposed internal section headers.
+    // Use the exact delimited format from promptAssemblerService to avoid
+    // false positives on legitimate content (e.g. "The SYSTEM PROMPT that guides me…").
     const internalMarkers = [
-        'SYSTEM PROMPT',
-        'ADMIN INSTRUCTIONS',
-        'ANNOTATED QUESTIONNAIRE',
-        'ALIGNMENT CHECK',
-        '```json',  // Raw JSON output
-        'user_id:',
-        'session_id:'
+        '=== SYSTEM PROMPT ===',
+        '=== ADMIN INSTRUCTIONS ===',
+        '=== ANNOTATED QUESTIONNAIRE ===',
+        '=== ALIGNMENT CHECK ===',
+        '=== INSTRUCTIONS GIVEN TO ASSISTANT ===',
+        'user_id: ',     // trailing space reduces false hits on "your user ID"
+        'session_id: '
     ]
 
     for (const marker of internalMarkers) {
         if (response.includes(marker)) {
             return { passed: false, reason: `Response contains internal marker: ${marker}` }
         }
+    }
+
+    // Block responses that start with raw JSON output (e.g. ```json at the beginning),
+    // but allow ```json mid-response since students may ask coding questions.
+    // Note: the follow-up generator requests JSON in a separate LLM call that does
+    // not pass through this validation, so that path is unaffected.
+    const trimmed = response.trimStart()
+    if (trimmed.startsWith('```json') || trimmed.startsWith('```JSON')) {
+        return { passed: false, reason: 'Response starts with raw JSON output' }
     }
 
     return { passed: true, reason: 'Quick validation passed' }

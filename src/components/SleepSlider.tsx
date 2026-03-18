@@ -99,9 +99,10 @@ let nextId = 1
 // ── Component ────────────────────────────────────────────────
 interface SleepSliderProps {
     onSaved?: () => void
+    suppressChatbotEvent?: boolean
 }
 
-const SleepSlider = ({ onSaved }: SleepSliderProps) => {
+const SleepSlider = ({ onSaved, suppressChatbotEvent }: SleepSliderProps) => {
     const [intervals, setIntervals] = useState<Interval[]>([
         { id: nextId++, start: snap(MIDNIGHT_OFFSET - 90), end: snap(MIDNIGHT_OFFSET + 420) }
         // default: 10:30 PM → 7:00 AM
@@ -284,7 +285,9 @@ const SleepSlider = ({ onSaved }: SleepSliderProps) => {
             setSavedEntry(entry)
             setEditMode(false)
             setSubmitMsg({ text: 'Sleep log saved!', type: 'success' })
-            window.dispatchEvent(new CustomEvent('chatbot:dataUpdated', { detail: { dataType: 'sleep' } }))
+            if (!suppressChatbotEvent) {
+                window.dispatchEvent(new CustomEvent('chatbot:dataUpdated', { detail: { dataType: 'sleep' } }))
+            }
             onSaved?.()
         } catch {
             setSubmitMsg({ text: 'Network error', type: 'error' })

@@ -110,9 +110,12 @@ describe('storeClusterResults — with externalClient', () => {
             sampleClusterMeans, 2, sampleModel, mockClient)
 
         expect(mockClient.query).toHaveBeenCalled()
-        // First call is the DELETE stale clusters statement
-        const [firstSql] = mockClient.query.mock.calls[0]
-        expect(firstSql).toContain('DELETE FROM public.peer_clusters')
+        // First call is the advisory lock to serialize concurrent writes
+        const [lockSql] = mockClient.query.mock.calls[0]
+        expect(lockSql).toContain('pg_advisory_xact_lock')
+        // Second call is the DELETE stale clusters statement
+        const [deleteSql] = mockClient.query.mock.calls[1]
+        expect(deleteSql).toContain('DELETE FROM public.peer_clusters')
     })
 })
 

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import ScoreGauge from './ScoreGauge'
-import { CONCEPT_IDS, CONCEPT_DISPLAY_NAMES } from '../constants/concepts'
+import { CONCEPT_IDS, CONCEPT_DISPLAY_NAMES, ConceptId } from '../constants/concepts'
 
 // Inline interface — will be centralized in Phase 7
 interface ConceptScore {
@@ -126,8 +126,8 @@ const NO_DATA_ICONS: Record<string, string> = {
 const NO_DATA_HINTS: Record<string, string> = {
     sleep: 'Log your sleep to unlock this score',
     screen_time: 'Log your screen time to unlock this score',
-    lms: 'Your LMS activity will appear here automatically',
-    srl: 'Complete an SRL survey to unlock this score',
+    lms: 'Your course activity will appear here automatically',
+    srl: 'Complete the learning questionnaire to unlock this score',
 }
 
 // =============================================================================
@@ -296,20 +296,20 @@ const ScoreBoard = ({
                                     {score.coldStart ? (
                                         <div className='cold-start-placeholder'>
                                             <div className='cold-start-icon'>⏳</div>
-                                            <div className='cold-start-label'>{score.conceptName}</div>
+                                            <div className='cold-start-label'>{CONCEPT_DISPLAY_NAMES[score.conceptId as ConceptId] ?? score.conceptName}</div>
                                             <div className='cold-start-message'>Building your profile — check back once more students have joined.</div>
                                         </div>
                                     ) : score.noData ? (
                                         <div className='no-data-placeholder'>
                                             <div className='no-data-icon'>{NO_DATA_ICONS[score.conceptId] ?? '📊'}</div>
-                                            <div className='no-data-label'>{score.conceptName}</div>
+                                            <div className='no-data-label'>{CONCEPT_DISPLAY_NAMES[score.conceptId as ConceptId] ?? score.conceptName}</div>
                                             <div className='no-data-message'>{NO_DATA_HINTS[score.conceptId] ?? 'No data yet'}</div>
                                         </div>
                                     ) : (
                                         <>
                                             <ScoreGauge
                                                 score={score.score!}
-                                                label={score.conceptName}
+                                                label={CONCEPT_DISPLAY_NAMES[score.conceptId as ConceptId] ?? score.conceptName}
                                                 trend={score.trend ?? undefined}
                                                 size="medium"
                                                 yesterdayScore={score.yesterdayScore}

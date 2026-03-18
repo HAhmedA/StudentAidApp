@@ -1,12 +1,8 @@
 /* ── Page wrapper ────────────────────────────────────────── */
 .run-page-wrapper {
-  max-width: 800px;
+  max-width: 680px;
   margin: 32px auto;
-  background: #F0F9FF;
-  border: 1px solid #BAE6FD;
-  border-radius: 16px;
-  padding: 28px 32px;
-  box-shadow: 0 2px 12px rgba(59, 130, 246, 0.06);
+  padding: 0 16px;
 }
 
 /* ── Back button ─────────────────────────────────────────── */
@@ -27,127 +23,100 @@
   border-color: #D1D5DB;
 }
 
-/* ── Survey container ────────────────────────────────────── */
-.sd-root-modern {
-  background: transparent !important;
-  font-family: inherit !important;
+/* ── Survey content card ─────────────────────────────────── */
+.run-survey-content {
+  background: white;
+  border-radius: 12px;
+  padding: 32px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
-.sd-container-modern {
-  max-width: 100% !important;
-  margin: 0 !important;
+/* ── Survey title ────────────────────────────────────────── */
+.run-survey-title {
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #f1f5f9;
 }
 
-/* Survey title */
-.sd-title.sd-container-modern__title {
-  background: white !important;
-  border-radius: 12px !important;
-  padding: 24px 28px !important;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.07) !important;
-  margin-bottom: 16px !important;
+.run-survey-title h3 {
+  font-size: 20px;
+  font-weight: 700;
+  color: #0891B2;
+  margin: 0;
 }
 
-.sd-title.sd-container-modern__title h3 {
-  font-size: 22px !important;
-  font-weight: 700 !important;
-  color: #0891B2 !important;
-  margin: 0 !important;
+/* ── Page header ─────────────────────────────────────────── */
+.run-page-header {
+  margin-bottom: 20px;
 }
 
-/* ── Question cards ──────────────────────────────────────── */
-.sd-question {
-  background: white !important;
-  border-radius: 12px !important;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.07) !important;
-  padding: 20px 24px !important;
-  margin-bottom: 12px !important;
+.run-page-header h2 {
+  margin: 0 0 4px;
+  font-size: 18px;
+  color: #1e293b;
 }
 
-.sd-question__title {
-  font-size: 15px !important;
-  font-weight: 600 !important;
-  color: #111827 !important;
-  padding-bottom: 0 !important;
+.run-page-desc {
+  color: #64748b;
+  font-size: 13px;
+  margin: 0;
 }
 
-/* Hide the red asterisk from the title — required is implied for all */
-.sd-question__required-text {
-  display: none !important;
+/* ── Navigation buttons ──────────────────────────────────── */
+.run-nav-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 24px;
 }
 
-/* ── Rating items ────────────────────────────────────────── */
-.sd-rating {
-  gap: 6px !important;
-  margin-top: 14px !important;
-  flex-wrap: wrap !important;
+.run-primary-btn {
+  padding: 10px 24px;
+  background: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
 }
 
-.sd-rating__item {
-  min-width: 40px !important;
-  height: 40px !important;
-  border-radius: 8px !important;
-  border: 1.5px solid #D1D5DB !important;
-  font-size: 14px !important;
-  font-weight: 500 !important;
-  color: #374151 !important;
-  background: white !important;
-  transition: all 0.15s ease !important;
+.run-primary-btn:hover {
+  background: #2563eb;
 }
 
-.sd-rating__item:hover:not(.sd-rating__item--selected) {
-  border-color: #0891B2 !important;
-  color: #0891B2 !important;
-  background: #F0F9FF !important;
+.run-primary-btn:disabled {
+  background: #94a3b8;
+  cursor: not-allowed;
 }
 
-.sd-rating__item--selected {
-  background: #0891B2 !important;
-  border-color: #0891B2 !important;
-  color: white !important;
+.run-secondary-btn {
+  padding: 10px 24px;
+  background: transparent;
+  color: #64748b;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
 }
 
-/* Min/max labels */
-.sd-rating__min-text,
-.sd-rating__max-text {
-  font-size: 12px !important;
-  color: #6B7280 !important;
-  font-style: normal !important;
+.run-secondary-btn:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
 }
 
-/* ── Validation error ────────────────────────────────────── */
-.sd-question__erbox {
-  border-radius: 6px !important;
-  margin: 0 0 12px 0 !important;
-  font-size: 13px !important;
-  padding: 8px 12px !important;
-  width: auto !important;
-  max-width: 100% !important;
-  box-sizing: border-box !important;
+/* ── Progress indicator ──────────────────────────────────── */
+.run-progress {
+  text-align: center;
+  font-size: 12px;
+  color: #94a3b8;
+  margin-top: 16px;
 }
 
-/* ── Progress bar ────────────────────────────────────────── */
-.sd-progress {
-  height: 4px !important;
-  border-radius: 2px !important;
-}
-
-.sd-progress__bar {
-  background: #0891B2 !important;
-}
-
-/* ── Complete / navigation button ───────────────────────── */
-.sd-btn.sd-navigation__complete-btn,
-.sd-btn.sd-navigation__next-btn {
-  background: #0891B2 !important;
-  border-radius: 8px !important;
-  font-weight: 600 !important;
-  font-size: 15px !important;
-  padding: 10px 28px !important;
-  border: none !important;
-  transition: background 0.2s !important;
-}
-
-.sd-btn.sd-navigation__complete-btn:hover,
-.sd-btn.sd-navigation__next-btn:hover {
-  background: #0e7490 !important;
+/* ── Responsive ──────────────────────────────────────────── */
+@media (max-width: 600px) {
+  .run-page-wrapper { margin: 16px auto; }
+  .run-survey-content { padding: 20px; }
 }

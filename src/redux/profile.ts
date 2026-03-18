@@ -1,17 +1,14 @@
 import { createAsyncThunk, createSlice } from '@reduxjs/toolkit'
-import axios from 'axios'
-import { API_BASE as apiBaseAddress } from '../api/client'
+import { api, ApiError } from '../api/client'
+
+interface ProfileData {
+    user_id?: string
+    onboarding_completed?: boolean
+    updated_at?: string
+}
 
 interface ProfileState {
-    data: {
-        user_id?: string
-        edu_level: string
-        field_of_study: string
-        major: string
-        learning_formats: string[] // JSONB array in DB
-        disabilities: string[] // JSONB array in DB
-        updated_at?: string
-    } | null
+    data: ProfileData | null
     status: 'idle' | 'loading' | 'succeeded' | 'failed'
     error: string | null
 }
@@ -22,16 +19,15 @@ const initialState: ProfileState = {
     error: null
 }
 
-export const fetchProfile = createAsyncThunk('profile/fetchProfile', async () => {
-    const response = await axios.get(apiBaseAddress + '/profile')
-    // Ensure we handle the transformation from DB schema if needed,
-    // but assuming the API returns the JSON directly.
-    return response.data
-})
-
-export const updateProfile = createAsyncThunk('profile/updateProfile', async (profileData: any) => {
-    const response = await axios.put(apiBaseAddress + '/profile', profileData)
-    return response.data
+export const fetchProfile = createAsyncThunk('profile/fetchProfile', async (_, { rejectWithValue }) => {
+    try {
+        return await api.get<ProfileData>('/profile')
+    } catch (err) {
+        if (err instanceof ApiError && err.status === 404) {
+            return null as ProfileData | null // Profile doesn't exist yet — not an error
+        }
+        return rejectWithValue(err instanceof Error ? err.message : 'Failed to fetch profile')
+    }
 })
 
 const profileSlice = createSlice({
@@ -46,31 +42,16 @@ const profileSlice = createSlice({
     },
     extraReducers: (builder) => {
         builder
-            // Fetch
             .addCase(fetchProfile.pending, (state) => {
                 state.status = 'loading'
             })
             .addCase(fetchProfile.fulfilled, (state, action) => {
                 state.status = 'succeeded'
-                // Map API response to state if necessary, assuming 1:1 for now based on request
                 state.data = action.payload
             })
             .addCase(fetchProfile.rejected, (state, action) => {
-                state.status = 'succeeded' // Don't show error for missing profile
-                // Keep data as null (empty profile)
-                state.error = null
-            })
-            // Update
-            .addCase(updateProfile.pending, (state) => {
-                state.status = 'loading'
-            })
-            .addCase(updateProfile.fulfilled, (state, action) => {
-                state.status = 'succeeded'
-                state.data = action.payload
-            })
-            .addCase(updateProfile.rejected, (state, action) => {
                 state.status = 'failed'
-                state.error = action.error.message || 'Failed to update profile'
+                state.error = (action.payload as string) || action.error.message || 'Failed to fetch profile'
             })
     }
 })

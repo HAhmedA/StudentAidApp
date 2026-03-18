@@ -1,6 +1,6 @@
 /**
  * Integration tests for profile routes
- * GET /api/profile, PUT /api/profile, POST /api/profile/onboarding-complete
+ * GET /api/profile, POST /api/profile/onboarding-complete, GET /api/profile/export
  */
 
 import { jest } from '@jest/globals'
@@ -46,9 +46,9 @@ describe('GET /api/profile', () => {
 
     test('returns 200 with profile data when found', async () => {
         const profile = {
-            user_id: 'user-1', edu_level: 'undergrad', field_of_study: 'CS',
-            major: 'CS', learning_formats: [], disabilities: [],
-            onboarding_completed: false, updated_at: null
+            user_id: 'user-1',
+            onboarding_completed: false,
+            updated_at: null
         }
         mockQuery.mockResolvedValue({ rows: [profile] })
 
@@ -67,18 +67,14 @@ describe('POST /api/profile/onboarding-complete', () => {
     })
 })
 
-describe('PUT /api/profile', () => {
-    test('returns 200 with updated profile', async () => {
-        const updated = {
-            user_id: 'user-1', edu_level: 'grad', field_of_study: 'Math',
-            major: 'Math', learning_formats: ['online'], disabilities: [], updated_at: null
-        }
-        mockQuery.mockResolvedValue({ rows: [updated] })
+describe('GET /api/profile/export', () => {
+    test('returns CSV data', async () => {
+        // Mock all 7 parallel queries to return empty results
+        mockQuery.mockResolvedValue({ rows: [] })
 
-        const res = await request(buildApp())
-            .put('/api/profile')
-            .send({ edu_level: 'grad', field_of_study: 'Math' })
+        const res = await request(buildApp()).get('/api/profile/export')
         expect(res.status).toBe(200)
-        expect(res.body.edu_level).toBe('grad')
+        expect(res.headers['content-type']).toMatch(/text\/csv/)
+        expect(res.headers['content-disposition']).toContain('my-data-export.csv')
     })
 })

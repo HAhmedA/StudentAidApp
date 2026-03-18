@@ -1,17 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useReduxSelector, useReduxDispatch } from '../redux'
-import { fetchProfile, updateProfile } from '../redux/profile'
 import { fetchPrompts, updatePrompt } from '../redux/admin'
-import {
-    educationLevels,
-    fieldsOfStudy,
-    majorsByField,
-    learningFormatOptions,
-    disabilityCategoriesDSM5,
-    DISABILITY_LEGACY_MAP
-} from '../models/profile-constants'
-import { api } from '../api/client'
+import { api, API_BASE } from '../api/client'
 import './Profile.css'
 
 const Profile = () => {
@@ -19,27 +10,17 @@ const Profile = () => {
     const dispatch = useReduxDispatch()
     const user = useReduxSelector(state => state.auth.user)
     const userName = user?.name || user?.email || 'User'
-    const isAdmin = user?.role === 'admin' || user?.email === 'admin@example.com'
+    const isAdmin = user?.role === 'admin'
 
     // Admin State
     const adminState = useReduxSelector(state => state.admin)
     const [systemPrompt, setSystemPrompt] = useState('')
     const [alignmentPrompt, setAlignmentPrompt] = useState('')
 
-    // Student State
-    const profileState = useReduxSelector(state => state.profile)
-    const [educationLevel, setEducationLevel] = useState('')
-    const [fieldOfStudy, setFieldOfStudy] = useState('')
-    const [major, setMajor] = useState('')
-    const [learningFormats, setLearningFormats] = useState<string[]>([])
-    const [disabilities, setDisabilities] = useState<string[]>([])
-    const [selectedCategory, setSelectedCategory] = useState<string>('')
-    const [otherTexts, setOtherTexts] = useState<Record<string, string>>({})
-
     // Success message state
     const [showSystemSuccess, setShowSystemSuccess] = useState(false)
     const [showAlignmentSuccess, setShowAlignmentSuccess] = useState(false)
-    const [showStudentSuccess, setShowStudentSuccess] = useState(false)
+    const [exporting, setExporting] = useState(false)
 
     // Remove white sjs-app__content card (same pattern as Sleep/Screen/Run pages)
     useEffect(() => {
@@ -52,8 +33,6 @@ const Profile = () => {
     useEffect(() => {
         if (isAdmin) {
             dispatch(fetchPrompts())
-        } else {
-            dispatch(fetchProfile())
         }
     }, [isAdmin, dispatch])
 
@@ -64,36 +43,6 @@ const Profile = () => {
             setAlignmentPrompt(adminState.alignmentPrompt)
         }
     }, [isAdmin, adminState.systemPrompt, adminState.alignmentPrompt])
-
-    useEffect(() => {
-        if (!isAdmin && profileState.data) {
-            setEducationLevel(profileState.data.edu_level || '')
-            setFieldOfStudy(profileState.data.field_of_study || '')
-            setMajor(profileState.data.major || '')
-            setLearningFormats(profileState.data.learning_formats || [])
-            // Apply legacy migration — map old string labels to new DSM-5 IDs
-            const rawDisabilities: string[] = profileState.data.disabilities || []
-            const migrated = rawDisabilities.map(d => DISABILITY_LEGACY_MAP[d] ?? d)
-            setDisabilities(Array.from(new Set(migrated)))
-        }
-    }, [isAdmin, profileState.data])
-
-
-    const handleLearningFormatChange = (format: string) => {
-        setLearningFormats(prev =>
-            prev.includes(format)
-                ? prev.filter(f => f !== format)
-                : [...prev, format]
-        )
-    }
-
-    const handleDisabilityChange = (disability: string) => {
-        setDisabilities(prev =>
-            prev.includes(disability)
-                ? prev.filter(d => d !== disability)
-                : [...prev, disability]
-        )
-    }
 
     const handleSystemPromptSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -113,23 +62,24 @@ const Profile = () => {
         }
     }
 
-    const handleStudentSubmit = async (e: React.FormEvent) => {
-        e.preventDefault()
-        const payload = {
-            edu_level: educationLevel,
-            field_of_study: fieldOfStudy,
-            major,
-            learning_formats: learningFormats,
-            disabilities
-        }
-        const result = await dispatch(updateProfile(payload))
-        if (result.type.endsWith('/fulfilled')) {
-            setShowStudentSuccess(true)
-            setTimeout(() => setShowStudentSuccess(false), 3000)
+    const handleExport = async () => {
+        setExporting(true)
+        try {
+            const res = await fetch(`${API_BASE}/profile/export`, { credentials: 'include' })
+            if (!res.ok) throw new Error('Export failed')
+            const blob = await res.blob()
+            const url = URL.createObjectURL(blob)
+            const a = document.createElement('a')
+            a.href = url
+            a.download = 'my-data-export.csv'
+            a.click()
+            URL.revokeObjectURL(url)
+        } catch {
+            alert('Failed to export data. Please try again.')
+        } finally {
+            setExporting(false)
         }
     }
-
-    const availableMajors = fieldOfStudy ? (majorsByField[fieldOfStudy] || []) : []
 
     if (isAdmin) {
         return (
@@ -225,188 +175,37 @@ const Profile = () => {
                 <button className='profile-back' onClick={() => navigate('/')}>
                     ← Back
                 </button>
-                <h1 className='profile-title'>{userName}'s profile</h1>
+                <h1 className='profile-title'>{userName}'s Profile</h1>
                 <div className='profile-content'>
+
+                    {/* Export Data */}
                     <div style={{
+                        padding: '16px',
+                        border: '1px solid #3b82f6',
+                        borderRadius: '8px',
                         backgroundColor: '#eff6ff',
-                        borderLeft: '4px solid #3b82f6',
-                        padding: '1rem',
-                        marginBottom: '1.5rem',
-                        borderRadius: '0 4px 4px 0',
-                        fontSize: '0.9rem',
-                        color: '#1e3a8a'
+                        marginBottom: '20px'
                     }}>
-                        <strong>Transparency Note:</strong> Filling out this profile is optional. This information is used solely to personalize the AI chatbot's guidance to your specific context (e.g., your field of study and learning preferences). Calling the chatbot will use this data to provide better answers.
+                        <h3 style={{ margin: '0 0 8px', color: '#1e40af', fontSize: '14px' }}>Export My Data</h3>
+                        <p style={{ fontSize: '13px', color: '#6b7280', margin: '0 0 12px' }}>
+                            Download all your data as a CSV file, including questionnaire responses,
+                            sleep logs, screen time logs, LMS activity, and scores.
+                        </p>
+                        <button
+                            onClick={handleExport}
+                            disabled={exporting}
+                            style={{
+                                padding: '8px 16px', backgroundColor: '#3b82f6', color: 'white',
+                                border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '13px',
+                                opacity: exporting ? 0.6 : 1
+                            }}
+                        >
+                            {exporting ? 'Exporting...' : 'Download CSV'}
+                        </button>
                     </div>
-                    <form onSubmit={handleStudentSubmit} className='profile-form'>
-                        {/* Education Level */}
-                        <div className='profile-form-group'>
-                            <label className='profile-label'>
-                                Current education level <span style={{ fontWeight: 'normal', color: '#6B7280' }}>(optional)</span>
-                            </label>
-                            <select
-                                className='profile-select'
-                                value={educationLevel}
-                                onChange={(e) => setEducationLevel(e.target.value)}
-                            >
-                                <option value=''>Select education level</option>
-                                {educationLevels.map(level => (
-                                    <option key={level} value={level}>{level}</option>
-                                ))}
-                            </select>
-                        </div>
-
-                        {/* Field of Study */}
-                        <div className='profile-form-group'>
-                            <label className='profile-label'>
-                                Field of study <span style={{ fontWeight: 'normal', color: '#6B7280' }}>(optional)</span>
-                            </label>
-                            <select
-                                className='profile-select'
-                                value={fieldOfStudy}
-                                onChange={(e) => {
-                                    setFieldOfStudy(e.target.value)
-                                    setMajor('') // Reset major when field changes
-                                }}
-                            >
-                                <option value=''>Select field of study</option>
-                                {fieldsOfStudy.map(field => (
-                                    <option key={field} value={field}>{field}</option>
-                                ))}
-                            </select>
-                        </div>
-
-                        {/* Major */}
-                        {fieldOfStudy && (
-                            <div className='profile-form-group'>
-                                <label className='profile-label'>
-                                    Major <span style={{ fontWeight: 'normal', color: '#6B7280' }}>(optional)</span>
-                                </label>
-                                <select
-                                    className='profile-select'
-                                    value={major}
-                                    onChange={(e) => setMajor(e.target.value)}
-                                >
-                                    <option value=''>Select major</option>
-                                    {availableMajors.map(m => (
-                                        <option key={m} value={m}>{m}</option>
-                                    ))}
-                                </select>
-                            </div>
-                        )}
-
-                        {/* Preferred Learning Formats */}
-                        <div className='profile-form-group'>
-                            <label className='profile-label'>
-                                Preferred learning formats <span style={{ fontWeight: 'normal', color: '#6B7280' }}>(optional)</span>
-                            </label>
-                            <div className='profile-checkbox-group'>
-                                {learningFormatOptions.map(format => (
-                                    <label key={format} className='profile-checkbox-label'>
-                                        <input
-                                            type='checkbox'
-                                            className='profile-checkbox'
-                                            checked={learningFormats.includes(format)}
-                                            onChange={() => handleLearningFormatChange(format)}
-                                        />
-                                        <span>{format}</span>
-                                    </label>
-                                ))}
-                            </div>
-                        </div>
-
-                        {/* Disabilities — collapsible DSM-5 panel */}
-                        <div className='profile-form-group'>
-                            <label className='profile-label'>
-                                Disabilities / Learning Differences <span style={{ fontWeight: 'normal', color: '#6B7280' }}>(optional)</span>
-                            </label>
-                            <details className='profile-disabilities-panel'>
-                                <summary className='profile-disabilities-summary'>
-                                    <span>
-                                        {disabilities.length > 0
-                                            ? `${disabilities.length} selected`
-                                            : 'Click to expand'}
-                                    </span>
-                                    <span className='profile-disabilities-chevron'>▾</span>
-                                </summary>
-
-                                {/* Category tabs */}
-                                <div className='profile-disability-tabs'>
-                                    {disabilityCategoriesDSM5.map(cat => (
-                                        <button
-                                            key={cat.id}
-                                            type='button'
-                                            className={`profile-disability-tab ${selectedCategory === cat.id ? 'active' : ''}`}
-                                            onClick={() => setSelectedCategory(prev => prev === cat.id ? '' : cat.id)}
-                                        >
-                                            {cat.label}
-                                        </button>
-                                    ))}
-                                </div>
-
-                                {/* Items for selected category */}
-                                {selectedCategory && (() => {
-                                    const cat = disabilityCategoriesDSM5.find(c => c.id === selectedCategory)
-                                    if (!cat) return null
-                                    return (
-                                        <div className='profile-disability-items'>
-                                            {cat.items.map(item => (
-                                                <label key={item.id} className='profile-checkbox-label'>
-                                                    <input
-                                                        type='checkbox'
-                                                        className='profile-checkbox'
-                                                        checked={disabilities.includes(item.id)}
-                                                        onChange={() => handleDisabilityChange(item.id)}
-                                                    />
-                                                    <span>{item.label}</span>
-                                                    {item.tooltip && (
-                                                        <span className='profile-info-wrapper'>
-                                                            <span className='profile-info-icon'>ℹ</span>
-                                                            <span className='profile-info-tooltip'>{item.tooltip}</span>
-                                                        </span>
-                                                    )}
-                                                </label>
-                                            ))}
-                                            {/* Other free-text */}
-                                            <label className='profile-checkbox-label'>
-                                                <input
-                                                    type='checkbox'
-                                                    className='profile-checkbox'
-                                                    checked={disabilities.includes(cat.otherKey)}
-                                                    onChange={() => handleDisabilityChange(cat.otherKey)}
-                                                />
-                                                <span>Other</span>
-                                            </label>
-                                            {disabilities.includes(cat.otherKey) && (
-                                                <input
-                                                    type='text'
-                                                    className='profile-other-text'
-                                                    placeholder='Please describe…'
-                                                    value={otherTexts[cat.otherKey] || ''}
-                                                    onChange={e => setOtherTexts(prev => ({ ...prev, [cat.otherKey]: e.target.value }))}
-                                                />
-                                            )}
-                                        </div>
-                                    )
-                                })()}
-                            </details>
-                        </div>
-
-                        <div className='profile-form-actions'>
-                            <button
-                                type='submit'
-                                className='profile-submit-button'
-                                disabled={profileState.status === 'loading'}
-                            >
-                                {profileState.status === 'loading' ? 'Saving...' : 'Save Profile'}
-                            </button>
-                        </div>
-                        {profileState.error && profileState.status === 'failed' && <p className="error-message" style={{ color: 'red', marginTop: '10px' }}>{profileState.error}</p>}
-                        {showStudentSuccess && <p className="success-message" style={{ color: 'green', marginTop: '10px' }}>Profile saved successfully!</p>}
-                    </form>
 
                     {/* Consent & Data Management */}
-                    <div style={{ marginTop: '32px', padding: '16px', border: '1px solid #ef4444', borderRadius: '8px', backgroundColor: '#fef2f2' }}>
+                    <div style={{ padding: '16px', border: '1px solid #ef4444', borderRadius: '8px', backgroundColor: '#fef2f2' }}>
                         <h3 style={{ margin: '0 0 8px', color: '#dc2626', fontSize: '14px' }}>Data & Consent</h3>
                         <p style={{ fontSize: '13px', color: '#6b7280', margin: '0 0 12px' }}>
                             Revoking consent will permanently delete all your data including questionnaire responses,

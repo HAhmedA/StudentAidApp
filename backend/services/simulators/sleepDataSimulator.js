@@ -153,13 +153,19 @@ function generateSession(pattern, sessionDate, options = {}) {
 
     // Anomaly effects (direction depends on profile)
     let anomalyMultiplier = 1.0;
+    let isOversleepRecovery = false;
     if (isAnomalyNight) {
         if (profileType === 'high_achiever') {
             // High achievers have BAD nights as anomalies
             anomalyMultiplier = 0.7; // 30% worse sleep
         } else if (profileType === 'low_achiever') {
-            // Low achievers have GOOD nights as anomalies
-            anomalyMultiplier = 1.4; // 40% better sleep
+            // Low achievers: 60% oversleep recovery (~11h), 40% good normal-range night
+            if (Math.random() < 0.6) {
+                isOversleepRecovery = true;
+                anomalyMultiplier = 2.0; // Will be capped to ~660 min below
+            } else {
+                anomalyMultiplier = 1.4; // 40% better sleep (normal-range)
+            }
         } else {
             // Average: random direction
             anomalyMultiplier = Math.random() > 0.5 ? 1.3 : 0.7;
@@ -173,15 +179,23 @@ function generateSession(pattern, sessionDate, options = {}) {
 
     let baseSleep = pattern.total_sleep.base;
     // Apply anomaly to sleep duration
+    // Oversleep recovery cap is 660 min (~11h); normal anomaly cap is 540 (9h)
+    const sleepCap = isOversleepRecovery ? 660 : 540;
     if (anomalyMultiplier < 1) {
         baseSleep = baseSleep * anomalyMultiplier; // Worse sleep
     } else if (anomalyMultiplier > 1) {
-        baseSleep = Math.min(baseSleep * anomalyMultiplier, 540); // Better but capped at 9h
+        baseSleep = Math.min(baseSleep * anomalyMultiplier, sleepCap);
+    }
+
+    // Weekend recovery for low_achiever: 40% chance of +2–4h extra sleep (capped at 660)
+    if (isWeekendNight && profileType === 'low_achiever' && !isAnomalyNight && Math.random() < 0.4) {
+        const extraMinutes = 120 + Math.random() * 120; // +2–4h
+        baseSleep = Math.min(baseSleep + extraMinutes, 660);
     }
 
     const totalSleep = Math.round(clamp(
         addVariance(baseSleep, pattern.total_sleep.variance) + carryOverAdjustment,
-        180, 600
+        180, 660
     ));
     const timeInBed = Math.round(clamp(
         addVariance(pattern.time_in_bed.base, pattern.time_in_bed.variance),

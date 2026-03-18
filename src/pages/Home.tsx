@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import DailyWizard from '../components/DailyWizard'
 import Surveys from '../components/Surveys'
 import AdminStudentViewer from '../components/AdminStudentViewer'
@@ -50,9 +50,9 @@ const Home = () => {
     const surveysStatus = useReduxSelector(state => state.surveys.status)
     const dispatch = useReduxDispatch()
     const isAdmin = user?.role === 'admin'
-    const location = useLocation()
-    const navigate = useNavigate()
-    const [showWizard, setShowWizard] = useState(!isAdmin)
+    const [showWizard, setShowWizard] = useState(false)
+    const [dataRefreshKey, setDataRefreshKey] = useState(0)
+    const [wizardChecked, setWizardChecked] = useState(false)
     const title = isAdmin ? 'My Surveys' : 'Available Surveys'
 
     // Concept scores state
@@ -112,30 +112,31 @@ const Home = () => {
                     setScoresLoading(false)
                 })
         }
-    }, [isAdmin, user])
+    }, [isAdmin, user, dataRefreshKey])
 
-    // Check whether today's sleep log, screen time, and SRL survey have been submitted (students only).
+    // Check today's submission status and decide whether to show the wizard.
     // Uses allSettled so one failing call doesn't silently block the others.
     useEffect(() => {
-        if (isAdmin || !user) return
+        if (isAdmin || !user) { setWizardChecked(true); return }
         Promise.allSettled([
             getTodaySleep(),
             getTodayScreenTime(),
             getTodaySRL()
         ]).then(([sleepResult, screenResult, srlResult]) => {
-            if (sleepResult.status === 'fulfilled') setMissingSleepLog(!sleepResult.value)
-            if (screenResult.status === 'fulfilled') setMissingScreenTime(!screenResult.value)
-            if (srlResult.status === 'fulfilled') setMissingSRLSurvey(!srlResult.value)
-        })
-    }, [isAdmin, user])
+            const hasSleep = sleepResult.status === 'fulfilled' && !!sleepResult.value
+            const hasScreen = screenResult.status === 'fulfilled' && !!screenResult.value
+            const hasSRL = srlResult.status === 'fulfilled' && srlResult.value === true
 
-    // Handle wizard return from data entry pages
-    useEffect(() => {
-        if (location.state?.wizardReturning && !isAdmin) {
-            setShowWizard(true)
-            navigate('/', { replace: true })
-        }
-    }, [location.state]) // eslint-disable-line react-hooks/exhaustive-deps
+            setMissingSleepLog(!hasSleep)
+            setMissingScreenTime(!hasScreen)
+            setMissingSRLSurvey(!hasSRL)
+
+            if (!hasSleep || !hasScreen || !hasSRL) {
+                setShowWizard(true)
+            }
+            setWizardChecked(true)
+        })
+    }, [isAdmin, user, dataRefreshKey])
 
     // Add class to parent main element for mood layout
     useEffect(() => {
@@ -150,9 +151,14 @@ const Home = () => {
         }
     }, [isAdmin])
 
-    // Show wizard for students (checks APIs internally, auto-skips if all done)
+    // Show loading state while checking today's status
+    if (!wizardChecked && !isAdmin) {
+        return <div className='wizard-loading'>Loading...</div>
+    }
+
+    // Show wizard only when genuinely needed (incomplete daily tasks)
     if (showWizard && !isAdmin) {
-        return <DailyWizard onComplete={() => setShowWizard(false)} />
+        return <DailyWizard onComplete={() => { setShowWizard(false); setDataRefreshKey(k => k + 1) }} />
     }
 
     // For admin users, show student selector + student dashboard
@@ -192,7 +198,7 @@ const Home = () => {
                             ) : (
                                 <div className='clear-confirm-block'>
                                     <p className='clear-confirm-text'>
-                                        Are you sure? This permanently deletes all sleep, screen time, LMS, and SRL data for every student. This cannot be undone.
+                                        Are you sure? This permanently deletes all sleep, screen time, course activity, and learning data for every student. This cannot be undone.
                                     </p>
                                     <div className='clear-confirm-actions'>
                                         <button
@@ -285,7 +291,7 @@ const Home = () => {
                                     >
                                         <span className='quick-action-icon'>📝</span>
                                         <div className='quick-action-text'>
-                                            <div className='quick-action-title'>Self-Regulated Learning Survey</div>
+                                            <div className='quick-action-title'>Learning Questionnaire</div>
                                             <div className='quick-action-desc'>Reflect on your study strategies</div>
                                         </div>
                                         <span className='quick-action-arrow'>{!missingSRLSurvey ? '✓' : '→'}</span>

@@ -52,9 +52,10 @@ const DIMENSION_DEFS = {
         session_quality:        { metric: 'avg_session_duration', inverted: false },
     },
     sleep: {
-        duration: { metric: 'sleep_minutes', inverted: false },
-        continuity: { metric: 'awakenings', inverted: true },
-        timing: { metric: 'bedtime_stddev', inverted: true }
+        duration:             { metric: 'duration',            inverted: true },
+        duration_consistency: { metric: 'sleep_duration_mad',  inverted: true },
+        continuity:           { metric: 'awakenings',          inverted: true },
+        timing:               { metric: 'bedtime_mad',         inverted: true }
     },
     screen_time: {
         volume: { metric: 'screen_minutes', inverted: true },
@@ -385,7 +386,7 @@ async function computeSRLClusterScores(allMetrics, userId) {
         return conceptKeys.map(ck => {
             const data = allMetrics[uid]?.[ck];
             if (!data) return 0.5; // default if concept not present
-            let score = data.score / 5; // Normalize from 1-5 to 0-1 scale
+            let score = Math.max(0, (data.score - 1) / 4); // Normalize from 1-5 to true 0-1 scale
             if (data.isInverted) score = 1 - score;
             return score;
         });
@@ -420,7 +421,7 @@ async function computeSRLClusterScores(allMetrics, userId) {
         const scores = conceptKeys.map(ck => {
             const data = allMetrics[uid]?.[ck];
             if (!data) return 50;
-            let s = (data.score / 5) * 100;
+            let s = Math.max(0, (data.score - 1) / 4) * 100;
             if (data.isInverted) s = 100 - s;
             return s;
         });
@@ -450,7 +451,7 @@ async function computeSRLClusterScores(allMetrics, userId) {
     const domainResults = conceptKeys.map(ck => {
         const data = userDims[ck];
         if (!data) return { domain: ck, numericScore: 50, category: 'good', categoryLabel: 'Good' };
-        let score = (data.score / 5) * 100;
+        let score = Math.max(0, (data.score - 1) / 4) * 100;
         if (data.isInverted) score = 100 - score;
         const { category, categoryLabel } = _mapDomainCategory(score);
         return {
@@ -499,12 +500,12 @@ async function batchComputeSRLClusterScores() {
     const conceptKeys = [...allConceptKeys].sort();
     if (conceptKeys.length === 0) return { coldStart: true, usersScored: 0 };
 
-    // Build feature matrix: normalise from 1–5 scale to 0–1, flip inverted dims
+    // Build feature matrix: normalise from 1–5 scale to true 0–1 ((score-1)/4), flip inverted dims
     const featureMatrix = userIds.map(uid =>
         conceptKeys.map(ck => {
             const data = allMetrics[uid]?.[ck];
             if (!data) return 0.5;
-            let score = data.score / 5;
+            let score = Math.max(0, (data.score - 1) / 4);
             if (data.isInverted) score = 1 - score;
             return score;
         })
@@ -531,7 +532,7 @@ async function batchComputeSRLClusterScores() {
         const scores = conceptKeys.map(ck => {
             const data = allMetrics[uid]?.[ck];
             if (!data) return 50;
-            let s = (data.score / 5) * 100;
+            let s = Math.max(0, (data.score - 1) / 4) * 100;
             if (data.isInverted) s = 100 - s;
             return s;
         });
@@ -574,7 +575,7 @@ async function batchComputeSRLClusterScores() {
         const domains = conceptKeys.map(ck => {
             const data = allMetrics[uid]?.[ck];
             if (!data) return { domain: ck, numericScore: 50, category: 'good', categoryLabel: 'Good' };
-            let s = (data.score / 5) * 100;
+            let s = Math.max(0, (data.score - 1) / 4) * 100;
             if (data.isInverted) s = 100 - s;
             const numericScore = Math.round(s * 100) / 100;
             const { category, categoryLabel } = _mapDomainCategory(numericScore);

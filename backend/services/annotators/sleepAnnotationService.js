@@ -7,24 +7,27 @@
 // =============================================================================
 
 /**
- * Duration thresholds (as percentage of baseline)
- * < 75% = very low, 75-90% = low, 90-110% = sufficient, > 110% = long
+ * Duration ranges (absolute, science-based — NSF/AASM young adult 18–25)
+ * 7–9 hours (420–540 min) is the recommended range.
+ * Both short AND long sleep are associated with adverse outcomes.
  */
-const DURATION_THRESHOLDS = {
-    very_low: 0.75,
-    low: 0.90,
-    sufficient: 1.10,
-    long: 1.10
+const DURATION_RANGES = {
+    poor_low:     360,  // <6h = poor (very short)
+    warning_low:  420,  // 6–7h = warning (short)
+    ok_low:       420,  // 7h = start of optimal range
+    ok_high:      540,  // 9h = end of optimal range
+    warning_high: 600,  // 9–10h = warning (long)
+    // >10h = poor (very long / oversleep)
 };
 
 /**
- * Continuity thresholds
- * Awakenings and awake minutes determine sleep quality
+ * Continuity thresholds (count-only, NSF-aligned)
+ * 0–1 awakenings = ok, 2–3 = warning, 4+ = poor
  */
 const CONTINUITY_THRESHOLDS = {
-    continuous: { awakenings: 2, awake_minutes: 10 },
-    minor: { awakenings: 5, awake_minutes: 30 }
-    // Above minor = fragmented
+    ok: 1,       // 0–1 awakenings = ok
+    warning: 3,  // 2–3 = warning
+    // 4+ = poor
 };
 
 
@@ -41,96 +44,105 @@ const TIMING_THRESHOLDS = {
 // =============================================================================
 
 /**
- * Evaluate sleep duration relative to baseline
+ * Evaluate sleep duration against science-based 7–9h optimal range.
+ * Primary judgment is absolute; personal baseline context is appended when
+ * the difference from baseline is ≥ 15 minutes.
+ *
  * @param {Object} session - Sleep session data
  * @param {Object} baseline - User's baseline metrics
  * @returns {Object} - Judgment object
  */
 function evaluateDuration(session, baseline) {
-    const ratio = session.total_sleep_minutes / baseline.avg_total_sleep_minutes;
+    const mins = session.total_sleep_minutes;
+    const hrs = (mins / 60).toFixed(1);
 
-    if (ratio < DURATION_THRESHOLDS.very_low) {
+    // Personal baseline context (appended when diff ≥ 15 min)
+    const baselineAvg = baseline.avg_total_sleep_minutes;
+    const diffFromBaseline = Math.abs(mins - baselineAvg);
+    const baselineNote = diffFromBaseline >= 15
+        ? ` That's about ${Math.round(diffFromBaseline)} minutes ${mins > baselineAvg ? 'more' : 'less'} than your usual ${(baselineAvg / 60).toFixed(1)} hours.`
+        : '';
+
+    if (mins < DURATION_RANGES.poor_low) {
         return {
-            judgment_key: 'sleep_time_very_low',
+            judgment_key: 'sleep_duration_very_short',
             severity: 'poor',
-            explanation: 'Sleep time was very low',
-            explanation_llm: `Sleep duration was very low (${session.total_sleep_minutes} minutes, only ${Math.round(ratio * 100)}% of the usual ${Math.round(baseline.avg_total_sleep_minutes)} minutes). This significant sleep deficit may affect alertness, mood, and cognitive performance.`
+            explanation: 'Sleep was very short',
+            explanation_llm: `You got about ${hrs} hours of sleep, which is well below the 7–9 hours that helps with focus and energy.${baselineNote} Even small increases toward 7 hours can make a noticeable difference.`
         };
     }
 
-    if (ratio < DURATION_THRESHOLDS.low) {
+    if (mins < DURATION_RANGES.warning_low) {
         return {
-            judgment_key: 'sleep_time_low',
+            judgment_key: 'sleep_duration_short',
             severity: 'warning',
-            explanation: 'Sleep time was slightly low',
-            explanation_llm: `Sleep duration was slightly below normal (${session.total_sleep_minutes} minutes, ${Math.round(ratio * 100)}% of the usual ${Math.round(baseline.avg_total_sleep_minutes)} minutes). A bit more rest might help with focus and energy levels.`
+            explanation: 'Sleep was slightly short',
+            explanation_llm: `You got about ${hrs} hours of sleep — not far off, but a bit under the 7–9 hour range that supports good concentration and mood.${baselineNote} A little more rest could help.`
         };
     }
 
-    if (ratio <= DURATION_THRESHOLDS.sufficient) {
+    if (mins <= DURATION_RANGES.ok_high) {
         return {
-            judgment_key: 'sleep_time_sufficient',
+            judgment_key: 'sleep_duration_good',
             severity: 'ok',
-            explanation: 'Sleep time was sufficient',
-            explanation_llm: `Sleep duration was within the healthy range (${session.total_sleep_minutes} minutes, close to the usual ${Math.round(baseline.avg_total_sleep_minutes)} minutes). Good job maintaining consistent sleep duration.`
+            explanation: 'Sleep duration was in the healthy range',
+            explanation_llm: `You got about ${hrs} hours of sleep, which is right in the 7–9 hour sweet spot for feeling rested and alert.${baselineNote} Nice work keeping your sleep on track.`
         };
     }
 
-    // ratio > sufficient = long sleep
+    if (mins <= DURATION_RANGES.warning_high) {
+        return {
+            judgment_key: 'sleep_duration_long',
+            severity: 'warning',
+            explanation: 'Sleep was longer than recommended',
+            explanation_llm: `You slept about ${hrs} hours, which is a bit more than the 7–9 hour range. Occasional long sleep is fine for catching up, but regularly oversleeping can leave you feeling groggy.${baselineNote}`
+        };
+    }
+
+    // > 10h = poor (oversleep)
     return {
-        judgment_key: 'sleep_time_long',
-        severity: 'ok',
-        explanation: 'Sleep duration was longer than usual',
-        explanation_llm: `Sleep duration was longer than usual (${session.total_sleep_minutes} minutes, ${Math.round(ratio * 100)}% of the typical ${Math.round(baseline.avg_total_sleep_minutes)} minutes). This could indicate the body catching up on rest or deeper recovery.`
+        judgment_key: 'sleep_duration_very_long',
+        severity: 'poor',
+        explanation: 'Sleep was much longer than recommended',
+        explanation_llm: `You slept about ${hrs} hours, which is quite a bit more than the recommended 7–9 hours. Regularly sleeping this long can actually make you feel more tired, not less.${baselineNote} If this keeps happening, it might be worth checking in with a health professional.`
     };
 }
 
 /**
- * Evaluate sleep continuity (interruptions)
+ * Evaluate sleep continuity based on awakening count (NSF-aligned).
+ * awake_minutes is kept in explanation text for context but not used for severity.
+ *
  * @param {Object} session - Sleep session data
  * @returns {Object} - Judgment object
  */
 function evaluateContinuity(session) {
     const { awakenings_count, awake_minutes } = session;
+    const awakeContext = awake_minutes > 0 ? ` (about ${awake_minutes} minutes awake total)` : '';
 
-    // Check for continuous sleep
-    if (awakenings_count <= CONTINUITY_THRESHOLDS.continuous.awakenings &&
-        awake_minutes < CONTINUITY_THRESHOLDS.continuous.awake_minutes) {
+    if (awakenings_count <= CONTINUITY_THRESHOLDS.ok) {
         return {
             judgment_key: 'sleep_continuous',
             severity: 'ok',
             explanation: 'Sleep was continuous',
-            explanation_llm: `Sleep was continuous with minimal interruptions (${awakenings_count} awakenings, ${awake_minutes} minutes awake). This indicates good sleep quality and efficient rest.`
+            explanation_llm: `Your sleep was nice and continuous${awakenings_count === 0 ? ' with no awakenings' : ' with just one brief awakening'}${awakeContext}. That means you likely got plenty of deep, restorative sleep.`
         };
     }
 
-    // Check for minor interruptions
-    if (awakenings_count <= CONTINUITY_THRESHOLDS.minor.awakenings &&
-        awake_minutes <= CONTINUITY_THRESHOLDS.minor.awake_minutes) {
+    if (awakenings_count <= CONTINUITY_THRESHOLDS.warning) {
         return {
-            judgment_key: 'sleep_minor_interruptions',
+            judgment_key: 'sleep_some_interruptions',
             severity: 'warning',
-            explanation: 'Sleep had minor interruptions',
-            explanation_llm: `Sleep had some interruptions (${awakenings_count} awakenings, ${awake_minutes} minutes awake). While not severe, this may slightly reduce the restorative quality of sleep.`
+            explanation: 'Sleep had some interruptions',
+            explanation_llm: `You woke up ${awakenings_count} times during the night${awakeContext}. A couple of awakenings is pretty normal, but it can chip away at how rested you feel. Keeping a consistent wind-down routine might help.`
         };
     }
 
-    // Check for high awakenings specifically
-    if (awakenings_count > CONTINUITY_THRESHOLDS.minor.awakenings) {
-        return {
-            judgment_key: 'sleep_multiple_awakenings',
-            severity: 'poor',
-            explanation: 'Sleep was discontinued multiple times',
-            explanation_llm: `Sleep was interrupted frequently (${awakenings_count} awakenings, ${awake_minutes} minutes awake). Frequent awakenings can prevent reaching deeper, more restorative sleep stages.`
-        };
-    }
-
-    // Fragmented due to total awake time
+    // 4+ awakenings = poor
     return {
         judgment_key: 'sleep_fragmented',
         severity: 'poor',
         explanation: 'Sleep was fragmented',
-        explanation_llm: `Sleep was fragmented with significant time spent awake (${awakenings_count} awakenings, ${awake_minutes} minutes awake). This level of disruption typically reduces sleep quality and next-day energy.`
+        explanation_llm: `You woke up ${awakenings_count} times during the night${awakeContext}. That many interruptions can really cut into deep sleep and leave you feeling drained the next day. If this is a regular pattern, it might be worth looking into what's causing the disruptions.`
     };
 }
 
@@ -516,7 +528,7 @@ export {
     evaluateTiming,
 
     // Thresholds (for testing/configuration)
-    DURATION_THRESHOLDS,
+    DURATION_RANGES,
     CONTINUITY_THRESHOLDS,
     TIMING_THRESHOLDS
 };

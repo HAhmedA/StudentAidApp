@@ -35,6 +35,7 @@ const surveysSlice = createSlice({
         state.status = 'succeeded'
         // Update survey in the array
         const survey = state.surveys.filter(s => s.id === action.payload.id)[0];
+        if (!survey) return;
         survey.json = action.payload.json;
       })
   }

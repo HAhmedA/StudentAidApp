@@ -1,9 +1,5 @@
 // SRL Annotation Service
-// Computes statistics, trends, and generates annotation text for each SRL concept
-
-// Minimum responses required to show trends
-
-const MIN_DISTINCT_DAYS_7D = 3;  // At least 3 different days for 7d
+// Computes statistics and generates annotation text for each SRL concept
 
 // Concepts that are inverted (high score = bad outcome)
 const INVERTED_CONCEPTS = ['anxiety'];
@@ -22,25 +18,6 @@ const CONCEPT_SHORT_NAMES = {
     reflection: 'Reflection'
 };
 
-// Trend descriptions for annotation text
-const TREND_DESCRIPTIONS = {
-    improving: 'improving',
-    declining: 'declining',
-    fluctuating: 'fluctuating',
-    stable_high: 'consistently high',
-    stable_avg: 'stable',
-    stable_low: 'consistently low'
-};
-
-// Trend descriptions for inverted concepts (e.g., anxiety)
-const TREND_DESCRIPTIONS_INVERTED = {
-    improving: 'decreasing (which is good)',
-    declining: 'increasing (which needs attention)',
-    fluctuating: 'fluctuating',
-    stable_high: 'consistently high (needs attention)',
-    stable_avg: 'moderate',
-    stable_low: 'consistently low (which is good)'
-};
 
 /**
  * Calculate the average of an array of numbers
@@ -50,206 +27,36 @@ function average(arr) {
     return arr.reduce((a, b) => a + b, 0) / arr.length;
 }
 
-/**
- * Classify stable level based on average score
- * @param {number} avgScore - Average score (1-5)
- * @returns {string} - 'stable_high', 'stable_avg', or 'stable_low'
- */
-function classifyStableLevel(avgScore) {
-    if (avgScore >= 4.0) return 'stable_high';
-    if (avgScore >= 2.5) return 'stable_avg';
-    return 'stable_low';
-}
-
-/**
- * Calculate trend from a series of scores
- * Compares earlier half vs recent half of scores
- * Also detects fluctuating patterns when data oscillates significantly
- * 
- * @param {number[]} scores - Array of scores in chronological order
- * @param {boolean} isInverted - If true, improving means scores going DOWN
- * @returns {string} - 'improving', 'declining', 'fluctuating', 'stable_high', 'stable_avg', 'stable_low'
- */
-function calculateTrend(scores, isInverted = false) {
-    if (scores.length === 0) {
-        return 'stable_avg';
-    }
-
-    if (scores.length === 1) {
-        return classifyStableLevel(scores[0]);
-    }
-
-    // Check for fluctuating pattern before other calculations
-    // Fluctuating = significant direction changes AND high variance
-    if (scores.length >= 3) {
-        // Count direction changes
-        let directionChanges = 0;
-        for (let i = 1; i < scores.length - 1; i++) {
-            const prevDelta = scores[i] - scores[i - 1];
-            const nextDelta = scores[i + 1] - scores[i];
-            // A direction change occurs when we go up then down, or down then up
-            if ((prevDelta > 0 && nextDelta < 0) || (prevDelta < 0 && nextDelta > 0)) {
-                directionChanges++;
-            }
-        }
-
-        // Calculate variance to ensure the fluctuation is significant
-        const avg = average(scores);
-        const variance = scores.reduce((sum, s) => sum + Math.pow(s - avg, 2), 0) / scores.length;
-        const range = Math.max(...scores) - Math.min(...scores);
-
-        // If there's at least one direction change and the range is >= 2 (significant oscillation)
-        // OR if variance is high relative to the possible range (0.5 threshold for 1-5 scale)
-        if (directionChanges >= 1 && range >= 2) {
-            return 'fluctuating';
-        }
-    }
-
-    // Split into earlier and recent halves
-    const midpoint = Math.floor(scores.length / 2);
-    const earlierScores = scores.slice(0, midpoint || 1);
-    const recentScores = scores.slice(midpoint);
-
-    const earlierAvg = average(earlierScores);
-    const recentAvg = average(recentScores);
-
-    // Threshold for detecting change (configurable)
-    const threshold = 0.5;
-    const change = recentAvg - earlierAvg;
-
-    // For inverted concepts (like anxiety), improvement means going DOWN
-    if (isInverted) {
-        if (change < -threshold) {
-            return 'improving';  // Score decreased = good
-        } else if (change > threshold) {
-            return 'declining';  // Score increased = bad
-        }
-    } else {
-        if (change > threshold) {
-            return 'improving';  // Score increased = good
-        } else if (change < -threshold) {
-            return 'declining';  // Score decreased = bad
-        }
-    }
-
-    // Stable - classify by level
-    return classifyStableLevel(recentAvg);
-}
-
-/**
- * Generate a complex/nuanced description combining Trend and Latest vs Comparison
- * 
- * @param {string} trend - 'improving', 'declining', 'fluctuating', 'stable_high', etc.
- * @param {number|null} latestScore - Most recent score
- * @param {number|null} previousAvg - Average of previous scores (excluding latest)
- * @param {boolean} isInverted - True if high score is bad (e.g. anxiety)
- */
-function generateComplexDescription(trend, latestScore, previousAvg, isInverted) {
-    // Fallback if we don't have comparative data
-    const trendDescriptions = isInverted ? TREND_DESCRIPTIONS_INVERTED : TREND_DESCRIPTIONS;
-    const baseTrendText = trendDescriptions[trend] || trend;
-
-    if (latestScore === null || previousAvg === null) {
-        return `Your responses have been ${baseTrendText}.`;
-    }
-
-    const diff = latestScore - previousAvg;
-    const threshold = 0.5; // Significance threshold
-
-    // Determine direction of today's score vs average
-    let direction = "consistent";
-    if (diff > threshold) direction = "higher";
-    if (diff < -threshold) direction = "lower";
-
-    // Helper to determine if a specific direction is "Good" or "Bad" for this concept
-    const isHigherGood = !isInverted;
-    const isDirectionGood = (direction === "higher" && isHigherGood) || (direction === "lower" && !isHigherGood);
-
-    // MATRIX LOGIC
-    // 1. IMPROVING TREND
-    if (trend === 'improving') {
-        if (direction === "consistent") {
-            return `You are on an improving trend, with today's score consistent with that progress.`;
-        }
-        if (isDirectionGood) {
-            // Trend is improving AND today is even better
-            return `You are on an upward trend, and today is another strong day (${latestScore} vs avg ${previousAvg.toFixed(1)}).`;
-        } else {
-            // Trend is improving BUT today is worse (Complexity!)
-            return `You have been improving overall, despite a slight dip today (${latestScore} vs avg ${previousAvg.toFixed(1)}).`;
-        }
-    }
-
-    // 2. DECLINING TREND
-    if (trend === 'declining') {
-        if (direction === "consistent") {
-            return `You are seeing a declining trend, and today continues that pattern.`;
-        }
-        if (isDirectionGood) {
-            // Trend is declining BUT today is better (Complexity!)
-            return `You have been declining recently, but today shows a positive uptick (${latestScore} vs avg ${previousAvg.toFixed(1)}).`;
-        } else {
-            // Trend is declining AND today is even worse
-            return `You are on a downward trend, and today confirms that struggle (${latestScore} vs avg ${previousAvg.toFixed(1)}).`;
-        }
-    }
-
-    // 3. FLUCTUATING TREND
-    if (trend === 'fluctuating') {
-        if (direction === "consistent") return `Your responses have been fluctuating, though today is near your average.`;
-        const dirText = direction === "higher" ? "higher" : "lower";
-        return `Your responses have been fluctuating, and today is ${dirText} than usual (${latestScore} vs ${previousAvg.toFixed(1)}).`;
-    }
-
-    // 4. STABLE TRENDS
-    if (trend.startsWith('stable')) {
-        if (direction === "consistent") {
-            return `Your responses have been ${baseTrendText}, and today matches your average.`;
-        }
-        // Stable but today is an outlier
-        const dirText = direction === "higher" ? "higher" : "lower";
-        return `Normally ${baseTrendText}, but today is ${dirText} than your average (${latestScore} vs ${previousAvg.toFixed(1)}).`;
-    }
-
-    // Default fallback
-    return `Your responses have been ${baseTrendText}.`;
-}
 
 /**
  * Generate annotation text for UI display (short concept name)
  */
-function generateAnnotationText(conceptKey, trend, avg, timeWindow, isInverted, latestScore = null, previousAvg = null) {
-    const shortName = CONCEPT_SHORT_NAMES[conceptKey] || conceptKey;
-    const desc = generateComplexDescription(trend, latestScore, previousAvg, isInverted);
-    return desc;
+function generateAnnotationText(conceptKey, avg, count, latestScore = null) {
+    if (count === 1) {
+        return `Current score: ${avg.toFixed(1)}/5`;
+    }
+    if (latestScore !== null) {
+        return `Latest: ${latestScore}/5, average: ${avg.toFixed(1)}/5 (${count} responses)`;
+    }
+    return `Average: ${avg.toFixed(1)}/5 (${count} responses)`;
 }
 
 /**
  * Generate annotation text for LLM/chatbot (full question title)
- * Handles different scenarios based on data sufficiency and comparison:
- * - Single response: Just show current value
- * - Multiple responses but insufficient for trend: Show average without trend
- * - Sufficient data: Full trend analysis + Latest vs Previous comparison
  */
-function generateAnnotationTextLLM(conceptKey, fullTitle, trend, avg, min, max, count, timeWindow, isInverted, hasSufficientData = false, distinctDayCount = null, latestScore = null, previousAvg = null) {
-    // Clean up the full title (remove trailing colon if present)
-    // Use short name if available to save tokens
+function generateAnnotationTextLLM(conceptKey, fullTitle, avg, min, max, count, latestScore = null) {
     const displayTitle = CONCEPT_SHORT_NAMES[conceptKey] || fullTitle;
     const cleanTitle = displayTitle.replace(/:$/, '');
 
-    // Single response
     if (count === 1) {
         return `- ${cleanTitle}: ${avg.toFixed(1)}/5 (single response)`;
     }
 
-    // Multiple responses but insufficient data for trend analysis
-    if (!hasSufficientData) {
-        return `- ${cleanTitle}: avg ${avg.toFixed(1)}/5 (${count} responses, more data needed)`;
+    if (latestScore !== null) {
+        return `- ${cleanTitle}: latest ${latestScore}/5, avg ${avg.toFixed(1)}/5 (range ${min.toFixed(1)}–${max.toFixed(1)}, ${count} responses)`;
     }
 
-    // Sufficient data — compact one-liner
-    const complexDesc = generateComplexDescription(trend, latestScore, previousAvg, isInverted);
-    return `- ${cleanTitle}: avg ${avg.toFixed(1)}/5 — ${complexDesc}`;
+    return `- ${cleanTitle}: avg ${avg.toFixed(1)}/5 (range ${min.toFixed(1)}–${max.toFixed(1)}, ${count} responses)`;
 }
 
 /**
@@ -275,109 +82,75 @@ async function computeAnnotations(pool, userId, surveyStructure) {
         });
     }
 
-    const timeWindows = ['7d'];
+    const timeWindow = '7d';
+    const intervalDays = 7;
     const annotations = [];
 
-    for (const timeWindow of timeWindows) {
-        const interval = '7 days';
-
-        // Get all responses for this user in the time window.
-        // Use ($2 * INTERVAL '1 day') instead of interpolating `interval` directly
-        // to keep the query fully parameterized regardless of future changes to the
-        // interval value.
-        const intervalDays = 7
-        const { rows: responses } = await pool.query(
-            `SELECT concept_key, score, submitted_at, DATE(submitted_at) as response_date
+    // Get all responses for this user in the time window
+    const { rows: responses } = await pool.query(
+        `SELECT concept_key, score, submitted_at
        FROM public.srl_responses
        WHERE user_id = $1 AND submitted_at >= NOW() - ($2 * INTERVAL '1 day')
        ORDER BY concept_key, submitted_at ASC`,
-            [userId, intervalDays]
+        [userId, intervalDays]
+    );
+
+    // Group by concept
+    const byConceptKey = {};
+    responses.forEach(r => {
+        if (!byConceptKey[r.concept_key]) byConceptKey[r.concept_key] = [];
+        byConceptKey[r.concept_key].push(parseFloat(r.score));
+    });
+
+    // Compute annotation for each concept
+    for (const conceptKey of Object.keys(conceptInfo)) {
+        const scores = byConceptKey[conceptKey] || [];
+        const info = conceptInfo[conceptKey];
+        const isInverted = info.isInverted;
+
+        let avg = 0, min = 0, max = 0, count = 0;
+        let latestScore = null;
+
+        if (scores.length > 0) {
+            avg = average(scores);
+            min = Math.min(...scores);
+            max = Math.max(...scores);
+            count = scores.length;
+            latestScore = scores[scores.length - 1];
+        }
+
+        const annotationText = generateAnnotationText(conceptKey, avg, count, latestScore);
+        const annotationTextLLM = generateAnnotationTextLLM(
+            conceptKey, info.title, avg, min, max, count, latestScore
         );
 
-        // Group by concept and track distinct dates per concept
-        const byConceptKey = {};
-        const distinctDatesByConceptKey = {};
-        responses.forEach(r => {
-            if (!byConceptKey[r.concept_key]) {
-                byConceptKey[r.concept_key] = [];
-                distinctDatesByConceptKey[r.concept_key] = new Set();
-            }
-            byConceptKey[r.concept_key].push(r.score);
-            // Track distinct dates per concept for 7-day threshold
-            if (r.response_date) {
-                distinctDatesByConceptKey[r.concept_key].add(r.response_date.toISOString().split('T')[0]);
-            }
+        annotations.push({
+            userId,
+            conceptKey,
+            timeWindow,
+            avgScore: avg,
+            minScore: min,
+            maxScore: max,
+            responseCount: count,
+            trend: null,
+            isInverted,
+            annotationText,
+            annotationTextLLM,
+            hasSufficientData: count > 0,
+            distinctDayCount: null
         });
-
-        // Compute annotation for each concept
-        for (const conceptKey of Object.keys(conceptInfo)) {
-            const scores = byConceptKey[conceptKey] || [];
-            const distinctDates = distinctDatesByConceptKey[conceptKey] || new Set();
-            const info = conceptInfo[conceptKey];
-            const isInverted = info.isInverted;
-
-            // Per-concept threshold check
-            const conceptResponseCount = scores.length;
-            const conceptDistinctDayCount = distinctDates.size;
-            const hasSufficientData = conceptDistinctDayCount >= MIN_DISTINCT_DAYS_7D;
-
-            let avg = 0, min = 0, max = 0, count = 0, trend = 'stable_avg';
-            let latestScore = null, previousAvg = null;
-
-            if (scores.length > 0) {
-                avg = average(scores);
-                min = Math.min(...scores);
-                max = Math.max(...scores);
-                count = scores.length;
-                trend = calculateTrend(scores, isInverted);
-
-                // LATEST vs BASELINE Calculation
-                latestScore = scores[scores.length - 1]; // Last element is latest (sorted ASC)
-
-                if (scores.length > 1) {
-                    const previousScores = scores.slice(0, scores.length - 1);
-                    previousAvg = average(previousScores);
-                } else {
-                    // Only 1 score exist, so previous avg is undefined/null
-                    previousAvg = null;
-                }
-            }
-
-            const annotationText = generateAnnotationText(conceptKey, trend, avg, timeWindow, isInverted, latestScore, previousAvg);
-            const annotationTextLLM = generateAnnotationTextLLM(
-                conceptKey, info.title, trend, avg, min, max, count, timeWindow, isInverted,
-                hasSufficientData, timeWindow === '7d' ? conceptDistinctDayCount : null,
-                latestScore, previousAvg
-            );
-
-            annotations.push({
-                userId,
-                conceptKey,
-                timeWindow,
-                avgScore: avg,
-                minScore: min,
-                maxScore: max,
-                responseCount: count,
-                trend,
-                isInverted,
-                annotationText,
-                annotationTextLLM,
-                hasSufficientData,
-                distinctDayCount: timeWindow === '7d' ? conceptDistinctDayCount : null
-            });
-        }
     }
 
     // Upsert all annotations
     for (const a of annotations) {
         await pool.query(
-            `INSERT INTO public.srl_annotations 
-        (user_id, concept_key, time_window, avg_score, min_score, max_score, 
+            `INSERT INTO public.srl_annotations
+        (user_id, concept_key, time_window, avg_score, min_score, max_score,
          response_count, trend, is_inverted, has_sufficient_data, distinct_day_count,
          annotation_text, annotation_text_llm, computed_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
-       ON CONFLICT (user_id, concept_key, time_window) 
-       DO UPDATE SET 
+       ON CONFLICT (user_id, concept_key, time_window)
+       DO UPDATE SET
          avg_score = EXCLUDED.avg_score,
          min_score = EXCLUDED.min_score,
          max_score = EXCLUDED.max_score,
@@ -455,62 +228,29 @@ async function getAnnotations(pool, userId, timeWindow = null, forLLM = false) {
         minScore: row.min_score,
         maxScore: row.max_score,
         responseCount: row.response_count,
-        trend: row.trend,
         isInverted: row.is_inverted,
-        hasSufficientData: row.has_sufficient_data,
-        distinctDayCount: row.distinct_day_count,
         text: forLLM ? row.annotation_text_llm : row.annotation_text,
         computedAt: row.computed_at
     }));
 }
 
 /**
- * Format annotations for chatbot prompt
- * Returns a formatted string with all annotations for the Prompt Assembler
- * 
- * Logic:
- * - Only includes annotations that have actual response data (responseCount > 0)
- * - Shows 24h section if there are responses in the last 24 hours
- * - Shows 7d section ONLY if there are responses from more than 1 distinct day
- *   (to avoid duplication when all data is from today)
- */
-/**
  * Get formatted SRL analysis for chatbot prompt.
- * Includes peer context block (internal only) for LLM calibration.
  * Factually describes the student's self-reported learning patterns.
  */
 async function getAnnotationsForChatbot(pool, userId) {
     const annotations = await getAnnotations(pool, userId, null, true);
 
-    // Filter out annotations with no actual data (responseCount === 0)
     const validAnnotations = annotations.filter(a => a.responseCount > 0);
 
     if (validAnnotations.length === 0) {
         return 'No questionnaire data available for this student.';
     }
 
-    // Fetch SRL peer cluster context (if available)
-    const { rows: clusterRows } = await pool.query(
-        `SELECT uca.percentile_position, pc.p5, pc.p50, pc.p95
-         FROM public.user_cluster_assignments uca
-         JOIN public.peer_clusters pc
-           ON pc.concept_id = uca.concept_id AND pc.cluster_index = uca.cluster_index
-         WHERE uca.user_id = $1 AND uca.concept_id = 'srl'`,
-        [userId]
-    );
-
     let result = '## Student Self-Regulated Learning Status\n\n';
-
-    // Peer cluster context is now included in STUDENT DATA SUMMARY (cluster tier blocks) — not duplicated here.
-
-    // Show 7-day data (primary window)
-    const by7d = validAnnotations.filter(a => a.timeWindow === '7d');
-    if (by7d.length > 0) {
-        result += '### Past 7 Days:\n';
-        by7d.forEach(a => {
-            result += `- ${a.text}\n`;
-        });
-    }
+    validAnnotations.forEach(a => {
+        result += `${a.text}\n`;
+    });
 
     return result;
 }
@@ -585,7 +325,13 @@ async function getSeveritiesForScoring(pool, userId) {
 const WELLBEING_KEYS = ['cheerfulness', 'calmness', 'vitality', 'restedness', 'interest'];
 
 async function saveWellbeingResponses(pool, questionnaireId, userId, answers, submittedAt) {
-    const values = WELLBEING_KEYS.map(k => answers[k] || null);
+    const values = WELLBEING_KEYS.map(k => {
+        const val = answers[k];
+        if (val === undefined || val === null) return null;
+        const num = Number(val);
+        if (isNaN(num) || num < 0 || num > 10) return null;
+        return Math.round(num * 10) / 10; // 1 decimal place
+    });
     if (values.every(v => v === null)) return;
 
     await pool.query(
@@ -620,7 +366,7 @@ async function getWellbeingForChatbot(pool, userId) {
     let text = '## Student Wellbeing (WHO-5 Style)\n\n';
     text += '### Most Recent:\n';
     for (const [key, label] of Object.entries(labels)) {
-        text += `- ${label}: ${latest[key]}/5\n`;
+        text += `- ${label}: ${latest[key]}/10\n`;
     }
 
     if (rows.length > 1) {
@@ -630,7 +376,7 @@ async function getWellbeingForChatbot(pool, userId) {
         };
         text += `\n### Past ${rows.length} days averages:\n`;
         for (const [key, label] of Object.entries(labels)) {
-            text += `- ${label}: avg ${avgOf(key)}/5\n`;
+            text += `- ${label}: avg ${avgOf(key)}/10\n`;
         }
     }
 
@@ -639,7 +385,6 @@ async function getWellbeingForChatbot(pool, userId) {
 }
 
 export {
-    calculateTrend,
     computeAnnotations,
     saveResponses,
     saveWellbeingResponses,

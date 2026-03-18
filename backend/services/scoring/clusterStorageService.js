@@ -13,23 +13,41 @@ import { percentile } from '../../utils/stats.js';
 
 async function storeClusterResults(conceptId, composites, clusterRemap, clusterMeans, k, model, externalClient = null) {
     const doWork = async (client) => {
+        // Serialize concurrent writes to the same concept's peer_clusters rows.
+        // pg_advisory_xact_lock auto-releases on COMMIT/ROLLBACK.
+        await client.query(
+            `SELECT pg_advisory_xact_lock(hashtext($1))`,
+            [conceptId]
+        );
+
         // Clean up stale clusters from previous runs with higher K
         await client.query(
             `DELETE FROM public.peer_clusters WHERE concept_id = $1 AND cluster_index >= $2`,
             [conceptId, k]
         );
 
+        // Build cluster rows first, then sort by orderedIdx so concurrent
+        // transactions always acquire peer_clusters row locks in the same order,
+        // preventing deadlocks from conflicting lock acquisition sequences.
         const labels = generateClusterLabels(k, conceptId);
+        const clusterRows = [];
         for (let origC = 0; origC < k; origC++) {
             const orderedIdx = clusterRemap[origC];
             const members = composites.filter(u => u.cluster === origC);
             const scores = members.map(u => u.composite).sort((a, b) => a - b);
+            clusterRows.push({
+                orderedIdx,
+                label: labels[Math.min(orderedIdx, labels.length - 1)],
+                centroid: JSON.stringify(model.means[origC] || []),
+                p5: percentile(scores, 5),
+                p50: percentile(scores, 50),
+                p95: percentile(scores, 95),
+                userCount: members.length,
+            });
+        }
+        clusterRows.sort((a, b) => a.orderedIdx - b.orderedIdx);
 
-            const p5Val = percentile(scores, 5);
-            const p50Val = percentile(scores, 50);
-            const p95Val = percentile(scores, 95);
-            const label = labels[Math.min(orderedIdx, labels.length - 1)];
-
+        for (const row of clusterRows) {
             await client.query(
                 `INSERT INTO public.peer_clusters
                  (concept_id, cluster_index, cluster_label, centroid, p5, p50, p95, user_count, computed_at)
@@ -42,8 +60,8 @@ async function storeClusterResults(conceptId, composites, clusterRemap, clusterM
                    p95 = EXCLUDED.p95,
                    user_count = EXCLUDED.user_count,
                    computed_at = NOW()`,
-                [conceptId, orderedIdx, label, JSON.stringify(model.means[origC] || []),
-                    p5Val, p50Val, p95Val, members.length]
+                [conceptId, row.orderedIdx, row.label, row.centroid,
+                    row.p5, row.p50, row.p95, row.userCount]
             );
         }
     };

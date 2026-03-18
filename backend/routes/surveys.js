@@ -22,11 +22,11 @@ const getDefaultSurveyTemplate = () => ({
             title: 'How are you feeling today?',
             description: 'Rate how you have felt over the past day.',
             elements: [
-                { type: 'rating', name: 'cheerfulness', title: 'I have felt cheerful and in good spirits.', mininumRateDescription: 'Not at all', maximumRateDescription: 'All the time' },
-                { type: 'rating', name: 'calmness', title: 'I have felt calm and relaxed.', mininumRateDescription: 'Not at all', maximumRateDescription: 'All the time' },
-                { type: 'rating', name: 'vitality', title: 'I have felt active and vigorous.', mininumRateDescription: 'Not at all', maximumRateDescription: 'All the time' },
-                { type: 'rating', name: 'restedness', title: 'I woke up feeling fresh and rested.', mininumRateDescription: 'Not at all', maximumRateDescription: 'All the time' },
-                { type: 'rating', name: 'interest', title: 'My daily life has been filled with things that interest me.', mininumRateDescription: 'Not at all', maximumRateDescription: 'All the time' }
+                { type: 'rating', name: 'cheerfulness', title: 'I have felt cheerful and in good spirits.', rateMin: 0, rateMax: 10, minRateDescription: 'At no time', maxRateDescription: 'All of the time' },
+                { type: 'rating', name: 'calmness', title: 'I have felt calm and relaxed.', rateMin: 0, rateMax: 10, minRateDescription: 'At no time', maxRateDescription: 'All of the time' },
+                { type: 'rating', name: 'vitality', title: 'I have felt active and vigorous.', rateMin: 0, rateMax: 10, minRateDescription: 'At no time', maxRateDescription: 'All of the time' },
+                { type: 'rating', name: 'restedness', title: 'I woke up feeling fresh and rested.', rateMin: 0, rateMax: 10, minRateDescription: 'At no time', maxRateDescription: 'All of the time' },
+                { type: 'rating', name: 'interest', title: 'My daily life has been filled with things that interest me.', rateMin: 0, rateMax: 10, minRateDescription: 'At no time', maxRateDescription: 'All of the time' }
             ]
         },
         {
@@ -34,16 +34,16 @@ const getDefaultSurveyTemplate = () => ({
             title: 'Your Learning Today',
             description: 'Reflect on your learning strategies and experience.',
             elements: [
-                { type: 'rating', name: 'efficiency', title: 'I believe I can accomplish my learning duties and learning tasks efficiently.', mininumRateDescription: 'Strongly disagree', maximumRateDescription: 'Strongly agree' },
-                { type: 'rating', name: 'importance', title: 'I believe that my learning tasks are very important to me.', mininumRateDescription: 'Not important', maximumRateDescription: 'Very important' },
-                { type: 'rating', name: 'tracking', title: 'I keep track of what I need to do and understand what I must do to accomplish my learning tasks.', mininumRateDescription: 'Never', maximumRateDescription: 'Always' },
-                { type: 'rating', name: 'effort', title: 'I put enough effort into my learning tasks and stay focused while working on them.', mininumRateDescription: 'Not enough effort', maximumRateDescription: 'A lot of effort' },
-                { type: 'rating', name: 'help_seeking', title: 'I seek help from teachers, friends, or the internet when I need explanation or help with difficult tasks.', mininumRateDescription: 'Never seek help', maximumRateDescription: 'Always seek help' },
-                { type: 'rating', name: 'community', title: 'I am having nice interactions and feeling at home within the college community.', mininumRateDescription: 'Not at all', maximumRateDescription: 'Very much' },
-                { type: 'rating', name: 'timeliness', title: 'I am doing my studies on time and keeping up with tasks/deadlines.', mininumRateDescription: 'Always late', maximumRateDescription: 'Always on time' },
-                { type: 'rating', name: 'motivation', title: 'I feel motivated to learn and enjoy working on my learning tasks.', mininumRateDescription: 'Not motivated', maximumRateDescription: 'Highly motivated' },
-                { type: 'rating', name: 'anxiety', title: 'I feel anxious or stressed working on learning tasks, assignments, or in class.', mininumRateDescription: 'Never anxious', maximumRateDescription: 'Very anxious' },
-                { type: 'rating', name: 'reflection', title: 'I reflect on my performance and learn from feedback or mistakes to improve my learning.', mininumRateDescription: 'Never reflect', maximumRateDescription: 'Always reflect' }
+                { type: 'rating', name: 'efficiency', title: 'I believe I can accomplish my learning duties and learning tasks efficiently.', rateMin: 1, rateMax: 5, rateStep: 0.1, minRateDescription: 'Strongly disagree', maxRateDescription: 'Strongly agree' },
+                { type: 'rating', name: 'importance', title: 'I believe that my learning tasks are very important to me.', rateMin: 1, rateMax: 5, rateStep: 0.1, minRateDescription: 'Not important', maxRateDescription: 'Very important' },
+                { type: 'rating', name: 'tracking', title: 'I keep track of what I need to do and understand what I must do to accomplish my learning tasks.', rateMin: 1, rateMax: 5, rateStep: 0.1, minRateDescription: 'Never', maxRateDescription: 'Always' },
+                { type: 'rating', name: 'effort', title: 'I put enough effort into my learning tasks and stay focused while working on them.', rateMin: 1, rateMax: 5, rateStep: 0.1, minRateDescription: 'Not enough effort', maxRateDescription: 'A lot of effort' },
+                { type: 'rating', name: 'help_seeking', title: 'I seek help from teachers, friends, or the internet when I need explanation or help with difficult tasks.', rateMin: 1, rateMax: 5, rateStep: 0.1, minRateDescription: 'Never seek help', maxRateDescription: 'Always seek help' },
+                { type: 'rating', name: 'community', title: 'I am having nice interactions and feeling at home within the college community.', rateMin: 1, rateMax: 5, rateStep: 0.1, minRateDescription: 'Not at all', maxRateDescription: 'Very much' },
+                { type: 'rating', name: 'timeliness', title: 'I am doing my studies on time and keeping up with tasks/deadlines.', rateMin: 1, rateMax: 5, rateStep: 0.1, minRateDescription: 'Always late', maxRateDescription: 'Always on time' },
+                { type: 'rating', name: 'motivation', title: 'I feel motivated to learn and enjoy working on my learning tasks.', rateMin: 1, rateMax: 5, rateStep: 0.1, minRateDescription: 'Not motivated', maxRateDescription: 'Highly motivated' },
+                { type: 'rating', name: 'anxiety', title: 'I feel anxious or stressed working on learning tasks, assignments, or in class.', rateMin: 1, rateMax: 5, rateStep: 0.1, minRateDescription: 'Never anxious', maxRateDescription: 'Very anxious' },
+                { type: 'rating', name: 'reflection', title: 'I reflect on my performance and learn from feedback or mistakes to improve my learning.', rateMin: 1, rateMax: 5, rateStep: 0.1, minRateDescription: 'Never reflect', maxRateDescription: 'Always reflect' }
             ]
         }
     ]

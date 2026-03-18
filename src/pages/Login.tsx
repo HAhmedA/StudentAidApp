@@ -13,7 +13,6 @@ const Login = (): React.ReactElement => {
 
     const [email, setEmail] = useState('')
     const [password, setPassword] = useState('')
-    const [keepLoggedIn, setKeepLoggedIn] = useState(false)
     const [localError, setLocalError] = useState<string | null>(null)
 
     useEffect(() => {
@@ -82,17 +81,6 @@ const Login = (): React.ReactElement => {
                             required
                             disabled={status === 'loading'}
                         />
-                    </div>
-
-                    <div className="form-group checkbox-group">
-                        <input
-                            id="keepLoggedIn"
-                            type="checkbox"
-                            checked={keepLoggedIn}
-                            onChange={(e) => setKeepLoggedIn(e.target.checked)}
-                            disabled={status === 'loading'}
-                        />
-                        <label htmlFor="keepLoggedIn">Keep me logged in for 30 days</label>
                     </div>
 
                     {displayError && (

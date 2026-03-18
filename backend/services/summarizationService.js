@@ -134,24 +134,34 @@ async function getSummariesForChatbot(userId) {
 
     // Check if user has any messages in the last 10 days
     const { rows: recentCheck } = await pool.query(
-        `SELECT COUNT(*) as count FROM public.chat_messages 
-         WHERE user_id = $1 AND created_at >= NOW() - INTERVAL '${SUMMARY_WINDOW_DAYS} days'`,
-        [userId]
+        `SELECT COUNT(*) as count FROM public.chat_messages
+         WHERE user_id = $1 AND created_at >= NOW() - INTERVAL '1 day' * $2`,
+        [userId, SUMMARY_WINDOW_DAYS]
     )
 
     if (parseInt(recentCheck[0].count) === 0) {
         return 'No chats in the last 10 days.'
     }
 
-    // Get summaries for each day in the window
+    // Optimization #6: Fetch all day summaries in parallel (batched to limit concurrency)
+    // Batches of 3 prevent overwhelming the LLM API on cache misses
+    const BATCH_SIZE = 3
+    const dates = []
     for (let i = 1; i <= SUMMARY_WINDOW_DAYS; i++) {
         const date = new Date(today)
         date.setDate(date.getDate() - i)
-        const dateStr = date.toISOString().split('T')[0]
+        dates.push(date.toISOString().split('T')[0])
+    }
 
-        const summary = await getDailySummary(userId, dateStr)
-        if (summary) {
-            summaries.push(`[${dateStr}]\n${summary}`)
+    for (let b = 0; b < dates.length; b += BATCH_SIZE) {
+        const batch = dates.slice(b, b + BATCH_SIZE)
+        const results = await Promise.all(
+            batch.map(dateStr => getDailySummary(userId, dateStr))
+        )
+        for (let j = 0; j < results.length; j++) {
+            if (results[j]) {
+                summaries.push(`[${batch[j]}]\n${results[j]}`)
+            }
         }
     }
 

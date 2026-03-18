@@ -66,9 +66,10 @@ const DIMENSION_DEFS = {
         session_quality: { metric: 'avg_session_duration', inverted: false }
     },
     sleep: {
-        duration: { metric: 'sleep_minutes', inverted: false },
-        continuity: { metric: 'awakenings', inverted: true },  // fewer = better
-        timing: { metric: 'bedtime_stddev', inverted: true }   // lower variance = more consistent
+        duration:             { metric: 'duration',            inverted: true },   // lower deviation from 7–9h = better
+        duration_consistency: { metric: 'sleep_duration_mad',  inverted: true },   // lower MAD = more consistent
+        continuity:           { metric: 'awakenings',          inverted: true },   // fewer = better
+        timing:               { metric: 'bedtime_mad',         inverted: true }    // lower MAD = more consistent
     },
     screen_time: {
         volume: { metric: 'screen_minutes', inverted: true },  // less = better

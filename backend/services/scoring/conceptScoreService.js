@@ -203,9 +203,9 @@ async function computeAndStoreRawScore(userId, conceptId, rawScores) {
     // Use numericScore (from peer comparison) if available, otherwise use score (legacy)
     const getScore = (r) => r.numericScore != null ? r.numericScore : (r.score || 0);
 
-    // Compute average of all raw scores
+    // Compute average of all raw scores, clamped to valid 0-100 range
     const total = rawScores.reduce((sum, r) => sum + getScore(r), 0);
-    const score = Math.round((total / rawScores.length) * 100) / 100;
+    const score = Math.max(0, Math.min(100, Math.round((total / rawScores.length) * 100) / 100));
 
     // Build breakdown for frontend consumption
     const breakdown = {};

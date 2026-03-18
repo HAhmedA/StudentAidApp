@@ -18,9 +18,12 @@ const SIM_FILTER = process.env.SIMULATION_MODE === 'false' ? `AND is_simulated =
 // Always exclude users that an admin has opted out of the clustering pool,
 // regardless of SIMULATION_MODE. This lets admins remove test accounts that were
 // accidentally included in a real cohort without changing SIMULATION_MODE.
-const EXCLUDE_OPTED_OUT = `AND user_id NOT IN (
+function EXCLUDE_OPTED_OUT(alias = '') {
+    const col = alias ? `${alias}.user_id` : 'user_id';
+    return `AND ${col} NOT IN (
     SELECT user_id FROM public.student_profiles WHERE exclude_from_clustering = true
 )`;
+}
 
 // =============================================================================
 // POOL SIZE QUERIES
@@ -37,19 +40,19 @@ export async function getConceptPoolSizes(days = 7) {
     const { rows } = await pool.query(`
         SELECT 'sleep' as concept, COUNT(DISTINCT user_id) as user_count
         FROM public.sleep_sessions
-        WHERE session_date >= CURRENT_DATE - ($1 * INTERVAL '1 day') ${SIM_FILTER} ${EXCLUDE_OPTED_OUT}
+        WHERE session_date >= CURRENT_DATE - ($1 * INTERVAL '1 day') ${SIM_FILTER} ${EXCLUDE_OPTED_OUT()}
         UNION ALL
         SELECT 'screen_time', COUNT(DISTINCT user_id)
         FROM public.screen_time_sessions
-        WHERE session_date >= CURRENT_DATE - ($1 * INTERVAL '1 day') ${SIM_FILTER} ${EXCLUDE_OPTED_OUT}
+        WHERE session_date >= CURRENT_DATE - ($1 * INTERVAL '1 day') ${SIM_FILTER} ${EXCLUDE_OPTED_OUT()}
         UNION ALL
         SELECT 'lms', COUNT(DISTINCT user_id)
         FROM public.lms_sessions
-        WHERE session_date >= CURRENT_DATE - ($1 * INTERVAL '1 day') ${SIM_FILTER} ${EXCLUDE_OPTED_OUT}
+        WHERE session_date >= CURRENT_DATE - ($1 * INTERVAL '1 day') ${SIM_FILTER} ${EXCLUDE_OPTED_OUT()}
         UNION ALL
         SELECT 'srl', COUNT(DISTINCT user_id)
         FROM public.srl_annotations
-        WHERE time_window = '7d' AND response_count > 0 ${EXCLUDE_OPTED_OUT}
+        WHERE time_window = '7d' AND response_count > 0 ${EXCLUDE_OPTED_OUT()}
     `, [days])
     const sizes = {}
     for (const r of rows) {
@@ -127,7 +130,7 @@ async function getLMSMetrics(days) {
         FROM public.lms_sessions
         WHERE ($1::int IS NULL OR session_date >= CURRENT_DATE - ($1 * INTERVAL '1 day'))
         ${SIM_FILTER}
-        ${EXCLUDE_OPTED_OUT}
+        ${EXCLUDE_OPTED_OUT()}
         GROUP BY user_id
     `, [days])
     const metrics = {}
@@ -144,26 +147,62 @@ async function getLMSMetrics(days) {
 }
 
 // ---- Sleep ----
+// Science-based metrics: duration scored as deviation from 7–9h optimal range,
+// consistency via MAD, bedtime via MAD with shifted hours for midnight wraparound.
 async function getSleepMetrics(days) {
     const { rows } = await pool.query(`
-        SELECT user_id,
-               AVG(total_sleep_minutes) as avg_sleep_minutes,
-               AVG(awakenings_count) as avg_awakenings,
-               AVG(awake_minutes) as avg_awake_minutes,
-               STDDEV_POP(EXTRACT(HOUR FROM bedtime) + EXTRACT(MINUTE FROM bedtime) / 60.0) as bedtime_stddev
-        FROM public.sleep_sessions
-        WHERE session_date >= CURRENT_DATE - ($1 * INTERVAL '1 day')
+        WITH user_avgs AS (
+            SELECT user_id,
+                   AVG(total_sleep_minutes) AS avg_sleep,
+                   AVG(
+                     CASE WHEN EXTRACT(HOUR FROM bedtime) < 12
+                          THEN EXTRACT(HOUR FROM bedtime) + 24
+                          ELSE EXTRACT(HOUR FROM bedtime)
+                     END + EXTRACT(MINUTE FROM bedtime) / 60.0
+                   ) AS avg_bedtime_shifted
+            FROM public.sleep_sessions
+            WHERE session_date >= CURRENT_DATE - ($1 * INTERVAL '1 day')
+            ${SIM_FILTER}
+            ${EXCLUDE_OPTED_OUT()}
+            GROUP BY user_id
+        )
+        SELECT s.user_id,
+               -- Duration deviation from 7–9h optimal (0 inside range, positive outside)
+               AVG(GREATEST(420 - s.total_sleep_minutes, s.total_sleep_minutes - 540, 0))
+                   AS duration,
+               -- Duration consistency: direction-aware MAD (only penalise deviations away from optimal)
+               AVG(
+                 CASE
+                   WHEN GREATEST(420 - s.total_sleep_minutes, s.total_sleep_minutes - 540, 0)
+                        >= GREATEST(420 - ua.avg_sleep, ua.avg_sleep - 540, 0)
+                   THEN ABS(s.total_sleep_minutes - ua.avg_sleep)
+                   ELSE 0
+                 END
+               ) AS sleep_duration_mad,
+               -- Awakenings (unchanged)
+               AVG(s.awakenings_count) AS avg_awakenings,
+               -- Bedtime consistency: MAD with shifted hours for midnight wraparound
+               AVG(ABS(
+                   (CASE WHEN EXTRACT(HOUR FROM s.bedtime) < 12
+                         THEN EXTRACT(HOUR FROM s.bedtime) + 24
+                         ELSE EXTRACT(HOUR FROM s.bedtime)
+                    END + EXTRACT(MINUTE FROM s.bedtime) / 60.0)
+                   - ua.avg_bedtime_shifted
+               )) AS bedtime_mad
+        FROM public.sleep_sessions s
+        JOIN user_avgs ua ON ua.user_id = s.user_id
+        WHERE s.session_date >= CURRENT_DATE - ($1 * INTERVAL '1 day')
         ${SIM_FILTER}
-        ${EXCLUDE_OPTED_OUT}
-        GROUP BY user_id
+        ${EXCLUDE_OPTED_OUT('s')}
+        GROUP BY s.user_id
     `, [days])
     const metrics = {}
     for (const r of rows) {
         metrics[r.user_id] = {
-            sleep_minutes:   parseFloat(r.avg_sleep_minutes) || 0,
-            awakenings:      parseFloat(r.avg_awakenings)    || 0,
-            awake_minutes:   parseFloat(r.avg_awake_minutes) || 0,
-            bedtime_stddev:  parseFloat(r.bedtime_stddev)    || 0
+            duration:            parseFloat(r.duration)             || 0,
+            sleep_duration_mad:  parseFloat(r.sleep_duration_mad)  || 0,
+            awakenings:          parseFloat(r.avg_awakenings)      || 0,
+            bedtime_mad:         parseFloat(r.bedtime_mad)         || 0
         }
     }
     return metrics
@@ -179,7 +218,7 @@ async function getScreenTimeMetrics(days) {
         FROM public.screen_time_sessions
         WHERE session_date >= CURRENT_DATE - ($1 * INTERVAL '1 day')
         ${SIM_FILTER}
-        ${EXCLUDE_OPTED_OUT}
+        ${EXCLUDE_OPTED_OUT()}
         GROUP BY user_id
     `, [days])
     const metrics = {}
@@ -239,14 +278,16 @@ async function getSRLMetrics() {
         SELECT user_id, concept_key, avg_score, is_inverted
         FROM public.srl_annotations
         WHERE time_window = '7d' AND response_count > 0
-        ${EXCLUDE_OPTED_OUT}
+        ${EXCLUDE_OPTED_OUT()}
         ORDER BY user_id, concept_key
     `)
     const metrics = {}
     for (const r of rows) {
+        const parsed = parseFloat(r.avg_score)
+        if (isNaN(parsed) || parsed < 1 || parsed > 5) continue // skip bad data
         if (!metrics[r.user_id]) metrics[r.user_id] = {}
         metrics[r.user_id][r.concept_key] = {
-            score:      parseFloat(r.avg_score) || 0,
+            score:      parsed,
             isInverted: r.is_inverted
         }
     }

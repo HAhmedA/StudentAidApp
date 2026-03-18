@@ -1,6 +1,6 @@
 # Peer Comparison & Scoring System — Full Documentation
 
-> **Last updated:** 2026-02-24  
+> **Last updated:** 2026-03-13
 > This document explains the complete pipeline from raw data → clustering → scoring → gauge visualization.
 
 ---
@@ -154,6 +154,8 @@ All (K, covType) candidates are ranked by a **weighted composite of ranks**:
 
 > Parameter count includes gating params: `(K-1) × (D+1)` + K×D means + cov params
 
+> **Scientific caveat:** BIC and AIC share the same base formula (`-2·logL + penalty`) and differ only in penalty constant — using both in a composite is **partially redundant**. The 40/30/30 weights are empirically chosen heuristics, not theoretically justified. This is acceptable pragmatically but should not be treated as a principled information-theoretic selection criterion.
+
 #### Example with 20 test users:
 
 | Concept | K | Cov Model | BIC |
@@ -214,18 +216,19 @@ SRL uses variable-dimension clustering where each SRL concept key becomes a feat
    - Calls the annotation service's `getRawScoresForScoring()`
    - Receives per-domain scores + cluster metadata
    - Computes a weighted composite score (0–100)
-   - Computes `avg_7d` — the rolling average of daily scores from the past 7 days (excluding today), queried from `concept_score_history`
-   - Determines `trend` by comparing today's score to `avg_7d`: **improving** (≥ +10 points), **declining** (≤ -10 points), or **stable** (within ±10)
+   - Determines `trend` by comparing today's score to **yesterday's score** (queried from `concept_score_history`): **improving** (> +5 points), **declining** (< -5 points), or **stable** (within ±5)
 2. Stores the score in `concept_scores` (current) and `concept_score_history` (daily snapshot)
 3. Returns an object mapping concept IDs → `{ score, trend, breakdown }`
 
-> **Note:** The `trend` field (improving/declining/stable) is a **long-term** indicator comparing today vs. the 7-day average with a ±10 threshold. This is separate from the **breakdown badges** (Improving/Unchanged/Declining), which compare today vs. yesterday only with a ±2 threshold.
+> **Note:** The `trend` field (improving/declining/stable) is a **day-over-day** indicator comparing today's score vs. yesterday's score with a ±5 threshold. This is a more volatile but responsive signal. It is separate from the **breakdown badges** (Improving/Unchanged/Declining) shown in the detailed breakdown, which use the same comparison but a tighter ±2 threshold.
+>
+> *Scientific caveat:* Day-over-day comparison (±5) is noisier than a rolling average approach; a 7-day moving average with a wider threshold (e.g. ±10) would be more stable, but that approach is not currently implemented.
 
 ### Score Storage
 
 | Table | Purpose | Key Fields |
 |---|---|---|
-| `concept_scores` | Current score (upserted per user+concept) | score, trend, aspect_breakdown, avg_7d |
+| `concept_scores` | Current score (upserted per user+concept) | score, trend, aspect_breakdown, computed_at |
 | `concept_score_history` | Daily snapshot for trend calculation | score, score_date |
 | `peer_clusters` | Cluster definitions per concept | centroid, p5, p50, p95, user_count |
 | `user_cluster_assignments` | User → cluster mapping | cluster_index, cluster_label, percentile_position |
@@ -305,7 +308,7 @@ The gauge is a 180° arc rendered as an SVG:
 
 | Element | Description |
 |---|---|
-| **Gradient arc** | 20 segments transitioning red (#ef4444) → yellow (#eab308) → green (#22c55e → #15803d) |
+| **Gradient arc** | 20 segments transitioning yellow (#FDE047) → light green (#86efac) → dark green (#15803d) |
 | **Today needle** | Black arrow (shaft + arrowhead), rotated to score position on the arc |
 | **Yesterday needle** | Gray arrow, same shape. If no data: faded (25% opacity) at dial center |
 | **Edge labels** | "Needs Improvement" (left) and "Good" (right) |
@@ -332,7 +335,7 @@ const angle = START_ANGLE + clampedFraction * (END_ANGLE - START_ANGLE);
 | `dialMax` | number | P95 percentile (right edge of arc) |
 | `clusterLabel` | string \| null | Cluster name (currently not displayed on gauge) |
 | `label` | string | Concept name displayed as title |
-| `trend` | string | 'improving' / 'declining' / 'stable' |
+| `trend` | string | 'improving' / 'declining' / 'stable' — accepted but **not rendered** on the gauge UI; no visual trend indicator is displayed |
 
 ---
 
@@ -371,7 +374,7 @@ Each domain name has an ℹ icon. Hovering reveals what the metric measures and 
 
 - **Volume** (Screen Time): "Total daily screen time. Less is better."
 - **Continuity** (Sleep): "Number of awakenings per night. Fewer is better."
-- **Action Mix** (LMS): "Ratio of active vs passive learning. Higher active % is better."
+- **Participation Variety** (LMS): "Breadth of LMS activity across quizzes, assignments, and forum posts. Higher breadth is better."
 
 ---
 
@@ -446,7 +449,7 @@ CREATE TABLE public.concept_score_history (
 |---|---|
 | `services/scoring/clusterPeerService.js` | PGMoE engine, gating network, parsimonious covariance, BIC+AIC+entropy model selection |
 | `services/scoring/scoreComputationService.js` | Orchestrates per-concept score computation |
-| `services/scoring/conceptScoreService.js` | Score storage, 7-day average, history tracking |
+| `services/scoring/conceptScoreService.js` | Score storage, day-over-day trend (±5), history tracking |
 | `services/simulationOrchestratorService.js` | Coordinates simulators + seeds historical scores |
 | `services/annotators/sleep|lms|screenTime|srlAnnotationService.js` | Per-concept annotation + cluster integration |
 | `routes/scores.js` | API endpoint serving scores + cluster data |

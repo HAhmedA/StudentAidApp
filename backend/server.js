@@ -65,7 +65,7 @@ app.use(helmet({
 }))
 
 // Let Express trust reverse proxy headers; important for cookies behind Docker
-app.set('trust proxy', isProduction ? 1 : false)
+app.set('trust proxy', 1)
 const PORT = process.env.PORT || 8080
 
 // Allow cross-origin requests from the frontend

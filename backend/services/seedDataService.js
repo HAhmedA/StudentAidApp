@@ -10,7 +10,7 @@ import { generateStudentData } from './simulationOrchestratorService.js';
 import { computeAllScores, batchScoreSRLCohort } from './scoring/scoreComputationService.js';
 
 /**
- * Recompute scores for all seeded test accounts (fire-and-forget helper).
+ * Recompute scores for all seeded test accounts.
  * Runs after data generation so that users seeded while pool < threshold
  * get their scores computed now that the full cohort is available.
  */
@@ -87,7 +87,7 @@ export async function seedTestAccountData() {
         // Always recompute scores for the full cohort so that users seeded under
         // cold-start (pool < threshold at the time they were generated) get their
         // scores now that the full pool is present.
-        recomputeAllSeedScores(); // fire-and-forget — does not block startup
+        await recomputeAllSeedScores();
     } catch (err) {
         logger.error(`Seed data service error: ${err.message}`);
     }

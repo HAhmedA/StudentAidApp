@@ -8,8 +8,7 @@ const Surveys = (): React.ReactElement => {
     const surveys = useReduxSelector(state => state.surveys.surveys)
     const dispatch = useReduxDispatch()
     const user = useReduxSelector(state => state.auth.user)
-    // Check if user is admin by email (admin@example.com) or legacy role
-    const isAdmin = user?.role === 'admin' || user?.email === 'admin@example.com'
+    const isAdmin = user?.role === 'admin'
 
     const status = useReduxSelector(state => state.surveys.status)
 

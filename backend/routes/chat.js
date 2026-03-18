@@ -1,5 +1,6 @@
 // Chat routes
 import { Router } from 'express'
+import rateLimit from 'express-rate-limit'
 import { requireAuth } from '../middleware/auth.js'
 import pool from '../config/database.js'
 import { asyncRoute } from '../utils/errors.js'
@@ -12,10 +13,31 @@ import {
     resetSession
 } from '../services/contextManagerService.js'
 import { checkAvailability } from '../services/apiConnectorService.js'
+import { checkInputSafety } from '../services/inputGuardService.js'
+import logger from '../utils/logger.js'
 import { getPreferences, upsertPreferences } from '../services/chatbotPreferencesService.js'
 
 const router = Router()
 router.use(requireAuth)
+
+// --- Rate limiters (keyed by session user id) ---
+const chatMessageLimiter = rateLimit({
+    windowMs: 60_000,           // 1-minute window
+    max: 10,                    // 10 messages per minute per user
+    keyGenerator: (req) => req.session?.user?.id || req.ip,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many messages — please wait a moment before sending again.' }
+})
+
+const chatResetLimiter = rateLimit({
+    windowMs: 60_000,
+    max: 3,                     // 3 resets per minute per user
+    keyGenerator: (req) => req.session?.user?.id || req.ip,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many resets — please wait before trying again.' }
+})
 
 /**
  * @swagger
@@ -96,7 +118,7 @@ router.get('/initial', asyncRoute(async (req, res) => {
  *       401: { description: Not authenticated }
  *       500: { description: Server error }
  */
-router.post('/message', asyncRoute(async (req, res) => {
+router.post('/message', chatMessageLimiter, asyncRoute(async (req, res) => {
     const userId = req.session.user.id
     const { message } = req.body
 
@@ -105,6 +127,15 @@ router.post('/message', asyncRoute(async (req, res) => {
     }
     if (message.length > 5000) {
         return res.status(400).json({ error: 'message too long (max 5000 characters)' })
+    }
+
+    const guard = checkInputSafety(message)
+    if (!guard.safe) {
+        logger.warn('INPUT_GUARD_BLOCK', { userId, score: guard.score, flags: guard.flags })
+        return res.status(400).json({
+            response: "I couldn't process that request. Could you try rephrasing?",
+            success: false
+        })
     }
 
     const result = await sendMessage(userId, message.trim())
@@ -162,8 +193,11 @@ router.get('/history', asyncRoute(async (req, res) => {
     if (sessionCheck.length === 0) return res.status(403).json({ error: 'forbidden' })
 
     const parsedLimit = Math.min(parseInt(limit) || 20, 50)
-    const messages = await getSessionHistory(sessionId, parsedLimit, before || null)
-    res.json({ messages, hasMore: messages.length === parsedLimit })
+    // Fetch one extra row to reliably detect whether more pages exist
+    const messages = await getSessionHistory(sessionId, parsedLimit + 1, before || null)
+    const hasMore = messages.length > parsedLimit
+    if (hasMore) messages.pop() // Remove the probe row
+    res.json({ messages, hasMore })
 }))
 
 router.get('/sessions', asyncRoute(async (req, res) => {
@@ -172,7 +206,7 @@ router.get('/sessions', asyncRoute(async (req, res) => {
     res.json({ sessions })
 }))
 
-router.post('/reset', asyncRoute(async (req, res) => {
+router.post('/reset', chatResetLimiter, asyncRoute(async (req, res) => {
     const userId = req.session.user.id
     const result = await resetSession(userId)
 

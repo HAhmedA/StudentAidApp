@@ -18,11 +18,11 @@ EXPLICITLY ALLOWED CONTENT (always PASS these):
 - Wellness and mental health language used encouragingly ("managing anxiety", "reducing stress")
 - Discussing SRL (self-regulated learning) data: motivation, effort, anxiety, focus
 - References to screen time, LMS activity, quiz/assignment/forum participation
-- Peer group comparisons described only in general terms (e.g., "you are doing well")
+- General encouraging language like "you are doing well" is fine, but explicit peer comparisons ("compared to peers", "above/below average") should FAIL
 - Advice about study habits, time management, sleep hygiene, digital wellbeing
 - Encouraging or affirming language about student performance
 - Responses that contain phrases like "based on your data" or "your scores show"
-- Responses that reference [Internal context] or calibration — this is a system design feature, NOT a leak
+- If the response mentions [Internal context] blocks, tier numbers, or cluster labels in a way that the STUDENT would see them, this is a SYSTEM LEAK — FAIL. These markers should only appear in the system prompt context, never in the response text itself
 
 VALID RESPONSE TOPICS (always PASS):
 - Discussing any student data source = PASS

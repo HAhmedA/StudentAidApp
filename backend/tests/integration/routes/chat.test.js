@@ -100,7 +100,8 @@ describe('GET /api/chat/history — IDOR guard (CRIT-T2)', () => {
 
         expect(res.status).toBe(200)
         expect(res.body.messages).toHaveLength(2)
-        expect(mockGetHistory).toHaveBeenCalledWith(sessionId, 20, null)
+        // Route fetches limit+1 to detect hasMore; default limit=20 → 21
+        expect(mockGetHistory).toHaveBeenCalledWith(sessionId, 21, null)
     })
 
     it('enforces the ownership check with the correct userId from session — not from query params', async () => {
@@ -127,7 +128,7 @@ describe('GET /api/chat/history — IDOR guard (CRIT-T2)', () => {
         await request(buildApp('user-a'))
             .get(`/api/chat/history?sessionId=${sessionId}&limit=999`)
 
-        // parsedLimit should be capped at 50
-        expect(mockGetHistory).toHaveBeenCalledWith(sessionId, 50, null)
+        // parsedLimit capped at 50; route fetches +1 for hasMore probe → 51
+        expect(mockGetHistory).toHaveBeenCalledWith(sessionId, 51, null)
     })
 })

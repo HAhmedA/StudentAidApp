@@ -7,9 +7,11 @@ const RequireAuth: React.FC<{ children: React.ReactElement }> = ({ children }) =
     const status = useReduxSelector(state => state.auth.status)
     const location = useLocation()
 
-    // Auth check in flight — don't redirect yet
+    // Auth check in flight — show loading indicator
     if (status === 'idle' || status === 'loading') {
-        return null
+        return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+            <div>Loading...</div>
+        </div>
     }
 
     if (!user) {

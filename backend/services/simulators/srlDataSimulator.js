@@ -83,7 +83,14 @@ function randomInt(min, max) {
  * Clamp value to 1-5 range (Likert scale)
  */
 function clampScore(score) {
-    return Math.max(1, Math.min(5, Math.round(score)));
+    return Math.max(1, Math.min(5, Math.round(score * 10) / 10));
+}
+
+/**
+ * Clamp value to 0-10 range (wellbeing scale, 1 decimal place)
+ */
+function clampWellbeingScore(score) {
+    return Math.max(0, Math.min(10, Math.round(score * 10) / 10));
 }
 
 /**
@@ -298,13 +305,13 @@ async function generateSRLData(pool, userId, profile, days = 14) {
             );
         }
 
-        // 3. Simulate wellbeing responses (WHO-5 style)
+        // 3. Simulate wellbeing responses (0-10 scale with decimals)
         const wellbeingScores = {
-            cheerfulness: clampScore(3 + (profile === 'high_achiever' ? 1 : profile === 'low_achiever' ? -1 : 0) + (Math.random() - 0.5) * 2),
-            calmness: clampScore(3 + (profile === 'high_achiever' ? 0.5 : profile === 'low_achiever' ? -0.5 : 0) + (Math.random() - 0.5) * 2),
-            vitality: clampScore(3 + (profile === 'high_achiever' ? 1 : profile === 'low_achiever' ? -1 : 0) + (Math.random() - 0.5) * 2),
-            restedness: clampScore(3 + (profile === 'high_achiever' ? 0.5 : profile === 'low_achiever' ? -1 : 0) + (Math.random() - 0.5) * 2),
-            interest: clampScore(3 + (profile === 'high_achiever' ? 1 : profile === 'low_achiever' ? -0.5 : 0) + (Math.random() - 0.5) * 2)
+            cheerfulness: clampWellbeingScore(6 + (profile === 'high_achiever' ? 2 : profile === 'low_achiever' ? -2 : 0) + (Math.random() - 0.5) * 4),
+            calmness: clampWellbeingScore(6 + (profile === 'high_achiever' ? 1 : profile === 'low_achiever' ? -1 : 0) + (Math.random() - 0.5) * 4),
+            vitality: clampWellbeingScore(6 + (profile === 'high_achiever' ? 2 : profile === 'low_achiever' ? -2 : 0) + (Math.random() - 0.5) * 4),
+            restedness: clampWellbeingScore(6 + (profile === 'high_achiever' ? 1 : profile === 'low_achiever' ? -2 : 0) + (Math.random() - 0.5) * 4),
+            interest: clampWellbeingScore(6 + (profile === 'high_achiever' ? 2 : profile === 'low_achiever' ? -1 : 0) + (Math.random() - 0.5) * 4)
         };
 
         await pool.query(

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import ReactMarkdown from 'react-markdown'
 import './Chatbot.css'
 import { getInitialChat, getHistory, sendMessage as sendMessageApi, resetChat, getChatStatus, getChatPreferences, updateChatPreferences, ChatbotPreferences } from '../api/chat'
 
@@ -17,8 +18,8 @@ interface ChatbotProps {
 
 // Default suggested prompts (fallback when dynamic prompts unavailable)
 const DEFAULT_PROMPTS = [
-    "What are the best studying strategies based on my profile?",
-    "Analyze my SRL data",
+    "What are the best studying strategies based on my data?",
+    "Analyze my learning data",
     "What are my learning trends?",
     "How can I improve based on my history?"
 ]
@@ -64,6 +65,9 @@ const Chatbot = ({ isLoggedIn }: ChatbotProps) => {
 
     // Ref to prevent race conditions on greeting fetch
     const isFetchingRef = useRef(false)
+
+    // Generation counter: incremented on wizardComplete to invalidate in-flight prefetch
+    const greetingGenRef = useRef(0)
 
     // Scroll to bottom of messages
     const scrollToBottom = useCallback(() => {
@@ -151,6 +155,39 @@ const Chatbot = ({ isLoggedIn }: ChatbotProps) => {
         return () => window.removeEventListener('chatbot:dataUpdated', handler)
     }, [isOpen])
 
+    // Listen for wizard completion — reset chat session so LLM generates
+    // a fresh greeting that incorporates the newly submitted data
+    useEffect(() => {
+        const handler = async () => {
+            const myGen = ++greetingGenRef.current  // Invalidate any in-flight prefetch
+            isFetchingRef.current = true  // Block the open-chat effect from calling loadInitialGreeting
+            setShowHiPill(false)
+            setCachedGreeting(null)
+            setMessages([])   // Clear immediately to prevent stale flash
+            setIsOpen(true)
+            setIsLoading(true)
+            try {
+                const res = await resetChat()
+                if (greetingGenRef.current !== myGen) return  // Superseded by another event
+                setSessionId(res.sessionId)
+                setMessages([{
+                    id: 'wizard-greeting',
+                    role: 'assistant',
+                    content: res.greeting,
+                    created_at: new Date().toISOString()
+                }])
+                setSuggestedPrompts(DEFAULT_PROMPTS)
+            } catch {
+                // Fallback: just open with whatever we have
+            } finally {
+                setIsLoading(false)
+                isFetchingRef.current = false
+            }
+        }
+        window.addEventListener('chatbot:wizardComplete', handler)
+        return () => window.removeEventListener('chatbot:wizardComplete', handler)
+    }, [])
+
     // Listen for external open requests (e.g. navbar "Chat about my data" button)
     useEffect(() => {
         const handler = () => {
@@ -178,10 +215,14 @@ const Chatbot = ({ isLoggedIn }: ChatbotProps) => {
     // Pre-fetch greeting in background (on login) with race condition protection
     const prefetchGreeting = async () => {
         if (isFetchingRef.current) return
+        const myGen = greetingGenRef.current  // Snapshot current generation
         isFetchingRef.current = true
         setIsPrefetching(true)
         try {
             const data = await getInitialChat()
+
+            // Wizard fired during prefetch — discard stale result
+            if (greetingGenRef.current !== myGen) return
 
             if (data.hasExistingSession && data.messages) {
                 // Existing session with messages - cache them, no badge (user already saw them)
@@ -216,10 +257,14 @@ const Chatbot = ({ isLoggedIn }: ChatbotProps) => {
 
     const loadInitialGreeting = async () => {
         if (isFetchingRef.current) return
+        const myGen = greetingGenRef.current  // Snapshot to detect wizard firing during load
         isFetchingRef.current = true
         setIsLoading(true)
         try {
             const data = await getInitialChat()
+
+            // Wizard fired during this load — discard stale result
+            if (greetingGenRef.current !== myGen) return
 
             setSessionId(data.sessionId)
 
@@ -287,16 +332,19 @@ const Chatbot = ({ isLoggedIn }: ChatbotProps) => {
         }
     }
 
-    const sendMessage = async () => {
-        if (!inputValue.trim() || isLoading || cooldown) return
+    // Core send function — accepts message directly to avoid stale-closure bugs.
+    // Called by the input form (reads inputValue), retry, suggested prompts, and
+    // data-refresh banner (all pass the text explicitly).
+    const sendDirectMessage = async (text: string) => {
+        const userMessage = text.trim()
+        if (!userMessage || isLoading || cooldown) return
 
-        const userMessage = inputValue.trim()
         setInputValue('')
 
-        // Add user message immediately
-        const userMsgId = `user-${Date.now()}`
+        // Add user message immediately (random suffix prevents key collisions)
+        const uid = `user-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
         setMessages(prev => [...prev, {
-            id: userMsgId,
+            id: uid,
             role: 'user',
             content: userMessage,
             created_at: new Date().toISOString()
@@ -313,11 +361,21 @@ const Chatbot = ({ isLoggedIn }: ChatbotProps) => {
             const data = await sendMessageApi(userMessage)
 
             if (data.sessionId) {
-                setSessionId(data.sessionId)
+                // Detect session change (e.g. 30min expiry created a new session)
+                setSessionId(prev => {
+                    if (prev && prev !== data.sessionId) {
+                        // Session changed — clear stale local messages, keep only
+                        // the user message we just added and the upcoming assistant reply
+                        setMessages(msgs => msgs.filter(m => m.id === uid))
+                        setHasMore(false)
+                    }
+                    return data.sessionId
+                })
             }
 
+            const aid = `assistant-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
             setMessages(prev => [...prev, {
-                id: `assistant-${Date.now()}`,
+                id: aid,
                 role: 'assistant',
                 content: data.response || "I couldn't process that. Please try again.",
                 created_at: new Date().toISOString()
@@ -335,7 +393,7 @@ const Chatbot = ({ isLoggedIn }: ChatbotProps) => {
         } catch (error) {
             console.error('Failed to send message:', error)
             setMessages(prev => [...prev, {
-                id: `error-${Date.now()}`,
+                id: `error-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
                 role: 'assistant',
                 content: "Something went wrong. Please try again.",
                 created_at: new Date().toISOString(),
@@ -348,28 +406,20 @@ const Chatbot = ({ isLoggedIn }: ChatbotProps) => {
         }
     }
 
-    // Retry failed message
+    // Convenience wrapper for the input field — reads inputValue from state
+    const sendMessage = () => sendDirectMessage(inputValue)
+
+    // Retry failed message — passes text directly (no stale closure)
     const handleRetry = (msg: Message) => {
         if (!msg.failedMessage) return
-        // Remove the error message
         setMessages(prev => prev.filter(m => m.id !== msg.id))
-        // Set input and send
-        setInputValue(msg.failedMessage)
-        setTimeout(() => {
-            const input = inputRef.current
-            if (input) {
-                // Manually trigger send since state update is async
-                sendMessage()
-            }
-        }, 50)
+        sendDirectMessage(msg.failedMessage)
     }
 
-    // Handle suggested prompt click
+    // Handle suggested prompt click — passes text directly (no stale closure)
     const handleSuggestedPrompt = (prompt: string) => {
-        // Optimistically remove the used prompt
         setSuggestedPrompts(prev => prev.filter(p => p !== prompt))
-        setInputValue(prompt)
-        setTimeout(sendMessage, 50)
+        sendDirectMessage(prompt)
     }
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -423,8 +473,7 @@ const Chatbot = ({ isLoggedIn }: ChatbotProps) => {
         const dataType = dataUpdateBanner?.dataType ?? 'latest'
         setDataUpdateBanner(null)
         setActiveView('messages')
-        setInputValue(`Please give me an updated summary based on my latest ${dataType} data`)
-        setTimeout(sendMessage, 50)
+        sendDirectMessage(`Please give me an updated summary based on my latest ${dataType} data`)
     }
 
     const handlePreferenceChange = async (key: keyof ChatbotPreferences, value: string) => {
@@ -621,7 +670,9 @@ const Chatbot = ({ isLoggedIn }: ChatbotProps) => {
                                 className={`chatbot-message ${msg.role}${msg.isError ? ' error' : ''}`}
                             >
                                 <div className="chatbot-message-content">
-                                    {msg.content}
+                                    {msg.role === 'assistant'
+                                        ? <ReactMarkdown>{msg.content}</ReactMarkdown>
+                                        : msg.content}
                                 </div>
                                 {/* Retry button for error messages */}
                                 {msg.isError && msg.failedMessage && (

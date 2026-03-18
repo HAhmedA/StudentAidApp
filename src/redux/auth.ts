@@ -1,8 +1,5 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit'
-// axios is configured to send credentials in src/index.tsx
-import axios from 'axios'
-// Base API URL comes from REACT_APP_API_BASE or defaults to /api
-import { API_BASE as apiBaseAddress } from '../api/client'
+import { api, ApiError } from '../api/client'
 
 export type UserRole = 'admin' | 'student'
 
@@ -27,8 +24,7 @@ const initialState: AuthState = {
 
 // Legacy role-based login (for backwards compatibility)
 export const login = createAsyncThunk('auth/login', async (role: UserRole) => {
-    const response = await axios.post(apiBaseAddress + '/auth/legacy-login', { role })
-    return response.data as AuthUser
+    return await api.post<AuthUser>('/auth/legacy-login', { role })
 })
 
 // Email/password login
@@ -36,10 +32,10 @@ export const loginEmailPassword = createAsyncThunk(
     'auth/loginEmailPassword',
     async ({ email, password }: { email: string; password: string }, { rejectWithValue }) => {
         try {
-            const response = await axios.post(apiBaseAddress + '/auth/login', { email, password })
-            return response.data as AuthUser
-        } catch (err: any) {
-            return rejectWithValue(err.response?.data?.error || 'Login failed')
+            return await api.post<AuthUser>('/auth/login', { email, password })
+        } catch (err) {
+            if (err instanceof ApiError) return rejectWithValue(err.message || 'Login failed')
+            return rejectWithValue('Login failed')
         }
     }
 )
@@ -49,21 +45,20 @@ export const register = createAsyncThunk(
     'auth/register',
     async ({ name, email, password }: { name: string; email: string; password: string }, { rejectWithValue }) => {
         try {
-            const response = await axios.post(apiBaseAddress + '/auth/register', { name, email, password })
-            return response.data as AuthUser
-        } catch (err: any) {
-            return rejectWithValue(err.response?.data?.error || 'Registration failed')
+            return await api.post<AuthUser>('/auth/register', { name, email, password })
+        } catch (err) {
+            if (err instanceof ApiError) return rejectWithValue(err.message || 'Registration failed')
+            return rejectWithValue('Registration failed')
         }
     }
 )
 
 export const me = createAsyncThunk('auth/me', async () => {
-    const response = await axios.get(apiBaseAddress + '/me')
-    return response.data as AuthUser | null
+    return await api.get<AuthUser | null>('/me')
 })
 
 export const logout = createAsyncThunk('auth/logout', async () => {
-    await axios.post(apiBaseAddress + '/logout')
+    await api.post('/logout', {})
     return null
 })
 

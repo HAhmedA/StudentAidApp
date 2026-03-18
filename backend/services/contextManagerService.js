@@ -5,17 +5,44 @@
 import pool from '../config/database.js'
 import logger from '../utils/logger.js'
 import { chatCompletionWithRetry, checkAvailability } from './apiConnectorService.js'
-import { assemblePrompt, assembleInitialGreetingPrompt, getSystemInstructionsForAlignment, hasStudentProfile } from './promptAssemblerService.js'
+import { assemblePrompt, assembleInitialGreetingPrompt, getSystemInstructionsForAlignment } from './promptAssemblerService.js'
 import { getAlignedResponse, quickValidation, SERVICE_UNAVAILABLE_MESSAGE, ALIGNMENT_FAILED_MESSAGE } from './alignmentService.js'
 import { invalidateSummary } from './summarizationService.js'
 import { hasSRLData } from './annotators/srlAnnotationService.js'
 import { isGreetingStale } from './chatbotPreferencesService.js'
 import {
-    GREETING_NO_DATA_WITH_PROFILE,
-    GREETING_NO_DATA_NO_PROFILE,
+    GREETING_NO_DATA,
     GREETING_FALLBACK,
     SESSION_TIMEOUT_SECONDS
 } from '../constants.js'
+
+/** Pool of default follow-up suggestions organized by topic, used when the LLM
+ *  does not embed <followups> tags. A random subset is selected each time,
+ *  filtered against prompts the user has already sent this session. */
+const DEFAULT_SUGGESTION_POOL = [
+    // SRL & learning
+    "What are the best studying strategies based on my profile?",
+    "Analyze my SRL data",
+    "What are my learning trends?",
+    "How can I improve based on my history?",
+    // Sleep
+    "How is my sleep affecting my learning?",
+    "What does my sleep pattern look like?",
+    "Tips for better sleep before exams?",
+    // Screen time
+    "Is my screen time too high?",
+    "How does screen time affect my focus?",
+    // LMS / engagement
+    "How active am I on the LMS?",
+    "Am I submitting assignments on time?",
+    // Wellbeing
+    "How is my overall wellbeing?",
+    "What can I do to reduce study stress?",
+    // General coaching
+    "What should I focus on this week?",
+    "Give me a quick study plan for today",
+    "What are my strongest areas?"
+]
 
 /**
  * Get or create an active session for a user
@@ -193,6 +220,20 @@ function parseFollowUpSuggestions(response) {
 }
 
 /**
+ * Strip trailing sign-offs the LLM sometimes adds despite system prompt rules.
+ * Catches: "Your learning coach, Max", "Best,\nMax", "— Max", "Warmly, Max", standalone trailing "Max".
+ * The \n+\s* anchor ensures mid-sentence "Max" is never stripped.
+ */
+function stripSignOff(response) {
+    return response
+        .replace(
+            /\n+\s*(?:(?:Your\s+learning\s+coach|Best|Warm(?:ly|est)?\s*(?:regards)?|Cheers|Sincerely|Kind(?:ly|\s+regards)|Regards|Take\s+care)[,.]?\s*(?:\n\s*)?(?:[-—]\s*)?Max\b.*|[-—]\s*Max\b.*|Max\s*$)/gi,
+            ''
+        )
+        .trimEnd()
+}
+
+/**
  * Generate contextual follow-up prompt suggestions based on the conversation
  * Creates diverse, specific prompts that directly reflect the chatbot's response
  * 
@@ -203,7 +244,7 @@ function parseFollowUpSuggestions(response) {
  */
 async function generateFollowUpPrompts(assistantResponse, userMessage, sessionId = null) {
     const defaultPrompts = [
-        "What are the best studying strategies based on my profile?",
+        "What are the best studying strategies based on my data?",
         "Analyze my SRL data",
         "What are my learning trends?",
         "How can I improve based on my history?"
@@ -240,7 +281,7 @@ CRITICAL RULES:
 2. Create questions that DIRECTLY reference those specific topics
 3. Questions must feel like natural conversation continuations
 4. Mix question types: "How", "Why", "Can you", "What about"
-5. Each question under 50 characters
+5. Each question under 60 characters
 6. NO generic questions like "tell me more" or "how can I improve"
 7. Return ONLY a JSON array of 4 strings
 
@@ -293,7 +334,7 @@ Generate 4 specific follow-up questions based on the topics in this response:`
         if (Array.isArray(parsed) && parsed.length >= 3) {
             // Filter and validate prompts
             const validPrompts = parsed
-                .filter(p => typeof p === 'string' && p.length > 3 && p.length <= 75) // Relaxed length slightly
+                .filter(p => typeof p === 'string' && p.length > 3 && p.length <= 60)
                 .filter(p => !p.toLowerCase().includes('tell me more'))
 
             // Filter out prompts that have already been used
@@ -323,22 +364,29 @@ Generate 4 specific follow-up questions based on the topics in this response:`
  * @returns {Promise<{success: boolean, response: string, sessionId: string, suggestedPrompts: string[]}>}
  */
 async function sendMessage(userId, userMessage) {
+    let userMessageSaved = false
     try {
-        // Check LLM availability first
-        const { available } = await checkAvailability()
+        // Optimization #2: Parallelize availability check + session retrieval
+        const [{ available }, { sessionId }] = await Promise.all([
+            checkAvailability(),
+            getOrCreateSession(userId)
+        ])
         if (!available) {
             logger.error('LLM server not available')
             return { success: false, response: SERVICE_UNAVAILABLE_MESSAGE, sessionId: null }
         }
 
-        // Get or create session
-        const { sessionId } = await getOrCreateSession(userId)
+        // Optimization #5: Fire-and-forget user message save — runs alongside prompt assembly.
+        // The newly inserted message won't appear in context (it's added explicitly as the
+        // final {role:'user'} message by assemblePrompt).
+        const saveUserPromise = saveMessage(sessionId, userId, 'user', userMessage)
+            .catch(err => logger.error('Background saveMessage(user) failed:', err.message))
 
-        // Save user message
-        await saveMessage(sessionId, userId, 'user', userMessage)
-
-        // Assemble prompt with all context
-        const messages = await assemblePrompt(userId, sessionId, userMessage)
+        // Optimization #1: Parallelize prompt assembly + alignment instructions fetch
+        const [messages, systemInstructions] = await Promise.all([
+            assemblePrompt(userId, sessionId, userMessage),
+            getSystemInstructionsForAlignment(userId)
+        ])
 
         // Pre-flight validation: check if context was overly truncated or empty
         if (!messages || messages.length <= 1) { // 1 means only system prompt (or even less)
@@ -346,12 +394,18 @@ async function sendMessage(userId, userMessage) {
             // We proceed, but the LLM might struggle. This warning helps debugging.
         }
 
-        // Get system instructions for alignment check
-        const systemInstructions = await getSystemInstructionsForAlignment(userId)
+        // Ensure user message is saved before we proceed to LLM call
+        await saveUserPromise
+        userMessageSaved = true
 
-        // Generate response with alignment checking
+        // Generate response with alignment checking (feedback-guided retry)
         const result = await getAlignedResponse(
-            async () => await chatCompletionWithRetry(messages),
+            async (feedbackContext) => {
+                const effectiveMessages = feedbackContext
+                    ? [...messages, { role: 'user', content: feedbackContext }]
+                    : messages
+                return await chatCompletionWithRetry(effectiveMessages)
+            },
             userMessage,
             systemInstructions
         )
@@ -364,39 +418,46 @@ async function sendMessage(userId, userMessage) {
             result.passed = false
         }
 
-        // Parse embedded follow-up suggestions from the response
+        // Parse embedded follow-up suggestions, then strip any LLM sign-off
         const { cleanedResponse, suggestions: embeddedSuggestions } = parseFollowUpSuggestions(result.content)
-        result.content = cleanedResponse // Use cleaned response without XML tags
+        result.content = stripSignOff(cleanedResponse)
 
-        // Save assistant response (cleaned, without XML tags)
-        await saveMessage(sessionId, userId, 'assistant', result.content, {
-            passed: result.passed,
-            retries: result.retries
-        })
+        // Optimization #4: Parallelize assistant message save + session activity update
+        await Promise.all([
+            saveMessage(sessionId, userId, 'assistant', result.content, {
+                passed: result.passed,
+                retries: result.retries
+            }),
+            pool.query(
+                `UPDATE public.chat_sessions SET last_activity_at = NOW() WHERE id = $1`,
+                [sessionId]
+            )
+        ])
 
-        // Update session activity
-        await pool.query(
-            `UPDATE public.chat_sessions SET last_activity_at = NOW() WHERE id = $1`,
-            [sessionId]
-        )
-
-        // Use embedded suggestions if available, otherwise fall back to generated ones
+        // Optimization #7: Use embedded suggestions or filtered default pool (no fallback LLM call)
         let suggestedPrompts
-        if (embeddedSuggestions.length >= 3) {
-            // Filter out any prompts the user has already used
-            let usedMessages = []
-            try {
-                usedMessages = await getSessionUserMessages(sessionId)
-            } catch (err) {
-                logger.warn(`Failed to fetch session messages for filtering: ${err.message}`)
-            }
-            const normalize = (text) => text.toLowerCase().replace(/[^\w\s]/g, '').trim()
-            const usedSet = new Set(usedMessages.map(normalize))
+        const normalize = (text) => text.toLowerCase().replace(/[^\w\s]/g, '').trim()
+        let usedMessages = []
+        try {
+            usedMessages = await getSessionUserMessages(sessionId)
+        } catch (err) {
+            logger.warn(`Failed to fetch session messages for filtering: ${err.message}`)
+        }
+        const usedSet = new Set(usedMessages.map(normalize))
+
+        if (embeddedSuggestions.length >= 2) {
             suggestedPrompts = embeddedSuggestions.filter(p => !usedSet.has(normalize(p))).slice(0, 4)
             logger.info(`Using ${suggestedPrompts.length} embedded suggestions from LLM response`)
         } else {
-            // Fallback to separate generation
-            suggestedPrompts = await generateFollowUpPrompts(result.content, userMessage, sessionId)
+            // Filtered random defaults — avoids a separate LLM call (~200-500ms savings)
+            logger.info('No embedded suggestions found, using filtered default pool')
+            const available = DEFAULT_SUGGESTION_POOL.filter(p => !usedSet.has(normalize(p)))
+            // Fisher-Yates shuffle
+            for (let i = available.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [available[i], available[j]] = [available[j], available[i]]
+            }
+            suggestedPrompts = available.slice(0, 4)
         }
 
         return {
@@ -409,12 +470,15 @@ async function sendMessage(userId, userMessage) {
     } catch (error) {
         logger.error('Error in sendMessage:', error.message)
 
-        // Try to save the user's message even if we can't respond
-        try {
-            const { sessionId } = await getOrCreateSession(userId)
-            await saveMessage(sessionId, userId, 'user', userMessage)
-        } catch (saveError) {
-            logger.error('Failed to save user message:', saveError.message)
+        // Only save the user message if the happy-path save didn't complete.
+        // saveUserPromise is defined at line 381; if it settled we already have the row.
+        if (!userMessageSaved) {
+            try {
+                const { sessionId: fallbackSid } = await getOrCreateSession(userId)
+                await saveMessage(fallbackSid, userId, 'user', userMessage)
+            } catch (saveError) {
+                logger.error('Failed to save user message:', saveError.message)
+            }
         }
 
         return { success: false, response: SERVICE_UNAVAILABLE_MESSAGE, sessionId: null }
@@ -467,18 +531,9 @@ async function generateInitialGreeting(userId) {
         logger.chat(`SRL data check`, { userId, userHasSRLData })
 
         if (!userHasSRLData) {
-            // Check specifically for student profile data (not just username)
-            const hasProfileData = await hasStudentProfile(userId)
-            logger.chat(`No SRL data - returning hardcoded greeting`, { userId, hasProfileData })
+            logger.chat(`No SRL data - returning hardcoded greeting`, { userId })
 
-            let noDataGreeting
-            if (hasProfileData) {
-                // Has profile but no SRL data
-                noDataGreeting = GREETING_NO_DATA_WITH_PROFILE
-            } else {
-                // No profile and no SRL data
-                noDataGreeting = GREETING_NO_DATA_NO_PROFILE
-            }
+            const noDataGreeting = GREETING_NO_DATA
 
             // Cache the greeting (set greeting_generated_at for staleness detection)
             await pool.query(
@@ -524,7 +579,7 @@ async function generateInitialGreeting(userId) {
 
         // Parse embedded follow-up suggestions from the greeting
         const { cleanedResponse: cleanedGreeting, suggestions: embeddedSuggestions } = parseFollowUpSuggestions(result.content)
-        const greeting = cleanedGreeting
+        const greeting = stripSignOff(cleanedGreeting)
         logger.chat(`LLM greeting received`, { userId, greetingLength: greeting.length, embeddedSuggestions: embeddedSuggestions.length })
 
         // Cache the cleaned greeting (set greeting_generated_at for staleness detection)
@@ -541,7 +596,7 @@ async function generateInitialGreeting(userId) {
 
         // Use embedded suggestions if available, otherwise fall back to generated ones
         let suggestedPrompts
-        if (embeddedSuggestions.length >= 3) {
+        if (embeddedSuggestions.length >= 2) {
             suggestedPrompts = embeddedSuggestions.slice(0, 4)
             logger.info(`Using ${suggestedPrompts.length} embedded suggestions from greeting`)
         } else {

@@ -106,54 +106,16 @@ async function getSystemPrompt() {
  */
 async function getUserContext(userId) {
     const { rows } = await pool.query(
-        `SELECT u.name, sp.edu_level, sp.field_of_study, sp.major, sp.learning_formats, sp.disabilities
-         FROM public.users u
-         LEFT JOIN public.student_profiles sp ON u.id = sp.user_id
-         WHERE u.id = $1`,
+        `SELECT name FROM public.users WHERE id = $1`,
         [userId]
     )
 
     if (rows.length === 0) {
-        return 'No profile information provided.'
+        return 'No user information available.'
     }
 
-    const profile = rows[0]
-    const parts = []
-    const name = profile.name || 'the student'
-
-    let description = `This is a student named ${name}`
-
-    if (profile.major) {
-        description += `, majoring in ${profile.major}`
-    } else if (profile.field_of_study) {
-        description += `, studying ${profile.field_of_study}`
-    }
-
-    if (profile.edu_level) {
-        description += ` at the ${profile.edu_level} level`
-    }
-
-    description += '.'
-
-    if (profile.learning_formats && profile.learning_formats.length > 0) {
-        const formats = Array.isArray(profile.learning_formats)
-            ? profile.learning_formats
-            : JSON.parse(profile.learning_formats)
-        if (formats.length > 0) {
-            description += ` They prefer learning via: ${formats.join(', ')}.`
-        }
-    }
-
-    if (profile.disabilities && profile.disabilities.length > 0) {
-        const disabilities = Array.isArray(profile.disabilities)
-            ? profile.disabilities
-            : JSON.parse(profile.disabilities)
-        if (disabilities.length > 0) {
-            description += ` Accessibility needs include: ${disabilities.join(', ')}.`
-        }
-    }
-
-    return description
+    const name = rows[0].name || 'the student'
+    return `This is a student named ${name}.`
 }
 
 /**
@@ -277,11 +239,11 @@ async function assemblePrompt(userId, sessionId, userMessage = null) {
         summariesLength: summaries.length
     })
 
-    // Get current session messages
-    const sessionMessages = await getSessionMessages(sessionId, MAX_SESSION_MESSAGES)
-
-    // Check if this is a first-time or returning user
-    const userHasHistory = await hasHistory(userId)
+    // Optimization #3: Parallelize session messages fetch + history check
+    const [sessionMessages, userHasHistory] = await Promise.all([
+        getSessionMessages(sessionId, MAX_SESSION_MESSAGES),
+        hasHistory(userId)
+    ])
     const userType = userHasHistory
         ? 'This is a returning student.'
         : 'This is a new student.'
@@ -483,36 +445,16 @@ ${summaries}
  * @returns {Promise<string>}
  */
 async function getSystemInstructionsForAlignment(userId = null) {
-    // The judge only needs to know the domain scope, not the student's actual data.
-    // Passing scores + summaries to a small judge model bloats its context and causes
-    // false-positive safety flags on legitimate wellness vocabulary (anxiety, sleep, stress).
+    // DESIGN TRADE-OFF: The judge receives only the base system prompt — no student
+    // scores, annotations, or summaries.  This is intentional:
+    //   - Small judge models + student wellness data → false-positive safety flags on
+    //     legitimate vocabulary (anxiety, sleep, stress).
+    //   - Trade-off: the judge CANNOT verify whether the LLM fabricated data values.
+    //     The system prompt's "NEVER invent values" rule is unenforceable at the judge layer.
+    // If future judge models resolve the false-positive issue, consider passing a compact
+    // data-availability summary (which sources have data, not actual values) so the judge
+    // can at least flag fabrication for missing data sources.
     return await getSystemPrompt()
-}
-
-/**
- * Check if a user has actual student profile data set up
- * This checks for edu_level, field_of_study, major - not just the username
- * 
- * @param {string} userId - User ID
- * @returns {Promise<boolean>} - True if user has profile data beyond just name
- */
-async function hasStudentProfile(userId) {
-    const { rows } = await pool.query(
-        `SELECT edu_level, field_of_study, major, learning_formats, disabilities
-         FROM public.student_profiles
-         WHERE user_id = $1`,
-        [userId]
-    )
-
-    if (rows.length === 0) {
-        return false
-    }
-
-    const profile = rows[0]
-    // Check if any meaningful profile field is filled in
-    return !!(profile.edu_level || profile.field_of_study || profile.major ||
-        (profile.learning_formats && profile.learning_formats.length > 0) ||
-        (profile.disabilities && profile.disabilities.length > 0))
 }
 
 export {
@@ -522,6 +464,5 @@ export {
     getUserContext,
     getSessionMessages,
     getSystemInstructionsForAlignment,
-    hasStudentProfile,
     initializeSystemPrompt
 }

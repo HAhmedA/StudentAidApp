@@ -163,7 +163,9 @@ async function checkAvailability() {
  */
 function estimateTokens(text) {
     if (!text) return 0
-    return Math.ceil(text.length / 4)
+    // Use /3 instead of /4 — structured content with markdown, newlines, and
+    // special chars tokenizes at ~2.5-3 chars/token, not the ~4 of plain English.
+    return Math.ceil(text.length / 3)
 }
 
 export {
