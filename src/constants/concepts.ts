@@ -6,7 +6,7 @@ export type ConceptId = typeof CONCEPT_IDS[number]
 
 export const CONCEPT_DISPLAY_NAMES: Record<ConceptId, string> = {
     sleep: 'Sleep Quality',
-    srl: 'My Learning',
+    srl: 'My Learning Process',
     lms: 'Course Activity',
     screen_time: 'Screen Time'
 }

@@ -23,9 +23,6 @@ async function verify() {
         // Expected: "You have been improving overall, despite a slight dip today"
 
         const keys = ['focus'];
-        const surveyStructure = {
-            pages: [{ elements: [{ name: 'focus', type: 'rating', title: 'Focus Check' }] }]
-        };
 
         const now = new Date();
         const d1 = new Date(now); d1.setDate(d1.getDate() - 4);
@@ -42,7 +39,7 @@ async function verify() {
         await insertResponse(pool, userId, 'focus', 2, d4);
 
         // 4. Compute
-        const annotations = await computeAnnotations(pool, userId, surveyStructure);
+        const annotations = await computeAnnotations(pool, userId);
 
         // 5. Check Output
         const focusAnn = annotations.find(a => a.conceptKey === 'focus');

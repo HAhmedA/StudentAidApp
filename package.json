@@ -18,11 +18,6 @@
     "react-router": "^6.30.3",
     "react-router-dom": "^6.30.3",
     "recharts": "^3.4.1",
-    "survey-analytics": "2.3.14",
-    "survey-core": "2.3.14",
-    "survey-creator-core": "2.3.14",
-    "survey-creator-react": "2.3.14",
-    "survey-react-ui": "2.3.14",
     "typescript": "^4.6.3"
   },
   "scripts": {

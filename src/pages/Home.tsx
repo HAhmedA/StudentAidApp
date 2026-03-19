@@ -8,7 +8,6 @@ import AdminCsvLogPanel from '../components/AdminCsvLogPanel'
 import AdminLlmConfigPanel from '../components/AdminLlmConfigPanel'
 import ScoreBoard from '../components/ScoreBoard'
 import { useReduxSelector, useReduxDispatch } from '../redux'
-import { load } from '../redux/surveys'
 import { api } from '../api/client'
 import { getScores } from '../api/scores'
 import { getTodaySleep } from '../api/sleep'
@@ -46,8 +45,6 @@ interface StudentInfo { id: string; name: string; email: string }
 
 const Home = () => {
     const user = useReduxSelector(state => state.auth.user)
-    const surveys = useReduxSelector(state => state.surveys.surveys)
-    const surveysStatus = useReduxSelector(state => state.surveys.status)
     const dispatch = useReduxDispatch()
     const isAdmin = user?.role === 'admin'
     const [showWizard, setShowWizard] = useState(false)
@@ -71,13 +68,6 @@ const Home = () => {
     const [missingSleepLog, setMissingSleepLog] = useState(false)
     const [missingScreenTime, setMissingScreenTime] = useState(false)
     const [missingSRLSurvey, setMissingSRLSurvey] = useState(false)
-
-    // Load surveys if not already loaded
-    useEffect(() => {
-        if (surveysStatus === 'idle' && surveys.length === 0) {
-            dispatch(load())
-        }
-    }, [surveysStatus, dispatch, surveys.length])
 
     // When admin selects a student, load their scores
     useEffect(() => {
@@ -262,9 +252,6 @@ const Home = () => {
         )
     }
 
-    // Get first survey for "Fill Survey" button
-    const firstSurvey = surveys.length > 0 ? surveys[0] : null
-
     return (
         <div className='mood-home-wrapper'>
             <div className='mood-home-container'>
@@ -284,19 +271,17 @@ const Home = () => {
                                 You have completed {completedCount} out of 3 today
                             </div>
                             <div className='quick-actions-row'>
-                                {firstSurvey && (
-                                    <Link
-                                        to={`/run/${firstSurvey.id}`}
-                                        className={`quick-action-card ${!missingSRLSurvey ? 'quick-action-card--done' : 'quick-action-card--pending'}`}
-                                    >
+                                <Link
+                                    to="/questionnaire"
+                                    className={`quick-action-card ${!missingSRLSurvey ? 'quick-action-card--done' : 'quick-action-card--pending'}`}
+                                >
                                         <span className='quick-action-icon'>📝</span>
                                         <div className='quick-action-text'>
                                             <div className='quick-action-title'>Learning Questionnaire</div>
                                             <div className='quick-action-desc'>Reflect on your study strategies</div>
                                         </div>
                                         <span className='quick-action-arrow'>{!missingSRLSurvey ? '✓' : '→'}</span>
-                                    </Link>
-                                )}
+                                </Link>
                                 <Link
                                     to='/screen-time'
                                     className={`quick-action-card ${!missingScreenTime ? 'quick-action-card--done' : 'quick-action-card--pending'}`}

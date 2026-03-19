@@ -234,6 +234,16 @@ function stripSignOff(response) {
 }
 
 /**
+ * Strip <response>/<answer> wrapper tags the LLM sometimes adds
+ * despite being told not to in the system prompt.
+ */
+function stripResponseTags(response) {
+    return response
+        .replace(/<\/?(?:response|answer)>/gi, '')
+        .trim()
+}
+
+/**
  * Generate contextual follow-up prompt suggestions based on the conversation
  * Creates diverse, specific prompts that directly reflect the chatbot's response
  * 
@@ -420,7 +430,7 @@ async function sendMessage(userId, userMessage) {
 
         // Parse embedded follow-up suggestions, then strip any LLM sign-off
         const { cleanedResponse, suggestions: embeddedSuggestions } = parseFollowUpSuggestions(result.content)
-        result.content = stripSignOff(cleanedResponse)
+        result.content = stripResponseTags(stripSignOff(cleanedResponse))
 
         // Optimization #4: Parallelize assistant message save + session activity update
         await Promise.all([
@@ -579,7 +589,7 @@ async function generateInitialGreeting(userId) {
 
         // Parse embedded follow-up suggestions from the greeting
         const { cleanedResponse: cleanedGreeting, suggestions: embeddedSuggestions } = parseFollowUpSuggestions(result.content)
-        const greeting = stripSignOff(cleanedGreeting)
+        const greeting = stripResponseTags(stripSignOff(cleanedGreeting))
         logger.chat(`LLM greeting received`, { userId, greetingLength: greeting.length, embeddedSuggestions: embeddedSuggestions.length })
 
         // Cache the cleaned greeting (set greeting_generated_at for staleness detection)

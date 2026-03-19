@@ -63,23 +63,15 @@ function generateAnnotationTextLLM(conceptKey, fullTitle, avg, min, max, count, 
  * Compute all annotations for a user
  * Called after each questionnaire submission
  */
-async function computeAnnotations(pool, userId, surveyStructure) {
-    // Extract concept info from survey structure
+async function computeAnnotations(pool, userId) {
+    // Build concept info from static definitions
     const conceptInfo = {};
-    if (surveyStructure?.pages) {
-        surveyStructure.pages.forEach(page => {
-            if (page.elements) {
-                page.elements.forEach(element => {
-                    if (element.name && element.type === 'rating') {
-                        conceptInfo[element.name] = {
-                            key: element.name,
-                            title: element.title || element.name,
-                            isInverted: INVERTED_CONCEPTS.includes(element.name)
-                        };
-                    }
-                });
-            }
-        });
+    for (const [key, title] of Object.entries(CONCEPT_SHORT_NAMES)) {
+        conceptInfo[key] = {
+            key,
+            title,
+            isInverted: INVERTED_CONCEPTS.includes(key)
+        };
     }
 
     const timeWindow = '7d';

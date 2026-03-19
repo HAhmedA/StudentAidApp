@@ -489,8 +489,7 @@ async function main() {
             // lmsAnnotationService has a known `totalMin` reference bug — non-critical
             console.log(`  Warning: LMS judgments skipped (${err.message})`);
         }
-        const mockSurveyStructure = buildSurveyStructure();
-        await computeAnnotations(pool, userId, mockSurveyStructure);
+        await computeAnnotations(pool, userId);
         console.log('  ✓ Phase 5: Annotations computed\n');
 
         processedStudents.push({ persona, userId, sleepIds, screenIds });
@@ -751,18 +750,6 @@ async function recomputeLMSBaseline(userId) {
            computed_at             = NOW()`,
         [userId]
     );
-}
-
-function buildSurveyStructure() {
-    return {
-        pages: [{
-            elements: Object.keys(CONCEPT_SHORT_NAMES).map(key => ({
-                name: key,
-                type: 'rating',
-                title: CONCEPT_SHORT_NAMES[key],
-            })),
-        }],
-    };
 }
 
 /**

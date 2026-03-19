@@ -2,13 +2,11 @@ import React, { useState } from 'react'
 import { Route, NavLink, Routes } from 'react-router-dom'
 import Home from "../pages/Home"
 import Run from "../pages/Run"
-import Edit from "../pages/Edit"
 import Login from "../pages/Login"
 import Register from "../pages/Register"
 import Profile from "../pages/Profile"
 import ScreenTimeForm from "../pages/ScreenTimeForm"
 import SleepPage from "../pages/SleepPage"
-import RequireAdmin from "../components/RequireAdmin"
 import RequireAuth from "../components/RequireAuth"
 import { useReduxDispatch, useReduxSelector } from '../redux'
 import { logout } from '../redux/auth'
@@ -83,8 +81,7 @@ const Content = (): React.ReactElement => (
             <Route path="/login" element={<Login />}></Route>
             <Route path="/register" element={<Register />}></Route>
             <Route path="/" element={<RequireAuth><Home /></RequireAuth>}></Route>
-            <Route path="/run/:id" element={<RequireAuth><Run /></RequireAuth>}></Route>
-            <Route path="/edit/:id" element={<RequireAuth><RequireAdmin><Edit /></RequireAdmin></RequireAuth>}></Route>
+            <Route path="/questionnaire" element={<RequireAuth><Run /></RequireAuth>}></Route>
             <Route path="/profile" element={<RequireAuth><Profile /></RequireAuth>}></Route>
             <Route path="/screen-time" element={<RequireAuth><ScreenTimeForm /></RequireAuth>}></Route>
             <Route path="/sleep" element={<RequireAuth><SleepPage /></RequireAuth>}></Route>

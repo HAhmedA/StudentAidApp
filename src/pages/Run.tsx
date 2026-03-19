@@ -1,33 +1,17 @@
 import { useEffect, useState, useCallback } from 'react'
-import { useParams, useNavigate } from 'react-router'
-import { useReduxDispatch } from '../redux'
+import { useNavigate, Link } from 'react-router-dom'
+import { useReduxDispatch, useReduxSelector } from '../redux'
 import { post } from '../redux/results'
-import { get } from '../redux/surveys'
-import QuestionnaireSliders, { allAnswered, highlightMissing, SliderQuestion } from '../components/QuestionnaireSliders'
+import { load } from '../redux/surveys'
+import QuestionnaireSliders, { allAnswered, highlightMissing } from '../components/QuestionnaireSliders'
+import { QUESTIONNAIRE_PAGES } from '../constants/questions'
 import './Run.css'
-
-interface SurveyPage {
-    name: string
-    title?: string
-    description?: string
-    elements: Array<{
-        name: string
-        title: string
-        type: string
-        rateMin?: number
-        rateMax?: number
-        rateStep?: number
-        minRateDescription?: string
-        maxRateDescription?: string
-    }>
-}
 
 const Run = () => {
     const dispatch = useReduxDispatch()
     const navigate = useNavigate()
-    const { id } = useParams()
-    const [surveyData, surveyDataSet] = useState<any>(null)
-    const [pages, setPages] = useState<SurveyPage[]>([])
+    const surveys = useReduxSelector(state => state.surveys.surveys)
+    const surveysStatus = useReduxSelector(state => state.surveys.status)
     const [currentPage, setCurrentPage] = useState(0)
     const [answers, setAnswers] = useState<Record<string, number>>({})
     const [submitting, setSubmitting] = useState(false)
@@ -37,44 +21,25 @@ const Run = () => {
         setAnswers(prev => ({ ...prev, [key]: value }))
     }, [])
 
+    // Override parent white card (same pattern as Sleep & Screen Time pages)
     useEffect(() => {
-        (async () => {
-            const surveyAction = await dispatch(get(id as string))
-            const data = surveyAction.payload
-            surveyDataSet(data)
+        const el = document.querySelector('.sjs-app__content')
+        if (el) el.classList.add('mood-content-override')
+        return () => { if (el) el.classList.remove('mood-content-override') }
+    }, [])
 
-            if (data?.json?.pages) {
-                setPages(data.json.pages)
-            }
-        })()
-    }, [dispatch, id])
+    useEffect(() => {
+        if (surveysStatus === 'idle' && surveys.length === 0) {
+            dispatch(load())
+        }
+    }, [dispatch, surveysStatus, surveys.length])
 
-    const page = pages[currentPage]
-    const isLastPage = currentPage === pages.length - 1
-
-    // Convert survey elements to SliderQuestion format
-    const questionsForPage = (p: SurveyPage): SliderQuestion[] =>
-        (p.elements || []).map(el => ({
-            key: el.name,
-            text: el.title,
-            lowLabel: el.minRateDescription,
-            highLabel: el.maxRateDescription,
-        }))
-
-    // Derive scale from page elements (wellbeing = 0-10, SRL = 1-5)
-    const scaleForPage = (p: SurveyPage) => {
-        const first = p.elements?.[0]
-        const min = first?.rateMin ?? (p.name === 'wellbeing' ? 0 : 1)
-        const max = first?.rateMax ?? (p.name === 'wellbeing' ? 10 : 5)
-        const step = first?.rateStep ?? 0.1
-        const defaultValue = (min + max) / 2
-        return { min, max, step, defaultValue }
-    }
+    const surveyId = surveys[0]?.id
+    const page = QUESTIONNAIRE_PAGES[currentPage]
+    const isLastPage = currentPage === QUESTIONNAIRE_PAGES.length - 1
 
     const handleNext = () => {
-        if (!page) return
-        const qs = questionsForPage(page)
-        if (!allAnswered(qs, answers)) {
+        if (!allAnswered(page.questions, answers)) {
             setShowMissing(true)
             highlightMissing()
             setTimeout(() => setShowMissing(false), 3000)
@@ -85,17 +50,10 @@ const Run = () => {
     }
 
     const handleSubmit = async () => {
-        if (!page) return
-        const qs = questionsForPage(page)
-        if (!allAnswered(qs, answers)) {
-            setShowMissing(true)
-            highlightMissing()
-            setTimeout(() => setShowMissing(false), 3000)
-            return
-        }
+        if (!allAnswered(page.questions, answers) || !surveyId) return
         setSubmitting(true)
         try {
-            await dispatch(post({ postId: id as string, surveyResult: answers, surveyResultText: JSON.stringify(answers) }))
+            await dispatch(post({ postId: surveyId, surveyResult: answers, surveyResultText: JSON.stringify(answers) }))
             window.dispatchEvent(new CustomEvent('chatbot:dataUpdated', { detail: { dataType: 'learning questionnaire' } }))
             navigate('/')
         } catch {
@@ -103,73 +61,71 @@ const Run = () => {
         }
     }
 
-    return (
-        <div className='run-page-wrapper'>
-            <button
-                className='run-back-button'
-                onClick={() => navigate('/')}
-            >
-                &larr; Back
-            </button>
-            {surveyData === null && <div>Loading...</div>}
-            {surveyData === undefined && <div>Survey not found</div>}
-            {!!surveyData && pages.length > 0 && page && (() => {
-                const qs = questionsForPage(page)
-                const scale = scaleForPage(page)
-                return (
-                    <div className='run-survey-content'>
-                        {surveyData.json?.title && (
-                            <div className='run-survey-title'>
-                                <h3>{surveyData.json.title}</h3>
-                            </div>
-                        )}
-
-                        <div className='run-page-header'>
-                            <h2>{page.title || `Page ${currentPage + 1}`}</h2>
-                            {page.description && <p className='run-page-desc'>{page.description}</p>}
-                        </div>
-
-                        <QuestionnaireSliders
-                            questions={qs}
-                            answers={answers}
-                            setAnswer={setAnswer}
-                            min={scale.min}
-                            max={scale.max}
-                            step={scale.step}
-                            defaultValue={scale.defaultValue}
-                            showMissing={showMissing}
-                        />
-
-                        <div className='run-nav-buttons'>
-                            {currentPage > 0 && (
-                                <button
-                                    className='run-secondary-btn'
-                                    onClick={() => { setCurrentPage(prev => prev - 1); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
-                                >
-                                    &larr; Previous
-                                </button>
-                            )}
-                            {!isLastPage ? (
-                                <button className='run-primary-btn' onClick={handleNext}>
-                                    Next &rarr;
-                                </button>
-                            ) : (
-                                <button
-                                    className='run-primary-btn'
-                                    onClick={handleSubmit}
-                                    disabled={submitting}
-                                >
-                                    {submitting ? 'Saving...' : 'Submit'}
-                                </button>
-                            )}
-                        </div>
-
-                        <div className='run-progress'>
-                            Page {currentPage + 1} of {pages.length}
-                        </div>
+    if (!surveyId) {
+        return (
+            <div className='run-page'>
+                <div className='run-container'>
+                    <div className='run-card'>
+                        <div style={{ textAlign: 'center', color: '#9CA3AF', padding: '40px' }}>Loading...</div>
                     </div>
-                )
-            })()}
+                </div>
+            </div>
+        )
+    }
+
+    return (
+        <div className='run-page'>
+            <div className='run-container'>
+                <Link to='/' className='run-back-btn'>
+                    &larr; Back to Home
+                </Link>
+
+                <div className='run-card'>
+                    <h1 className='run-title'>
+                        {page.name === 'wellbeing' ? '😊' : '📝'} {page.title}
+                    </h1>
+                    <p className='run-subtitle'>{page.description}</p>
+
+                    <QuestionnaireSliders
+                        questions={[...page.questions]}
+                        answers={answers}
+                        setAnswer={setAnswer}
+                        min={page.scale.min}
+                        max={page.scale.max}
+                        step={page.scale.step}
+                        defaultValue={page.scale.defaultValue}
+                        showMissing={showMissing}
+                    />
+
+                    <div className='run-nav-buttons'>
+                        {currentPage > 0 && (
+                            <button
+                                className='run-secondary-btn'
+                                onClick={() => { setCurrentPage(prev => prev - 1); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+                            >
+                                &larr; Previous
+                            </button>
+                        )}
+                        {!isLastPage ? (
+                            <button className='run-primary-btn' onClick={handleNext}>
+                                Next &rarr;
+                            </button>
+                        ) : (
+                            <button
+                                className='run-primary-btn'
+                                onClick={handleSubmit}
+                                disabled={submitting}
+                            >
+                                {submitting ? 'Saving...' : 'Submit'}
+                            </button>
+                        )}
+                    </div>
+
+                    <div className='run-progress'>
+                        Page {currentPage + 1} of {QUESTIONNAIRE_PAGES.length}
+                    </div>
+                </div>
+            </div>
         </div>
     )
 }

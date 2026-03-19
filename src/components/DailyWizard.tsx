@@ -10,6 +10,7 @@ import { saveSleep, getTodaySleep } from '../api/sleep'
 import { getTodaySRL } from '../api/results'
 import SleepSlider from './SleepSlider'
 import QuestionnaireSliders, { allAnswered, highlightMissing } from './QuestionnaireSliders'
+import { WHO5_QUESTIONS, SRL_QUESTIONS } from '../constants/questions'
 import '../pages/ScreenTimeForm.css'
 import './DailyWizard.css'
 
@@ -31,29 +32,6 @@ const getProfile = async () => {
 const completeOnboarding = async () => {
     try { await api.post('/profile/onboarding-complete', {}) } catch { /* silent */ }
 }
-
-// ── WHO-5 questions (0–10 slider) ────────────────────────────
-const WHO5_QUESTIONS = [
-    { key: 'cheerfulness', text: 'I have felt cheerful and in good spirits.' },
-    { key: 'calmness', text: 'I have felt calm and relaxed.' },
-    { key: 'vitality', text: 'I have felt active and vigorous.' },
-    { key: 'restedness', text: 'I woke up feeling fresh and rested.' },
-    { key: 'interest', text: 'My daily life has been filled with things that interest me.' },
-]
-
-// ── SRL learning questions (1–5 slider) ──────────────────────
-const SRL_QUESTIONS = [
-    { key: 'efficiency', text: 'I believe I can accomplish my learning duties and learning tasks efficiently.', lowLabel: 'Strongly disagree', highLabel: 'Strongly agree' },
-    { key: 'importance', text: 'I believe that my learning tasks are very important to me.', lowLabel: 'Not important', highLabel: 'Very important' },
-    { key: 'tracking', text: 'I keep track of what I need to do and understand what I must do to accomplish my learning tasks.', lowLabel: 'Never', highLabel: 'Always' },
-    { key: 'effort', text: 'I put enough effort into my learning tasks and stay focused while working on them.', lowLabel: 'Not enough effort', highLabel: 'A lot of effort' },
-    { key: 'help_seeking', text: 'I seek help from teachers, friends, or the internet when I need explanation or help with difficult tasks.', lowLabel: 'Never seek help', highLabel: 'Always seek help' },
-    { key: 'community', text: 'I am having nice interactions and feeling at home within the college community.', lowLabel: 'Not at all', highLabel: 'Very much' },
-    { key: 'timeliness', text: 'I am doing my studies on time and keeping up with tasks/deadlines.', lowLabel: 'Always late', highLabel: 'Always on time' },
-    { key: 'motivation', text: 'I feel motivated to learn and enjoy working on my learning tasks.', lowLabel: 'Not motivated', highLabel: 'Highly motivated' },
-    { key: 'anxiety', text: 'I feel anxious or stressed working on learning tasks, assignments, or in class.', lowLabel: 'Never anxious', highLabel: 'Very anxious' },
-    { key: 'reflection', text: 'I reflect on my performance and learn from feedback or mistakes to improve my learning.', lowLabel: 'Never reflect', highLabel: 'Always reflect' },
-]
 
 // ── Screen time options ──────────────────────────────────────
 const VOLUME_OPTIONS = [

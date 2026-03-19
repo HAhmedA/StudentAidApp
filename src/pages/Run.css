@@ -1,122 +1,154 @@
-/* ── Page wrapper ────────────────────────────────────────── */
-.run-page-wrapper {
-  max-width: 680px;
-  margin: 32px auto;
-  padding: 0 16px;
+/* ── Questionnaire Page ──────────────────────────────────── */
+/* Matches Sleep & Screen Time page aesthetics */
+
+.run-page {
+    width: 100%;
+    min-height: calc(100vh - 64px);
+    padding: 32px 24px;
+}
+
+.run-container {
+    max-width: 640px;
+    margin: 0 auto;
+    background: #F0F9FF;
+    border: 1px solid #BAE6FD;
+    border-radius: 16px;
+    padding: 28px 32px;
+    box-shadow: 0 2px 12px rgba(59, 130, 246, 0.06);
 }
 
 /* ── Back button ─────────────────────────────────────────── */
-.run-back-button {
-  background: white;
-  border: 1px solid #E5E7EB;
-  border-radius: 8px;
-  padding: 8px 16px;
-  font-size: 14px;
-  color: #111827;
-  cursor: pointer;
-  margin-bottom: 24px;
-  transition: all 0.2s;
+
+.run-back-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    background: white;
+    color: #374151;
+    border: 1.5px solid #E5E7EB;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    text-decoration: none;
+    margin-bottom: 20px;
+    transition: background 0.2s, border-color 0.2s;
 }
 
-.run-back-button:hover {
-  background: #F9FAFB;
-  border-color: #D1D5DB;
+.run-back-btn:hover {
+    background: #F9FAFB;
+    border-color: #D1D5DB;
 }
 
-/* ── Survey content card ─────────────────────────────────── */
-.run-survey-content {
-  background: white;
-  border-radius: 12px;
-  padding: 32px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+/* ── Card ────────────────────────────────────────────────── */
+
+.run-card {
+    background: white;
+    border-radius: 16px;
+    padding: 32px;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
 }
 
-/* ── Survey title ────────────────────────────────────────── */
-.run-survey-title {
-  margin-bottom: 20px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid #f1f5f9;
+/* ── Title & subtitle ────────────────────────────────────── */
+
+.run-title {
+    margin: 0 0 6px 0;
+    font-size: 24px;
+    font-weight: 700;
+    color: #111827;
+    display: flex;
+    align-items: center;
+    gap: 10px;
 }
 
-.run-survey-title h3 {
-  font-size: 20px;
-  font-weight: 700;
-  color: #0891B2;
-  margin: 0;
-}
-
-/* ── Page header ─────────────────────────────────────────── */
-.run-page-header {
-  margin-bottom: 20px;
-}
-
-.run-page-header h2 {
-  margin: 0 0 4px;
-  font-size: 18px;
-  color: #1e293b;
-}
-
-.run-page-desc {
-  color: #64748b;
-  font-size: 13px;
-  margin: 0;
+.run-subtitle {
+    margin: 0 0 28px 0;
+    font-size: 14px;
+    color: #6B7280;
+    line-height: 1.5;
 }
 
 /* ── Navigation buttons ──────────────────────────────────── */
+
 .run-nav-buttons {
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-  margin-top: 24px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    margin-top: 24px;
 }
 
 .run-primary-btn {
-  padding: 10px 24px;
-  background: #3b82f6;
-  color: white;
-  border: none;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 32px;
+    background: #0891B2;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.1s, box-shadow 0.2s;
+    box-shadow: 0 2px 4px rgba(8, 145, 178, 0.2);
 }
 
-.run-primary-btn:hover {
-  background: #2563eb;
+.run-primary-btn:hover:not(:disabled) {
+    background: #06B6D4;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(8, 145, 178, 0.3);
+}
+
+.run-primary-btn:active:not(:disabled) {
+    transform: translateY(0);
 }
 
 .run-primary-btn:disabled {
-  background: #94a3b8;
-  cursor: not-allowed;
+    opacity: 0.5;
+    cursor: not-allowed;
 }
 
 .run-secondary-btn {
-  padding: 10px 24px;
-  background: transparent;
-  color: #64748b;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  font-size: 14px;
-  cursor: pointer;
-  transition: all 0.2s;
+    padding: 12px 24px;
+    background: transparent;
+    color: #374151;
+    border: 1.5px solid #E5E7EB;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
 }
 
 .run-secondary-btn:hover {
-  background: #f8fafc;
-  border-color: #cbd5e1;
+    background: #F9FAFB;
+    border-color: #D1D5DB;
 }
 
 /* ── Progress indicator ──────────────────────────────────── */
+
 .run-progress {
-  text-align: center;
-  font-size: 12px;
-  color: #94a3b8;
-  margin-top: 16px;
+    text-align: center;
+    font-size: 12px;
+    color: #9CA3AF;
+    margin-top: 16px;
 }
 
 /* ── Responsive ──────────────────────────────────────────── */
-@media (max-width: 600px) {
-  .run-page-wrapper { margin: 16px auto; }
-  .run-survey-content { padding: 20px; }
+
+@media (max-width: 640px) {
+    .run-container {
+        padding: 20px 16px;
+        border-radius: 12px;
+    }
+
+    .run-card {
+        padding: 24px 20px;
+    }
+
+    .run-primary-btn {
+        width: 100%;
+        justify-content: center;
+    }
 }

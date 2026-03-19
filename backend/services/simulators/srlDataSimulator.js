@@ -326,17 +326,7 @@ async function generateSRLData(pool, userId, profile, days = 14) {
     }
 
     // 4. Compute annotations (derived insights)
-    const mockSurveyStructure = {
-        pages: [{
-            elements: Object.keys(CONCEPT_SHORT_NAMES).map(key => ({
-                name: key,
-                type: 'rating',
-                title: CONCEPT_SHORT_NAMES[key]
-            }))
-        }]
-    };
-
-    await computeAnnotations(pool, userId, mockSurveyStructure);
+    await computeAnnotations(pool, userId);
 
     logger.info(`Generated ${responsesGenerated} SRL responses for user ${userId} (${days - responsesGenerated} days missed)`);
 }

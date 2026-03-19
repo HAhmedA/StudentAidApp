@@ -40,10 +40,7 @@ router.post('/post', asyncRoute(async (req, res) => {
         await saveResponses(pool, id, userId, surveyResult, submittedAt)
         await saveWellbeingResponses(pool, id, userId, surveyResult, submittedAt)
 
-        const surveyQuery = await pool.query('SELECT json FROM public.surveys WHERE id = $1', [postId])
-        if (surveyQuery.rows[0]) {
-            await computeAnnotations(pool, userId, surveyQuery.rows[0].json)
-        }
+        await computeAnnotations(pool, userId)
 
         // Trigger full score recomputation in background (do not await)
         computeAllScores(userId).catch(err =>
