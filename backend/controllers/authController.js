@@ -116,6 +116,7 @@ export const moodleAutoLogin = asyncRoute(async (req, res) => {
     }
 
     let user
+    let isNewUser = false
     const { rows } = await pool.query(
         'SELECT id, email, name, role FROM public.users WHERE moodle_id = $1', [moodleId]
     )
@@ -125,13 +126,17 @@ export const moodleAutoLogin = asyncRoute(async (req, res) => {
     } else {
         const randomPassword = crypto.randomBytes(32).toString('hex')
         const passwordHash = await bcrypt.hash(randomPassword, 10)
+        // ON CONFLICT handles the case where the email already exists but moodle_id
+        // is wrong/null (e.g., after a DB rebuild). Updates moodle_id to re-link.
         const insert = await pool.query(
             `INSERT INTO public.users (email, name, password_hash, role, moodle_id)
              VALUES ($1, $2, $3, 'student', $4)
+             ON CONFLICT (email) DO UPDATE SET moodle_id = EXCLUDED.moodle_id
              RETURNING id, email, name, role`,
             [`moodle_${moodleId}@auto.local`, `Student ${moodleId}`, passwordHash, moodleId]
         )
         user = insert.rows[0]
+        isNewUser = true
         logger.info(`Moodle auto-provisioned user ${user.id} for moodle_id=${moodleId}`)
 
         if (process.env.SIMULATION_MODE !== 'false') {

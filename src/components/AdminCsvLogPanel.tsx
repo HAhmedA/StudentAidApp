@@ -7,6 +7,7 @@ import {
     deleteCsvMappingWithData, importCsvLog,
     type CsvUploadResult, type CsvMapping, type CsvImportResult
 } from '../api/csvLog'
+import { api } from '../api/client'
 
 // -- Types --
 
@@ -42,8 +43,7 @@ const AdminCsvLogPanel = () => {
 
     // Load app students and existing mappings on mount
     useEffect(() => {
-        fetch('/api/admin/students', { credentials: 'include' })
-            .then(r => r.json())
+        api.get<{ students: AppStudent[] }>('/admin/students')
             .then(d => setAppStudents(d.students || []))
             .catch(() => {})
 

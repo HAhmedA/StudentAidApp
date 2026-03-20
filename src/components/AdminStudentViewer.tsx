@@ -8,8 +8,7 @@ import {
     type StudentLmsSyncStatus,
     type SyncAllResult,
 } from '../api/lms'
-
-const API_BASE = '/api'
+import { api } from '../api/client'
 
 interface StudentInfo { id: string; name: string; email: string; exclude_from_clustering: boolean }
 
@@ -35,8 +34,7 @@ const AdminStudentViewer = ({ onStudentSelect, selectedStudentId }: Props) => {
     useEffect(() => {
         // Load students for dropdown
         setStudentsLoading(true)
-        fetch(`${API_BASE}/admin/students`, { credentials: 'include' })
-            .then(res => res.json())
+        api.get<{ students: StudentInfo[] }>('/admin/students')
             .then(data => {
                 if (data.students) setStudents(data.students)
                 setStudentsLoading(false)
@@ -98,12 +96,7 @@ const AdminStudentViewer = ({ onStudentSelect, selectedStudentId }: Props) => {
         setStudents(prev => prev.map(s => s.id === userId ? { ...s, exclude_from_clustering: newValue } : s))
         setExcludeLoading(prev => new Set(prev).add(userId))
         try {
-            await fetch(`${API_BASE}/admin/students/${userId}/cluster-exclusion`, {
-                method: 'PATCH',
-                credentials: 'include',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ exclude: newValue })
-            })
+            await api.patch(`/admin/students/${userId}/cluster-exclusion`, { exclude: newValue })
         } catch {
             // Roll back on network error
             setStudents(prev => prev.map(s => s.id === userId ? { ...s, exclude_from_clustering: currentExcluded } : s))

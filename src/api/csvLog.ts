@@ -2,7 +2,7 @@
 // File upload uses raw fetch (not api.post) because we need to send text/csv body,
 // not JSON. All other calls use the standard api client.
 
-import { api } from './client'
+import { api, API_BASE } from './client'
 
 // -- Types --
 
@@ -80,7 +80,7 @@ export interface LinkableStudent {
  */
 export async function uploadCsvLog(file: File): Promise<CsvUploadResult> {
     const text = await file.text()
-    const res = await fetch('/api/lms/admin/csv/upload', {
+    const res = await fetch(`${API_BASE}/lms/admin/csv/upload`, {
         method: 'POST',
         credentials: 'include',
         headers: {
@@ -134,7 +134,7 @@ export const importCsvLog = (uploadId: string) =>
 
 export async function uploadCsvByMoodleId(file: File): Promise<MoodleIdUploadResult> {
     const text = await file.text()
-    const res = await fetch('/api/lms/admin/csv/upload-by-id', {
+    const res = await fetch(`${API_BASE}/lms/admin/csv/upload-by-id`, {
         method: 'POST',
         credentials: 'include',
         headers: {

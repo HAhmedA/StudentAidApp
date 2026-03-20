@@ -37,7 +37,8 @@ export const asyncRoute = (fn) => async (req, res, next) => {
         await fn(req, res, next)
     } catch (err) {
         const e = err instanceof AppError ? err : Errors.DB_ERROR(err.message)
-        logger.error(`${e.code}: ${e.message}`)
+        const detail = e.details ? ` | ${typeof e.details === 'string' ? e.details : JSON.stringify(e.details)}` : ''
+        logger.error(`${e.code}: ${e.message}${detail}`)
         res.status(e.status).json({
             error: e.code,
             message: e.message,
