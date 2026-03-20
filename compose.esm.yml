@@ -41,6 +41,8 @@ services:
       - SIMULATION_MODE=false
       - MOODLE_BASE_URL=${MOODLE_BASE_URL:-}
       - MOODLE_TOKEN=${MOODLE_TOKEN:-}
+      - MOODLE_AUTO_LOGIN_KEY=${MOODLE_AUTO_LOGIN_KEY:-}
+      - APP_BASE_PATH=/esm/
       - NODE_OPTIONS=--dns-result-order=ipv4first
     # No host port exposure - only accessible via internal nginx proxy
     expose:
