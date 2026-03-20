@@ -100,8 +100,8 @@
     -webkit-appearance: none;
     appearance: none;
     width: 100%;
-    height: 8px;
-    border-radius: 4px;
+    height: 14px;
+    border-radius: 7px;
     background: #e2e8f0;
     outline: none;
     cursor: pointer;
@@ -109,15 +109,15 @@
 
 /* Track — WebKit */
 .wq-slider::-webkit-slider-runnable-track {
-    height: 8px;
-    border-radius: 4px;
+    height: 14px;
+    border-radius: 7px;
     background: #e2e8f0;
 }
 
 /* Track — Firefox */
 .wq-slider::-moz-range-track {
-    height: 8px;
-    border-radius: 4px;
+    height: 14px;
+    border-radius: 7px;
     background: #e2e8f0;
     border: none;
 }
@@ -126,8 +126,8 @@
 .wq-slider::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
-    width: 22px;
-    height: 22px;
+    width: 28px;
+    height: 28px;
     border-radius: 50%;
     background: #3b82f6;
     cursor: pointer;
@@ -143,8 +143,8 @@
 
 /* Thumb — Firefox */
 .wq-slider::-moz-range-thumb {
-    width: 22px;
-    height: 22px;
+    width: 28px;
+    height: 28px;
     border-radius: 50%;
     background: #3b82f6;
     cursor: pointer;
@@ -158,8 +158,8 @@
 
 /* Progress fill — Firefox */
 .wq-slider::-moz-range-progress {
-    height: 8px;
-    border-radius: 4px;
+    height: 14px;
+    border-radius: 7px;
     background: #93c5fd;
 }
 

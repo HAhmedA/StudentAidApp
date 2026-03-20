@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import DailyWizard from '../components/DailyWizard'
-import Surveys from '../components/Surveys'
 import AdminStudentViewer from '../components/AdminStudentViewer'
 import AdminClusterDiagnosticsPanel from '../components/AdminClusterDiagnosticsPanel'
 import AdminCsvLogPanel from '../components/AdminCsvLogPanel'
@@ -9,14 +8,19 @@ import AdminCsvMoodleIdPanel from '../components/AdminCsvMoodleIdPanel'
 import AdminLlmConfigPanel from '../components/AdminLlmConfigPanel'
 import AdminFlaggedMessagesPanel from '../components/AdminFlaggedMessagesPanel'
 import AdminSupportRequestsPanel from '../components/AdminSupportRequestsPanel'
+import AdminTabNav from '../components/AdminTabNav'
 import ScoreBoard from '../components/ScoreBoard'
 import { useReduxSelector, useReduxDispatch } from '../redux'
 import { api } from '../api/client'
 import { getScores } from '../api/scores'
+import { getFeedbackStats } from '../api/flaggedMessages'
+import { getAdminSupportRequests } from '../api/supportRequests'
 import { getTodaySleep } from '../api/sleep'
 import { getTodayScreenTime } from '../api/screenTime'
 import { getTodaySRL } from '../api/results'
 import './Home.css'
+
+type AdminTabId = 'students' | 'moderation' | 'import' | 'system'
 
 interface ConceptScore {
     conceptId: string
@@ -53,7 +57,6 @@ const Home = () => {
     const [showWizard, setShowWizard] = useState(false)
     const [dataRefreshKey, setDataRefreshKey] = useState(0)
     const [wizardChecked, setWizardChecked] = useState(false)
-    const title = isAdmin ? 'My Surveys' : 'Available Surveys'
 
     // Concept scores state
     const [conceptScores, setConceptScores] = useState<ConceptScore[]>([])
@@ -63,6 +66,10 @@ const Home = () => {
     const [selectedStudentId, setSelectedStudentId] = useState<string>('')
     const [selectedStudentName, setSelectedStudentName] = useState<string>('')
 
+    // Admin tab navigation state
+    const [activeTab, setActiveTab] = useState<AdminTabId>('students')
+    const [moderationBadge, setModerationBadge] = useState(0)
+
     // Clear all student data state
     const [clearConfirming, setClearConfirming] = useState(false)
     const [clearLoading, setClearLoading] = useState(false)
@@ -71,6 +78,20 @@ const Home = () => {
     const [missingSleepLog, setMissingSleepLog] = useState(false)
     const [missingScreenTime, setMissingScreenTime] = useState(false)
     const [missingSRLSurvey, setMissingSRLSurvey] = useState(false)
+
+    // Fetch moderation badge counts (pending flags + open support requests)
+    useEffect(() => {
+        if (!isAdmin) return
+        Promise.allSettled([
+            getFeedbackStats(),
+            getAdminSupportRequests(undefined, 1, 0),
+        ]).then(([flagResult, supportResult]) => {
+            let count = 0
+            if (flagResult.status === 'fulfilled') count += flagResult.value.pending_flags || 0
+            if (supportResult.status === 'fulfilled') count += supportResult.value.counts?.open || 0
+            setModerationBadge(count)
+        })
+    }, [isAdmin])
 
     // When admin selects a student, load their scores
     useEffect(() => {
@@ -154,111 +175,123 @@ const Home = () => {
         return <DailyWizard onComplete={() => { setShowWizard(false); setDataRefreshKey(k => k + 1) }} />
     }
 
-    // For admin users, show student selector + student dashboard
+    // For admin users, show tabbed admin panel
     if (isAdmin) {
+        const adminTabs = [
+            { id: 'students',   label: 'Students' },
+            { id: 'moderation', label: 'Moderation', badge: moderationBadge },
+            { id: 'import',     label: 'Data Import' },
+            { id: 'system',     label: 'System' },
+        ]
+
         return (
             <div className='mood-home-wrapper'>
                 <div className='mood-home-container'>
-                    {/* Student Selector Card */}
-                    <AdminStudentViewer
-                        selectedStudentId={selectedStudentId}
-                        onStudentSelect={(id, name) => {
-                            setSelectedStudentId(id)
-                            setSelectedStudentName(name)
-                        }}
+                    <AdminTabNav
+                        tabs={adminTabs}
+                        activeTab={activeTab}
+                        onTabChange={id => setActiveTab(id as AdminTabId)}
                     />
 
-                    {/* Chatbot feedback — like/dislike moderation panel */}
-                    <AdminFlaggedMessagesPanel />
+                    {/* ── Students Tab ── */}
+                    {activeTab === 'students' && (
+                        <div className='admin-tab-content'>
+                            <AdminStudentViewer
+                                selectedStudentId={selectedStudentId}
+                                onStudentSelect={(id, name) => {
+                                    setSelectedStudentId(id)
+                                    setSelectedStudentName(name)
+                                }}
+                            />
 
-                    {/* Support requests from students */}
-                    <AdminSupportRequestsPanel />
-
-                    {/* Cluster diagnostics panel — always visible to admin */}
-                    <AdminClusterDiagnosticsPanel />
-
-                    {/* CSV activity log upload panel */}
-                    <AdminCsvLogPanel />
-
-                    {/* CSV upload by Moodle ID (auto-matching) */}
-                    <AdminCsvMoodleIdPanel />
-
-                    {/* LLM configuration panel */}
-                    <AdminLlmConfigPanel />
-
-                    {/* Danger zone: clear all student data */}
-                    <div className='mood-card' style={{ marginTop: '16px', borderColor: '#dc2626' }}>
-                        <h2 className='mood-card-title' style={{ color: '#dc2626' }}>Danger Zone</h2>
-                        <div className='mood-card-content'>
-                            {!clearConfirming ? (
-                                <button
-                                    className='btn-danger'
-                                    onClick={() => setClearConfirming(true)}
-                                >
-                                    Clear All Student Data
-                                </button>
-                            ) : (
-                                <div className='clear-confirm-block'>
-                                    <p className='clear-confirm-text'>
-                                        Are you sure? This permanently deletes all sleep, screen time, course activity, and learning data for every student. This cannot be undone.
-                                    </p>
-                                    <div className='clear-confirm-actions'>
-                                        <button
-                                            className='btn-danger'
-                                            disabled={clearLoading}
-                                            onClick={async () => {
-                                                setClearLoading(true)
-                                                try {
-                                                    await api.delete('/admin/clear-student-data')
-                                                    window.location.reload()
-                                                } catch {
-                                                    setClearLoading(false)
-                                                    setClearConfirming(false)
-                                                }
-                                            }}
-                                        >
-                                            {clearLoading ? 'Clearing…' : 'Yes, delete everything'}
-                                        </button>
-                                        <button
-                                            className='btn-secondary'
-                                            disabled={clearLoading}
-                                            onClick={() => setClearConfirming(false)}
-                                        >
-                                            Cancel
-                                        </button>
+                            {selectedStudentId && selectedStudentName && (
+                                <>
+                                    <div className='admin-viewing-banner'>
+                                        Viewing dashboard for <strong>{selectedStudentName}</strong>
                                     </div>
-                                </div>
+                                    <ScoreBoard
+                                        scores={conceptScores}
+                                        loading={scoresLoading}
+                                        title='Performance Scores'
+                                        description='Click on a gauge to see a detailed breakdown'
+                                        emptyMessage='No scores available for this student.'
+                                        infoTooltip='Scores are calculated by comparing the student with peers who have similar behavioral patterns. The dial range (P5–P95) shows where most students in their group fall.'
+                                        showConceptPlaceholders
+                                    />
+                                </>
                             )}
                         </div>
-                    </div>
-
-                    {/* Student dashboard – shown when a student is selected */}
-                    {selectedStudentId && selectedStudentName && (
-                        <>
-                            <div className='admin-viewing-banner'>
-                                Viewing dashboard for <strong>{selectedStudentName}</strong>
-                            </div>
-
-                            {/* Score Gauges Section */}
-                            <ScoreBoard
-                                scores={conceptScores}
-                                loading={scoresLoading}
-                                title='Performance Scores'
-                                description='Click on a gauge to see a detailed breakdown'
-                                emptyMessage='No scores available for this student.'
-                                infoTooltip='Scores are calculated by comparing the student with peers who have similar behavioral patterns. The dial range (P5–P95) shows where most students in their group fall.'
-                                showConceptPlaceholders
-                            />
-                        </>
                     )}
 
-                    {/* Surveys list (always visible for admin) */}
-                    <div className='mood-card' style={{ marginTop: '24px' }}>
-                        <h2 className='mood-card-title'>{title}</h2>
-                        <div className='mood-card-content'>
-                            <Surveys />
+                    {/* ── Moderation Tab ── */}
+                    {activeTab === 'moderation' && (
+                        <div className='admin-tab-content'>
+                            <AdminFlaggedMessagesPanel />
+                            <AdminSupportRequestsPanel />
                         </div>
-                    </div>
+                    )}
+
+                    {/* ── Data Import Tab ── */}
+                    {activeTab === 'import' && (
+                        <div className='admin-tab-content'>
+                            <AdminCsvLogPanel />
+                            <AdminCsvMoodleIdPanel />
+                        </div>
+                    )}
+
+                    {/* ── System Tab ── */}
+                    {activeTab === 'system' && (
+                        <div className='admin-tab-content'>
+                            <AdminClusterDiagnosticsPanel />
+                            <AdminLlmConfigPanel />
+
+                            {/* Danger zone: clear all student data */}
+                            <div className='mood-card' style={{ marginTop: '16px', borderColor: '#dc2626' }}>
+                                <h2 className='mood-card-title' style={{ color: '#dc2626' }}>Danger Zone</h2>
+                                <div className='mood-card-content'>
+                                    {!clearConfirming ? (
+                                        <button
+                                            className='btn-danger'
+                                            onClick={() => setClearConfirming(true)}
+                                        >
+                                            Clear All Student Data
+                                        </button>
+                                    ) : (
+                                        <div className='clear-confirm-block'>
+                                            <p className='clear-confirm-text'>
+                                                Are you sure? This permanently deletes all sleep, screen time, course activity, and learning data for every student. This cannot be undone.
+                                            </p>
+                                            <div className='clear-confirm-actions'>
+                                                <button
+                                                    className='btn-danger'
+                                                    disabled={clearLoading}
+                                                    onClick={async () => {
+                                                        setClearLoading(true)
+                                                        try {
+                                                            await api.delete('/admin/clear-student-data')
+                                                            window.location.reload()
+                                                        } catch {
+                                                            setClearLoading(false)
+                                                            setClearConfirming(false)
+                                                        }
+                                                    }}
+                                                >
+                                                    {clearLoading ? 'Clearing…' : 'Yes, delete everything'}
+                                                </button>
+                                                <button
+                                                    className='btn-secondary'
+                                                    disabled={clearLoading}
+                                                    onClick={() => setClearConfirming(false)}
+                                                >
+                                                    Cancel
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
         )

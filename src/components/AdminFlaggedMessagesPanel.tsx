@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { getFlaggedMessages, updateFlagStatus, getFeedbackStats, Flag } from '../api/flaggedMessages'
+import { getFlaggedMessages, updateFlagStatus, getFeedbackStats, getFeedbackStatsByUser, Flag, UserFeedbackStats } from '../api/flaggedMessages'
 
 type FilterStatus = 'pending' | 'reviewed' | 'dismissed' | undefined
 
@@ -42,6 +42,8 @@ const AdminFlaggedMessagesPanel = () => {
     const [activeFilter, setActiveFilter] = useState<FilterStatus>('pending')
     const [expandedFlagId, setExpandedFlagId] = useState<string | null>(null)
     const [feedbackStats, setFeedbackStats] = useState<{ total_likes: number; total_dislikes: number } | null>(null)
+    const [userStats, setUserStats] = useState<UserFeedbackStats[]>([])
+    const [showUserBreakdown, setShowUserBreakdown] = useState(false)
 
     const loadFlags = async (status: FilterStatus) => {
         setLoading(true)
@@ -61,6 +63,7 @@ const AdminFlaggedMessagesPanel = () => {
         if (!collapsed) {
             loadFlags(activeFilter)
             getFeedbackStats().then(setFeedbackStats).catch(() => {})
+            getFeedbackStatsByUser().then(d => setUserStats(d.users)).catch(() => {})
         }
     }, [collapsed, activeFilter])
 
@@ -156,6 +159,61 @@ const AdminFlaggedMessagesPanel = () => {
                             </button>
                         ))}
                     </div>
+
+                    {/* Per-user breakdown */}
+                    {userStats.length > 0 && (
+                        <div style={{ padding: '0 20px' }}>
+                            <button
+                                onClick={() => setShowUserBreakdown(b => !b)}
+                                style={{
+                                    background: 'none', border: 'none', cursor: 'pointer',
+                                    fontSize: 13, color: '#6b7280', padding: '10px 0',
+                                    display: 'flex', alignItems: 'center', gap: 6
+                                }}
+                            >
+                                <span style={{
+                                    display: 'inline-block', fontSize: 10,
+                                    transform: showUserBreakdown ? 'rotate(90deg)' : 'none',
+                                    transition: 'transform 0.2s'
+                                }}>▶</span>
+                                Per-user breakdown ({userStats.length} users)
+                            </button>
+                            {showUserBreakdown && (
+                                <table style={{
+                                    width: '100%', borderCollapse: 'collapse', fontSize: 13,
+                                    marginBottom: 12
+                                }}>
+                                    <thead>
+                                        <tr style={{ borderBottom: '2px solid #e5e7eb', textAlign: 'left' }}>
+                                            <th style={{ padding: '6px 8px', color: '#6b7280', fontWeight: 600 }}>Student</th>
+                                            <th style={{ padding: '6px 8px', color: '#6b7280', fontWeight: 600, textAlign: 'center' }}>👍</th>
+                                            <th style={{ padding: '6px 8px', color: '#6b7280', fontWeight: 600, textAlign: 'center' }}>👎</th>
+                                            <th style={{ padding: '6px 8px', color: '#6b7280', fontWeight: 600, textAlign: 'center' }}>Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {userStats.map(u => (
+                                            <tr key={u.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                                                <td style={{ padding: '8px 8px' }}>
+                                                    <div style={{ fontWeight: 500, color: '#374151' }}>{u.name || 'Unnamed'}</div>
+                                                    <div style={{ fontSize: 11, color: '#9ca3af' }}>{u.email}</div>
+                                                </td>
+                                                <td style={{ padding: '8px 8px', textAlign: 'center', color: u.likes > 0 ? '#3b82f6' : '#d1d5db', fontWeight: 600 }}>
+                                                    {u.likes}
+                                                </td>
+                                                <td style={{ padding: '8px 8px', textAlign: 'center', color: u.dislikes > 0 ? '#ef4444' : '#d1d5db', fontWeight: 600 }}>
+                                                    {u.dislikes}
+                                                </td>
+                                                <td style={{ padding: '8px 8px', textAlign: 'center', color: '#374151', fontWeight: 600 }}>
+                                                    {u.likes + u.dislikes}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            )}
+                        </div>
+                    )}
 
                     {/* Loading */}
                     {loading && (

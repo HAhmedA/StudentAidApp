@@ -31,3 +31,14 @@ export const updateFlagStatus = (flagId: string, status: 'reviewed' | 'dismissed
 
 export const getFeedbackStats = () =>
     api.get<{ total_likes: number; total_dislikes: number; pending_flags: number }>('/admin/feedback-stats')
+
+export interface UserFeedbackStats {
+    id: string
+    name: string
+    email: string
+    likes: number
+    dislikes: number
+}
+
+export const getFeedbackStatsByUser = () =>
+    api.get<{ users: UserFeedbackStats[] }>('/admin/feedback-stats/by-user')

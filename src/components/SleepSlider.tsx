@@ -263,51 +263,8 @@ const SleepSlider = ({ onSaved, suppressChatbotEvent }: SleepSliderProps) => {
         const addedId = nextId // capture before setIntervals increments it
 
         setIntervals(prev => {
-            const sorted = [...prev].sort((a, b) => a.start - b.start)
-            const DESIRED_WIDTH = 120 // 2 hours — visible at ~8.3% of track
-
-            // Build list of gaps on the track
-            const gaps: { start: number; end: number }[] = []
-            const firstStart = sorted.length > 0 ? sorted[0].start : TRACK_MINUTES
-            if (firstStart > 0) gaps.push({ start: 0, end: firstStart })
-            for (let i = 0; i < sorted.length - 1; i++) {
-                if (sorted[i + 1].start > sorted[i].end) {
-                    gaps.push({ start: sorted[i].end, end: sorted[i + 1].start })
-                }
-            }
-            if (sorted.length > 0) {
-                const lastEnd = sorted[sorted.length - 1].end
-                if (lastEnd < TRACK_MINUTES) gaps.push({ start: lastEnd, end: TRACK_MINUTES })
-            }
-
-            // Filter to usable gaps (at least 10 min)
-            const usable = gaps.filter(g => g.end - g.start >= SNAP_MINUTES * 2)
-
-            let newStart: number, newEnd: number
-
-            if (usable.length > 0) {
-                // Pick largest gap; tiebreak by proximity to midnight
-                const bestGap = usable.sort((a, b) => {
-                    const aSize = a.end - a.start
-                    const bSize = b.end - b.start
-                    if (aSize !== bSize) return bSize - aSize
-                    const aMid = (a.start + a.end) / 2
-                    const bMid = (b.start + b.end) / 2
-                    return Math.abs(aMid - MIDNIGHT_OFFSET) - Math.abs(bMid - MIDNIGHT_OFFSET)
-                })[0]
-
-                const gapWidth = bestGap.end - bestGap.start
-                const width = Math.min(DESIRED_WIDTH, gapWidth)
-                // Gravitate toward midnight within the gap
-                const idealCenter = clamp(MIDNIGHT_OFFSET, bestGap.start + width / 2, bestGap.end - width / 2)
-                newStart = snap(idealCenter - width / 2)
-                newEnd = snap(newStart + width)
-            } else {
-                // No usable gap — place at track end (merge will extend visibly)
-                newStart = snap(TRACK_MINUTES - DESIRED_WIDTH)
-                newEnd = snap(TRACK_MINUTES)
-            }
-
+            const newStart = 0   // far left of track
+            const newEnd = 120   // 2 hours wide
             return mergeIntervals([...prev, { id: nextId++, start: newStart, end: newEnd }])
         })
 

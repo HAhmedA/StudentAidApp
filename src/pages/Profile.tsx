@@ -32,6 +32,7 @@ const Profile = () => {
     const [contactError, setContactError] = useState<string | null>(null)
     const [myRequests, setMyRequests] = useState<SupportRequest[]>([])
     const [showMyRequests, setShowMyRequests] = useState(false)
+    const [contactCollapsed, setContactCollapsed] = useState(true)
 
     // Remove white sjs-app__content card (same pattern as Sleep/Screen/Run pages)
     useEffect(() => {
@@ -293,8 +294,20 @@ const Profile = () => {
                         backgroundColor: '#eef2ff',
                         marginBottom: '20px'
                     }}>
-                        <h3 style={{ margin: '0 0 8px', color: '#3730a3', fontSize: '14px' }}>Contact Admin</h3>
-                        <p style={{ fontSize: '13px', color: '#6b7280', margin: '0 0 12px' }}>
+                        <button
+                            onClick={() => setContactCollapsed(v => !v)}
+                            style={{
+                                background: 'none', border: 'none', cursor: 'pointer',
+                                padding: 0, margin: 0, display: 'flex', alignItems: 'center', gap: '6px',
+                                width: '100%', textAlign: 'left'
+                            }}
+                        >
+                            <span style={{ fontSize: '12px', color: '#3730a3' }}>{contactCollapsed ? '▶' : '▼'}</span>
+                            <h3 style={{ margin: 0, color: '#3730a3', fontSize: '14px' }}>Contact Admin</h3>
+                        </button>
+
+                        {!contactCollapsed && <>
+                        <p style={{ fontSize: '13px', color: '#6b7280', margin: '8px 0 12px' }}>
                             Have an issue or suggestion? Send a message to the admin team.
                         </p>
 
@@ -407,6 +420,7 @@ const Profile = () => {
                                 )}
                             </div>
                         )}
+                        </>}
                     </div>
 
                     {/* Consent & Data Management */}

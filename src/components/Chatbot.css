@@ -243,6 +243,7 @@
 
 .chatbot-message.assistant {
     align-self: flex-start;
+    flex-direction: column;
 }
 
 .chatbot-message-content {
@@ -802,25 +803,13 @@
 }
 
 /* ── Flag Icon ───────────────────────────────────── */
-.chatbot-message.assistant {
-    position: relative;
-}
 
 /* ── Feedback Buttons (Like / Dislike) ─────────── */
 .chatbot-feedback-buttons {
-    position: absolute;
-    bottom: 6px;
-    right: 6px;
     display: flex;
-    gap: 4px;
-    opacity: 0;
-    transition: opacity 0.2s ease;
-}
-
-.chatbot-message.assistant:hover .chatbot-feedback-buttons,
-.chatbot-feedback-buttons:has(.liked),
-.chatbot-feedback-buttons:has(.disliked) {
-    opacity: 1;
+    gap: 2px;
+    margin-top: 4px;
+    padding-top: 2px;
 }
 
 .chatbot-like-btn,
@@ -829,30 +818,29 @@
     border: 1px solid transparent;
     cursor: pointer;
     font-size: 15px;
-    padding: 2px 6px;
+    padding: 3px 6px;
     border-radius: 6px;
-    opacity: 0.5;
-    transition: opacity 0.2s, background 0.2s, border-color 0.2s;
-    filter: grayscale(100%);
+    color: #9ca3af;
+    transition: color 0.2s, background 0.2s, border-color 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .chatbot-like-btn:hover,
 .chatbot-dislike-btn:hover {
-    opacity: 1;
-    filter: grayscale(0%);
+    color: #6b7280;
     background: #f3f4f6;
 }
 
 .chatbot-like-btn.liked {
-    opacity: 1;
-    filter: grayscale(0%);
+    color: #3b82f6;
     border-color: #3b82f6;
     background: #eff6ff;
 }
 
 .chatbot-dislike-btn.disliked {
-    opacity: 1;
-    filter: grayscale(0%);
+    color: #ef4444;
     border-color: #ef4444;
     background: #fef2f2;
 }

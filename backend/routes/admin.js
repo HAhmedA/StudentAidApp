@@ -714,6 +714,22 @@ router.get('/feedback-stats', asyncRoute(async (req, res) => {
     })
 }))
 
+// ── Feedback stats per user ─────────────────────────────────────
+
+router.get('/feedback-stats/by-user', asyncRoute(async (req, res) => {
+    const { rows } = await pool.query(`
+        SELECT u.id, u.name, u.email,
+               COALESCE(l.like_count, 0)::int AS likes,
+               COALESCE(f.flag_count, 0)::int AS dislikes
+        FROM users u
+        LEFT JOIN (SELECT user_id, COUNT(*) AS like_count FROM chat_message_likes GROUP BY user_id) l ON l.user_id = u.id
+        LEFT JOIN (SELECT user_id, COUNT(*) AS flag_count FROM chat_message_flags GROUP BY user_id) f ON f.user_id = u.id
+        WHERE l.like_count IS NOT NULL OR f.flag_count IS NOT NULL
+        ORDER BY (COALESCE(l.like_count, 0) + COALESCE(f.flag_count, 0)) DESC
+    `)
+    res.json({ users: rows })
+}))
+
 // ── Support requests ────────────────────────────────────────────
 
 router.get('/support-requests', asyncRoute(async (req, res) => {

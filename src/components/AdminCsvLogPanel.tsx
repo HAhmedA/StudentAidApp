@@ -4,7 +4,7 @@
 import { useState, useEffect } from 'react'
 import {
     uploadCsvLog, getCsvMappings, createCsvMapping, deleteCsvMapping,
-    deleteCsvMappingWithData, importCsvLog,
+    deleteCsvMappingWithData, deleteAllCsvMappings, importCsvLog,
     type CsvUploadResult, type CsvMapping, type CsvImportResult
 } from '../api/csvLog'
 import { api } from '../api/client'
@@ -141,6 +141,19 @@ const AdminCsvLogPanel = () => {
             setMappings(prev => prev.filter(m => m.csv_name !== csvName))
         } catch (err: any) {
             alert(`Could not remove pair: ${err.message}`)
+        }
+    }
+
+    const handleDeleteAllPairs = async () => {
+        if (!window.confirm(
+            `Remove ALL ${mappings.length} CSV name mappings?\n\nThis only removes the name-to-student links. LMS session data will be kept.`
+        )) return
+        try {
+            const result = await deleteAllCsvMappings()
+            setMappings([])
+            alert(`Removed ${result.deleted} CSV mapping${result.deleted !== 1 ? 's' : ''}.`)
+        } catch (err: any) {
+            alert(`Could not remove mappings: ${err.message}`)
         }
     }
 
@@ -301,7 +314,15 @@ const AdminCsvLogPanel = () => {
                     {/* Pairs table */}
                     {mappings.length > 0 && (
                         <div className='admin-csv-pairs'>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <div className='admin-csv-pairs-header'>Pairs ({mappings.length})</div>
+                            <button
+                                className='admin-csv-pair-delete'
+                                onClick={handleDeleteAllPairs}
+                                style={{ fontSize: '11px', padding: '2px 8px', cursor: 'pointer' }}
+                                title='Remove all CSV name mappings (keeps LMS data)'
+                            >Delete All</button>
+                        </div>
                             {mappings.map(m => (
                                 <div key={m.csv_name} className='admin-csv-pair-row'>
                                     <span className='admin-csv-pair-email'>{m.email}</span>

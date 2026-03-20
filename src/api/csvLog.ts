@@ -111,6 +111,9 @@ export const createCsvMapping = (csvName: string, userId: string) =>
 /**
  * Delete a mapping by CSV name.
  */
+export const deleteAllCsvMappings = () =>
+    api.delete<{ deleted: number }>('/lms/admin/csv/mappings/all')
+
 export const deleteCsvMapping = (csvName: string) =>
     api.delete<{ deleted: boolean; csvName: string }>(
         `/lms/admin/csv/mapping/${encodeURIComponent(csvName)}`
@@ -174,6 +177,9 @@ export interface MoodlePairing {
 
 export const getMoodlePairings = () =>
     api.get<{ pairings: MoodlePairing[] }>('/lms/admin/moodle-pairings')
+
+export const deleteAllMoodlePairings = () =>
+    api.delete<{ cleared: number }>('/lms/admin/moodle-pairings/all')
 
 export const deleteMoodlePairing = (userId: string) =>
     api.delete<{ cleared: boolean; userId: string }>(

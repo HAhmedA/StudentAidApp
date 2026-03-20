@@ -24,7 +24,7 @@ router.use(requireAuth)
 const chatMessageLimiter = rateLimit({
     windowMs: 60_000,           // 1-minute window
     max: 10,                    // 10 messages per minute per user
-    keyGenerator: (req) => req.session?.user?.id || req.ip,
+    keyGenerator: (req) => req.session?.user?.id,
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Too many messages — please wait a moment before sending again.' }
@@ -33,7 +33,7 @@ const chatMessageLimiter = rateLimit({
 const chatResetLimiter = rateLimit({
     windowMs: 60_000,
     max: 3,                     // 3 resets per minute per user
-    keyGenerator: (req) => req.session?.user?.id || req.ip,
+    keyGenerator: (req) => req.session?.user?.id,
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Too many resets — please wait before trying again.' }

@@ -29,6 +29,7 @@ const AdminStudentViewer = ({ onStudentSelect, selectedStudentId }: Props) => {
     const [syncAllResult, setSyncAllResult] = useState<SyncAllResult | null>(null)
     const [perStudentSyncing, setPerStudentSyncing] = useState<Set<string>>(new Set())
     const [syncSearch, setSyncSearch] = useState('')
+    const [clusterFilter, setClusterFilter] = useState<'all' | 'included' | 'excluded'>('all')
     const [excludeLoading, setExcludeLoading] = useState<Set<string>>(new Set())
 
     useEffect(() => {
@@ -150,12 +151,17 @@ const AdminStudentViewer = ({ onStudentSelect, selectedStudentId }: Props) => {
             {/* ── Student LMS sync table ── */}
             {syncStatuses.length > 0 && (() => {
                 const q = syncSearch.trim().toLowerCase()
-                const filtered = q
-                    ? syncStatuses.filter(s => s.name.toLowerCase().includes(q) || s.email.toLowerCase().includes(q))
-                    : syncStatuses
-                const syncedCount = syncStatuses.filter(s => s.hasMoodleData).length
                 // Build exclusion lookup from the students list (now includes exclude_from_clustering)
                 const exclusionByUserId = new Map(students.map(s => [s.id, s.exclude_from_clustering]))
+                const filtered = syncStatuses
+                    .filter(s => {
+                        if (q && !s.name.toLowerCase().includes(q) && !s.email.toLowerCase().includes(q)) return false
+                        if (clusterFilter === 'included' && exclusionByUserId.get(s.userId)) return false
+                        if (clusterFilter === 'excluded' && !exclusionByUserId.get(s.userId)) return false
+                        return true
+                    })
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                const syncedCount = syncStatuses.filter(s => s.hasMoodleData).length
                 return (
                     <div className='admin-lms-section'>
                         <div className='admin-lms-search-row'>
@@ -166,12 +172,22 @@ const AdminStudentViewer = ({ onStudentSelect, selectedStudentId }: Props) => {
                                 value={syncSearch}
                                 onChange={e => setSyncSearch(e.target.value)}
                             />
+                            <div className='admin-lms-filter-pills'>
+                                {(['all', 'included', 'excluded'] as const).map(f => (
+                                    <button
+                                        key={f}
+                                        className={`admin-lms-filter-pill ${clusterFilter === f ? 'active' : ''}`}
+                                        onClick={() => setClusterFilter(f)}
+                                    >{f.charAt(0).toUpperCase() + f.slice(1)}</button>
+                                ))}
+                            </div>
                             <span className='admin-lms-count'>{syncedCount}/{syncStatuses.length} synced</span>
                         </div>
                         <div className='admin-lms-table-wrapper'>
                             <table className='admin-lms-table'>
                                 <thead>
                                     <tr>
+                                        <th>#</th>
                                         <th>Student</th>
                                         <th>Email</th>
                                         <th>LMS</th>
@@ -182,11 +198,12 @@ const AdminStudentViewer = ({ onStudentSelect, selectedStudentId }: Props) => {
                                 </thead>
                                 <tbody>
                                     {filtered.length === 0 ? (
-                                        <tr><td colSpan={6} className='admin-lms-empty'>No students match</td></tr>
-                                    ) : filtered.map(s => {
+                                        <tr><td colSpan={7} className='admin-lms-empty'>No students match</td></tr>
+                                    ) : filtered.map((s, idx) => {
                                         const isExcluded = exclusionByUserId.get(s.userId) ?? false
                                         return (
                                             <tr key={s.userId} className={isExcluded ? 'cluster-excluded-row' : ''}>
+                                                <td className='admin-lms-row-num'>{idx + 1}</td>
                                                 <td>{s.name}</td>
                                                 <td className='admin-lms-email'>{s.email}</td>
                                                 <td className={s.hasMoodleData ? 'lms-synced' : 'lms-none'}>

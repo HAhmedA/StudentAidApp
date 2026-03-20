@@ -8,6 +8,7 @@ import { useState, useEffect } from 'react'
 import {
     uploadCsvByMoodleId, approveAndImport, getStudentsForLinking,
     getMoodlePairings, deleteMoodlePairing, deleteMoodlePairingWithData,
+    deleteAllMoodlePairings,
     type MoodleIdUploadResult, type MoodleIdSuggestion, type MoodleIdImportResult,
     type LinkableStudent, type MoodlePairing
 } from '../api/csvLog'
@@ -138,6 +139,19 @@ const AdminCsvMoodleIdPanel = () => {
         }
     }
 
+    const handleRemoveAllPairings = async () => {
+        if (!window.confirm(
+            `Remove ALL ${pairings.length} Moodle ID pairings?\n\nThis only removes the link between app users and Moodle IDs. LMS session data will be kept.`
+        )) return
+        try {
+            const result = await deleteAllMoodlePairings()
+            setPairings([])
+            alert(`Removed ${result.cleared} Moodle ID pairing${result.cleared !== 1 ? 's' : ''}.`)
+        } catch (err: any) {
+            alert(`Could not remove pairings: ${err.message}`)
+        }
+    }
+
     const handleRemovePairingWithData = async (userId: string, email: string) => {
         if (!window.confirm(
             `Remove Moodle ID pairing AND all imported LMS sessions for ${email}?\n\nThis cannot be undone.`
@@ -186,9 +200,17 @@ const AdminCsvMoodleIdPanel = () => {
             {/* -- Existing Moodle ID Pairings (visible in upload phase) -- */}
             {phase === 'upload' && !pairingsLoading && pairings.length > 0 && (
                 <div className='admin-csv-mapping' style={{ marginTop: '16px' }}>
-                    <h4 style={{ margin: '0 0 8px', fontSize: '13px', color: '#374151' }}>
-                        Existing Moodle ID Pairings ({pairings.length})
-                    </h4>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '0 0 8px' }}>
+                        <h4 style={{ margin: 0, fontSize: '13px', color: '#374151' }}>
+                            Existing Moodle ID Pairings ({pairings.length})
+                        </h4>
+                        <button
+                            className='admin-csv-pair-delete'
+                            onClick={handleRemoveAllPairings}
+                            style={{ fontSize: '11px', padding: '2px 8px', cursor: 'pointer' }}
+                            title='Remove all Moodle ID pairings (keeps LMS data)'
+                        >Delete All</button>
+                    </div>
                     <div className='admin-csv-pairs'>
                         {pairings.map(p => (
                             <div key={p.id} className='admin-csv-pair-row'>

@@ -116,6 +116,18 @@ router.post('/admin/csv/mapping', asyncRoute(async (req, res) => {
 }))
 
 // =============================================================================
+// DELETE ALL MAPPINGS
+// DELETE /api/lms/admin/csv/mappings/all
+// =============================================================================
+router.delete('/admin/csv/mappings/all', asyncRoute(async (req, res) => {
+    const { rowCount } = await pool.query(
+        `DELETE FROM public.csv_participant_aliases`
+    )
+    logger.info(`Bulk CSV mapping delete: ${rowCount} mappings removed by admin ${req.session.user.id}`)
+    res.json({ deleted: rowCount })
+}))
+
+// =============================================================================
 // DELETE MAPPING
 // DELETE /api/lms/admin/csv/mapping/:csvName
 // =============================================================================
@@ -373,6 +385,18 @@ router.get('/admin/moodle-pairings', asyncRoute(async (req, res) => {
          ORDER BY name`
     )
     res.json({ pairings: rows.map(r => ({ id: r.id, email: r.email, name: r.name, moodleId: r.moodle_id })) })
+}))
+
+// =============================================================================
+// REMOVE ALL MOODLE ID PAIRINGS
+// DELETE /api/lms/admin/moodle-pairings/all
+// =============================================================================
+router.delete('/admin/moodle-pairings/all', asyncRoute(async (req, res) => {
+    const { rowCount } = await pool.query(
+        `UPDATE public.users SET moodle_id = NULL WHERE moodle_id IS NOT NULL AND role = 'student'`
+    )
+    logger.info(`Bulk moodle pairing clear: ${rowCount} pairings removed by admin ${req.session.user.id}`)
+    res.json({ cleared: rowCount })
 }))
 
 // =============================================================================
