@@ -214,7 +214,7 @@ router.post('/reset', chatResetLimiter, asyncRoute(async (req, res) => {
     if (!result.success) return res.status(500).json({ error: 'reset_failed' })
 
     const greeting = await generateInitialGreeting(userId)
-    res.json({ sessionId: result.newSessionId, greeting: greeting.greeting, success: true })
+    res.json({ sessionId: result.newSessionId, greeting: greeting.greeting, suggestedPrompts: greeting.suggestedPrompts, success: true })
 }))
 
 // LLM availability status — used by the chatbot UI to show Online/Offline

@@ -486,8 +486,12 @@ const Chatbot = ({ isLoggedIn }: ChatbotProps) => {
                 setHasMore(false)
                 // Clear cached greeting so we get fresh one next time
                 setCachedGreeting(null)
-                // Reset suggested prompts to defaults
-                setSuggestedPrompts(DEFAULT_PROMPTS)
+                // Use contextual prompts from greeting if available, else defaults
+                if (data.suggestedPrompts && Array.isArray(data.suggestedPrompts) && data.suggestedPrompts.length > 0) {
+                    setSuggestedPrompts(data.suggestedPrompts)
+                } else {
+                    setSuggestedPrompts(DEFAULT_PROMPTS)
+                }
                 // Clear flag state for old session
                 setFlaggedMessageIds(new Set())
             }

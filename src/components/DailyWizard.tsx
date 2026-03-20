@@ -163,6 +163,12 @@ export default function DailyWizard({ onComplete }: { onComplete: () => void }) 
     const completedWeight = steps.slice(0, currentStepIdx + 1).reduce((sum, s) => sum + STEP_WEIGHT[s.key], 0)
     const progressPercent = Math.round((completedWeight / totalWeight) * 100)
 
+    const overlayRef = useRef<HTMLDivElement>(null)
+
+    useEffect(() => {
+        overlayRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+    }, [currentStepIdx])
+
     const goNext = useCallback(async () => {
         if (currentStepIdx < steps.length - 1) {
             setCurrentStepIdx(prev => prev + 1)
@@ -194,7 +200,7 @@ export default function DailyWizard({ onComplete }: { onComplete: () => void }) 
     }
 
     return (
-        <div className='wizard-overlay'>
+        <div className='wizard-overlay' ref={overlayRef}>
             <div className='wizard-container'>
                 <div className='wizard-progress-bar'>
                     <div className='wizard-progress-fill' style={{ width: `${progressPercent}%` }} />
@@ -472,9 +478,11 @@ function ScreenTimeStep({ onComplete }: { onComplete: () => void }) {
 
     const isComplete = totalMinutes !== null && longestSession !== null && preSleepMinutes !== null
     const sessionExceedsTotal = longestSession !== null && totalMinutes !== null && longestSession > totalMinutes
+    const preSleepExceedsTotal = preSleepMinutes !== null && totalMinutes !== null && preSleepMinutes > totalMinutes
+    const isLogicallyValid = !sessionExceedsTotal && !preSleepExceedsTotal
 
     const handleSubmit = async () => {
-        if (!isComplete || sessionExceedsTotal) return
+        if (!isComplete || !isLogicallyValid) return
         setSubmitting(true)
         try {
             await saveScreenTime({ totalMinutes: totalMinutes!, longestSession: longestSession!, preSleepMinutes: preSleepMinutes! })
@@ -505,8 +513,13 @@ function ScreenTimeStep({ onComplete }: { onComplete: () => void }) {
                                 checked={totalMinutes === opt.value}
                                 onChange={() => {
                                     setTotalMinutes(opt.value)
-                                    if (opt.value > 0 && longestSession === 0) setLongestSession(null)
-                                    if (opt.value === 0) setLongestSession(0)
+                                    if (opt.value === 0) { setLongestSession(0); setPreSleepMinutes(0) }
+                                    else {
+                                        if (longestSession === 0) setLongestSession(null)
+                                        else if (longestSession !== null && longestSession > opt.value) setLongestSession(null)
+                                        if (preSleepMinutes === 0) setPreSleepMinutes(null)
+                                        else if (preSleepMinutes !== null && preSleepMinutes > opt.value) setPreSleepMinutes(null)
+                                    }
                                 }}
                             />
                             <span className='st-option-label'>{opt.label}</span>
@@ -525,7 +538,11 @@ function ScreenTimeStep({ onComplete }: { onComplete: () => void }) {
                 </label>
                 <div className='st-options'>
                     {LONGEST_SESSION_OPTIONS
-                        .filter(opt => !totalMinutes || opt.value !== 0)
+                        .filter(opt => {
+                            if (totalMinutes === null) return true
+                            if (totalMinutes === 0) return opt.value === 0
+                            return opt.value !== 0 && opt.value <= totalMinutes
+                        })
                         .map(opt => (
                         <label className='st-option' key={opt.value}>
                             <input
@@ -556,7 +573,13 @@ function ScreenTimeStep({ onComplete }: { onComplete: () => void }) {
                     How much time did you spend on a screen before going to sleep last night?
                 </label>
                 <div className='st-options'>
-                    {PRE_SLEEP_OPTIONS.map(opt => (
+                    {PRE_SLEEP_OPTIONS
+                        .filter(opt => {
+                            if (totalMinutes === null) return true
+                            if (totalMinutes === 0) return opt.value === 0
+                            return opt.value !== 0 && opt.value <= totalMinutes
+                        })
+                        .map(opt => (
                         <label className='st-option' key={opt.value}>
                             <input
                                 type='radio'
@@ -571,10 +594,16 @@ function ScreenTimeStep({ onComplete }: { onComplete: () => void }) {
                 </div>
             </div>
 
+            {preSleepExceedsTotal && (
+                <p className='st-validation-warning'>
+                    Pre-sleep screen time can't exceed your total screen time. Please adjust one of your answers.
+                </p>
+            )}
+
             <button
                 className='wizard-primary-btn'
                 onClick={handleSubmit}
-                disabled={submitting || !isComplete || sessionExceedsTotal}
+                disabled={submitting || !isComplete || !isLogicallyValid}
             >
                 {submitting ? 'Saving...' : 'Save & Continue'}
             </button>

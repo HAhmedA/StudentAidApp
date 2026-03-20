@@ -32,6 +32,7 @@ export interface HistoryResponse {
 export interface ResetChatResponse {
     sessionId: string
     greeting: string
+    suggestedPrompts?: string[]
     success: boolean
 }
 

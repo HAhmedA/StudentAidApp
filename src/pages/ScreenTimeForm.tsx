@@ -189,9 +189,13 @@ const ScreenTimeForm = () => {
                                                 checked={totalMinutes === opt.value}
                                                 onChange={() => {
                                                     setTotalMinutes(opt.value)
-                                                    if (opt.value > 0 && longestSession === 0) setLongestSession(null)
-                                                    if (opt.value > 0 && preSleepMinutes === 0) setPreSleepMinutes(null)
                                                     if (opt.value === 0) { setLongestSession(0); setPreSleepMinutes(0) }
+                                                    else {
+                                                        if (longestSession === 0) setLongestSession(null)
+                                                        else if (longestSession !== null && longestSession > opt.value) setLongestSession(null)
+                                                        if (preSleepMinutes === 0) setPreSleepMinutes(null)
+                                                        else if (preSleepMinutes !== null && preSleepMinutes > opt.value) setPreSleepMinutes(null)
+                                                    }
                                                 }}
                                             />
                                             <span className='st-option-label'>{opt.label}</span>
@@ -210,7 +214,11 @@ const ScreenTimeForm = () => {
                                 </label>
                                 <div className='st-options'>
                                     {LONGEST_SESSION_OPTIONS
-                                        .filter(opt => !totalMinutes || opt.value !== 0)
+                                        .filter(opt => {
+                                            if (totalMinutes === null) return true
+                                            if (totalMinutes === 0) return opt.value === 0
+                                            return opt.value !== 0 && opt.value <= totalMinutes
+                                        })
                                         .map(opt => (
                                         <label className='st-option' key={opt.value}>
                                             <input
@@ -242,7 +250,11 @@ const ScreenTimeForm = () => {
                                 </label>
                                 <div className='st-options'>
                                     {PRE_SLEEP_OPTIONS
-                                        .filter(opt => totalMinutes !== 0 || opt.value === 0)
+                                        .filter(opt => {
+                                            if (totalMinutes === null) return true
+                                            if (totalMinutes === 0) return opt.value === 0
+                                            return opt.value !== 0 && opt.value <= totalMinutes
+                                        })
                                         .map(opt => (
                                         <label className='st-option' key={opt.value}>
                                             <input
