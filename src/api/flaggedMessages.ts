@@ -28,3 +28,6 @@ export const getFlaggedMessages = (status?: string, limit = 20, offset = 0) => {
 
 export const updateFlagStatus = (flagId: string, status: 'reviewed' | 'dismissed') =>
     api.put<{ flag: Flag }>(`/admin/flagged-messages/${flagId}`, { status })
+
+export const getFeedbackStats = () =>
+    api.get<{ total_likes: number; total_dislikes: number; pending_flags: number }>('/admin/feedback-stats')

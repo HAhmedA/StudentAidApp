@@ -8,6 +8,7 @@ import AdminCsvLogPanel from '../components/AdminCsvLogPanel'
 import AdminCsvMoodleIdPanel from '../components/AdminCsvMoodleIdPanel'
 import AdminLlmConfigPanel from '../components/AdminLlmConfigPanel'
 import AdminFlaggedMessagesPanel from '../components/AdminFlaggedMessagesPanel'
+import AdminSupportRequestsPanel from '../components/AdminSupportRequestsPanel'
 import ScoreBoard from '../components/ScoreBoard'
 import { useReduxSelector, useReduxDispatch } from '../redux'
 import { api } from '../api/client'
@@ -167,8 +168,11 @@ const Home = () => {
                         }}
                     />
 
-                    {/* Flagged chatbot messages — moderation panel */}
+                    {/* Chatbot feedback — like/dislike moderation panel */}
                     <AdminFlaggedMessagesPanel />
+
+                    {/* Support requests from students */}
+                    <AdminSupportRequestsPanel />
 
                     {/* Cluster diagnostics panel — always visible to admin */}
                     <AdminClusterDiagnosticsPanel />

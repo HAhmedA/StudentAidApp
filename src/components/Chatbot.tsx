@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
 import './Chatbot.css'
-import { getInitialChat, getHistory, sendMessage as sendMessageApi, resetChat, getChatStatus, getChatPreferences, updateChatPreferences, ChatbotPreferences, flagMessage, unflagMessage, getMyFlags } from '../api/chat'
+import { getInitialChat, getHistory, sendMessage as sendMessageApi, resetChat, getChatStatus, getChatPreferences, updateChatPreferences, ChatbotPreferences, flagMessage, unflagMessage, likeMessage, unlikeMessage, getMyFeedback } from '../api/chat'
 
 interface Message {
     id: string
@@ -59,7 +59,8 @@ const Chatbot = ({ isLoggedIn }: ChatbotProps) => {
     // Proactive data-update banner
     const [dataUpdateBanner, setDataUpdateBanner] = useState<{ dataType: string } | null>(null)
 
-    // Message flagging state
+    // Message feedback state (like / dislike-flag)
+    const [likedMessageIds, setLikedMessageIds] = useState<Set<string>>(new Set())
     const [flaggedMessageIds, setFlaggedMessageIds] = useState<Set<string>>(new Set())
     const [flagModalMessageId, setFlagModalMessageId] = useState<string | null>(null)
     const [flagReason, setFlagReason] = useState<string>('')
@@ -98,7 +99,12 @@ const Chatbot = ({ isLoggedIn }: ChatbotProps) => {
         const check = () => {
             getChatStatus()
                 .then(r => setLlmAvailable(r.available))
-                .catch(() => setLlmAvailable(false))
+                .catch((err) => {
+                    // Don't show "Offline" for auth errors — session handling
+                    // will redirect to login; only mark offline for real LLM issues
+                    if (err?.status === 401) return
+                    setLlmAvailable(false)
+                })
         }
         check()
         const interval = setInterval(check, 30000)
@@ -154,12 +160,15 @@ const Chatbot = ({ isLoggedIn }: ChatbotProps) => {
         }
     }, [isOpen, isLoggedIn, preferences])
 
-    // Restore flag state when session changes
+    // Restore feedback state (likes + flags) when session changes
     useEffect(() => {
         if (sessionId) {
-            getMyFlags(sessionId)
-                .then(data => setFlaggedMessageIds(new Set(data.flaggedMessageIds)))
-                .catch(() => {}) // Flag state is cosmetic — fail silently
+            getMyFeedback(sessionId)
+                .then(data => {
+                    setFlaggedMessageIds(new Set(data.flaggedMessageIds))
+                    setLikedMessageIds(new Set(data.likedMessageIds))
+                })
+                .catch(() => {}) // Feedback state is cosmetic — fail silently
         }
     }, [sessionId])
 
@@ -510,7 +519,38 @@ const Chatbot = ({ isLoggedIn }: ChatbotProps) => {
         }
     }
 
-    // ── Message flagging handlers ──────────────────────────────────
+    // ── Message feedback handlers (like / dislike-flag) ────────────
+
+    const handleLikeToggle = async (messageId: string) => {
+        const wasLiked = likedMessageIds.has(messageId)
+
+        // Optimistic update
+        if (wasLiked) {
+            setLikedMessageIds(prev => { const next = new Set(prev); next.delete(messageId); return next })
+        } else {
+            setLikedMessageIds(prev => new Set(prev).add(messageId))
+            // Mutual exclusivity: clear dislike if present
+            if (flaggedMessageIds.has(messageId)) {
+                setFlaggedMessageIds(prev => { const next = new Set(prev); next.delete(messageId); return next })
+            }
+        }
+
+        try {
+            if (wasLiked) {
+                await unlikeMessage(messageId)
+            } else {
+                await likeMessage(messageId)
+            }
+        } catch {
+            // Rollback on error
+            if (wasLiked) {
+                setLikedMessageIds(prev => new Set(prev).add(messageId))
+            } else {
+                setLikedMessageIds(prev => { const next = new Set(prev); next.delete(messageId); return next })
+            }
+        }
+    }
+
     const handleFlagSubmit = async () => {
         if (!flagModalMessageId || !flagReason) return
         setFlagSubmitting(true)
@@ -518,6 +558,8 @@ const Chatbot = ({ isLoggedIn }: ChatbotProps) => {
         try {
             await flagMessage(flagModalMessageId, flagReason, flagComment || undefined)
             setFlaggedMessageIds(prev => new Set(prev).add(flagModalMessageId))
+            // Mutual exclusivity: clear like
+            setLikedMessageIds(prev => { const next = new Set(prev); next.delete(flagModalMessageId); return next })
             setFlagModalMessageId(null)
             setFlagReason('')
             setFlagComment('')
@@ -739,24 +781,33 @@ const Chatbot = ({ isLoggedIn }: ChatbotProps) => {
                                         ? <ReactMarkdown>{msg.content}</ReactMarkdown>
                                         : msg.content}
                                 </div>
-                                {/* Flag button on assistant messages */}
+                                {/* Like / Dislike buttons on assistant messages */}
                                 {isFlaggable && (
-                                    <button
-                                        className={`chatbot-flag-btn${flaggedMessageIds.has(msg.id) ? ' flagged' : ''}`}
-                                        onClick={() => {
-                                            if (flaggedMessageIds.has(msg.id)) {
-                                                setUnflagConfirmId(msg.id)
-                                            } else {
-                                                setFlagModalMessageId(msg.id)
-                                                setFlagReason('')
-                                                setFlagComment('')
-                                                setFlagError(null)
-                                            }
-                                        }}
-                                        title={flaggedMessageIds.has(msg.id) ? 'Flagged — click to unflag' : 'Report this response'}
-                                    >
-                                        ⚑
-                                    </button>
+                                    <div className="chatbot-feedback-buttons">
+                                        <button
+                                            className={`chatbot-like-btn${likedMessageIds.has(msg.id) ? ' liked' : ''}`}
+                                            onClick={() => handleLikeToggle(msg.id)}
+                                            title={likedMessageIds.has(msg.id) ? 'Remove like' : 'Good response'}
+                                        >
+                                            👍
+                                        </button>
+                                        <button
+                                            className={`chatbot-dislike-btn${flaggedMessageIds.has(msg.id) ? ' disliked' : ''}`}
+                                            onClick={() => {
+                                                if (flaggedMessageIds.has(msg.id)) {
+                                                    setUnflagConfirmId(msg.id)
+                                                } else {
+                                                    setFlagModalMessageId(msg.id)
+                                                    setFlagReason('')
+                                                    setFlagComment('')
+                                                    setFlagError(null)
+                                                }
+                                            }}
+                                            title={flaggedMessageIds.has(msg.id) ? 'Flagged — click to unflag' : 'Report this response'}
+                                        >
+                                            👎
+                                        </button>
+                                    </div>
                                 )}
                                 {/* Retry button for error messages */}
                                 {msg.isError && msg.failedMessage && (

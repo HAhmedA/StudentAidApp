@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { getFlaggedMessages, updateFlagStatus, Flag } from '../api/flaggedMessages'
+import { getFlaggedMessages, updateFlagStatus, getFeedbackStats, Flag } from '../api/flaggedMessages'
 
 type FilterStatus = 'pending' | 'reviewed' | 'dismissed' | undefined
 
@@ -41,6 +41,7 @@ const AdminFlaggedMessagesPanel = () => {
     const [loading, setLoading] = useState(false)
     const [activeFilter, setActiveFilter] = useState<FilterStatus>('pending')
     const [expandedFlagId, setExpandedFlagId] = useState<string | null>(null)
+    const [feedbackStats, setFeedbackStats] = useState<{ total_likes: number; total_dislikes: number } | null>(null)
 
     const loadFlags = async (status: FilterStatus) => {
         setLoading(true)
@@ -57,7 +58,10 @@ const AdminFlaggedMessagesPanel = () => {
     }
 
     useEffect(() => {
-        if (!collapsed) loadFlags(activeFilter)
+        if (!collapsed) {
+            loadFlags(activeFilter)
+            getFeedbackStats().then(setFeedbackStats).catch(() => {})
+        }
     }, [collapsed, activeFilter])
 
     const handleResolve = async (flagId: string, status: 'reviewed' | 'dismissed') => {
@@ -105,7 +109,12 @@ const AdminFlaggedMessagesPanel = () => {
             >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <span style={{ fontSize: 18 }}>⚑</span>
-                    <span style={{ fontWeight: 600, fontSize: 15, color: '#991b1b' }}>Flagged Messages</span>
+                    <span style={{ fontWeight: 600, fontSize: 15, color: '#991b1b' }}>Chatbot Feedback</span>
+                    {feedbackStats && (
+                        <span style={{ fontSize: 12, color: '#6b7280', fontWeight: 400 }}>
+                            👍 {feedbackStats.total_likes} · 👎 {feedbackStats.total_dislikes}
+                        </span>
+                    )}
                     {counts.pending > 0 && (
                         <span style={{
                             background: '#dc2626', color: 'white', fontSize: 11, padding: '2px 8px',

@@ -64,7 +64,7 @@ export const getChatPreferences = () =>
 export const updateChatPreferences = (prefs: Partial<ChatbotPreferences>) =>
     api.put<ChatbotPreferences>('/chat/preferences', prefs)
 
-// Message flagging
+// Message flagging (dislike)
 export const flagMessage = (messageId: string, reason: string, comment?: string) =>
     api.post<{ flag: { id: string; message_id: string; reason: string; comment: string | null; created_at: string } }>(
         `/chat/messages/${messageId}/flag`, { reason, comment }
@@ -73,5 +73,19 @@ export const flagMessage = (messageId: string, reason: string, comment?: string)
 export const unflagMessage = (messageId: string) =>
     api.delete<{ message: string }>(`/chat/messages/${messageId}/flag`)
 
+// Message likes
+export const likeMessage = (messageId: string) =>
+    api.post<{ liked: boolean }>(`/chat/messages/${messageId}/like`, {})
+
+export const unlikeMessage = (messageId: string) =>
+    api.delete<{ liked: boolean }>(`/chat/messages/${messageId}/like`)
+
+// Combined feedback state restoration
+export const getMyFeedback = (sessionId: string) =>
+    api.get<{ flaggedMessageIds: string[]; likedMessageIds: string[] }>(
+        `/chat/my-feedback?sessionId=${encodeURIComponent(sessionId)}`
+    )
+
+// Legacy — kept for backward compatibility
 export const getMyFlags = (sessionId: string) =>
     api.get<{ flaggedMessageIds: string[] }>(`/chat/my-flags?sessionId=${encodeURIComponent(sessionId)}`)

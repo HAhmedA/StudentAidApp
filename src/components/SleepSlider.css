@@ -543,6 +543,95 @@
   color: #111827;
 }
 
+/* ── Controls buttons row ────────────────────────────────── */
+
+.sleep-controls-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sleep-clear-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: #FEF2F2;
+  color: #DC2626;
+  border: 1.5px solid #FECACA;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s, transform 0.1s;
+}
+
+.sleep-clear-btn:hover {
+  background: #FEE2E2;
+  border-color: #FCA5A5;
+  transform: translateY(-1px);
+}
+
+.sleep-clear-btn:active {
+  transform: translateY(0);
+}
+
+/* ── Optional awakenings field ───────────────────────────── */
+
+.sleep-awakenings-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 12px;
+  padding: 12px 16px;
+  background: #FFFBEB;
+  border: 1px solid #FDE68A;
+  border-radius: 10px;
+  gap: 16px;
+}
+
+.sleep-awakenings-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.sleep-awakenings-hint {
+  display: block;
+  font-size: 11px;
+  font-weight: 400;
+  color: #9CA3AF;
+  margin-top: 2px;
+  font-style: italic;
+}
+
+.sleep-awakenings-input {
+  width: 64px;
+  min-width: 64px;
+  padding: 6px 10px;
+  border: 1.5px solid #D1D5DB;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  text-align: center;
+  color: #111827;
+  background: white;
+  transition: border-color 0.2s;
+  -moz-appearance: textfield;
+}
+
+.sleep-awakenings-input::-webkit-inner-spin-button,
+.sleep-awakenings-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.sleep-awakenings-input:focus {
+  outline: none;
+  border-color: #0891B2;
+  box-shadow: 0 0 0 3px rgba(8, 145, 178, 0.1);
+}
+
 /* ── Submit button ───────────────────────────────────────── */
 
 .sleep-submit-row {
@@ -679,5 +768,10 @@
 
   .sleep-readonly-summary {
     flex-direction: column;
+  }
+
+  .sleep-awakenings-field {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }

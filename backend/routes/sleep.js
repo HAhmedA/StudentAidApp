@@ -40,7 +40,7 @@ router.post('/', asyncRoute(async (req, res) => {
         const userId = req.session.user?.id
         if (!userId) throw Errors.UNAUTHORIZED()
 
-        const { intervals } = req.body
+        const { intervals, manualAwakenings } = req.body
         if (!Array.isArray(intervals) || intervals.length === 0) {
             throw Errors.VALIDATION('intervals required (array of {start, end})')
         }
@@ -100,8 +100,15 @@ router.post('/', asyncRoute(async (req, res) => {
         // Awake minutes = time in bed - total sleep
         const awakeMinutes = Math.max(0, timeInBedMinutes - totalSleepMinutes)
 
-        // Awakenings = number of gaps = intervals - 1
-        const awakeningsCount = Math.max(0, parsed.length - 1)
+        // Awakenings: manual field takes priority when provided; fall back to scroller gaps
+        const gapAwakenings = Math.max(0, parsed.length - 1)
+        let awakeningsCount
+        if (manualAwakenings != null && Number.isInteger(manualAwakenings)
+            && manualAwakenings >= 0 && manualAwakenings <= 20) {
+            awakeningsCount = manualAwakenings
+        } else {
+            awakeningsCount = gapAwakenings
+        }
 
         // Upsert into sleep_sessions (uses unique constraint on user_id + session_date)
         const upsertResult = await pool.query(

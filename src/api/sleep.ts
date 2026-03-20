@@ -18,5 +18,8 @@ export interface SleepEntry {
 export const getTodaySleep = () =>
     api.get<{ entry: SleepEntry | null }>('/sleep/today').then(r => r.entry)
 
-export const saveSleep = (intervals: SleepInterval[]) =>
-    api.post<{ entry: SleepEntry }>('/sleep', { intervals }).then(r => r.entry)
+export const saveSleep = (intervals: SleepInterval[], manualAwakenings?: number | null) =>
+    api.post<{ entry: SleepEntry }>('/sleep', {
+        intervals,
+        ...(manualAwakenings != null && { manualAwakenings })
+    }).then(r => r.entry)

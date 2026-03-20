@@ -298,4 +298,65 @@ router.get('/export-unified', asyncRoute(async (req, res) => {
         logger.info(`Unified data exported for user: ${userId}`)
 }))
 
+// ── Support requests (student → admin) ──────────────────────────
+
+const VALID_CATEGORIES = [
+    'account_issue', 'data_concern', 'chatbot_problem',
+    'technical_bug', 'feature_request', 'other'
+]
+
+// Submit a support request
+router.post('/support-request', asyncRoute(async (req, res) => {
+    const userId = req.session.user?.id
+    if (!userId) throw Errors.UNAUTHORIZED()
+
+    const { category, message } = req.body
+
+    if (!category || !VALID_CATEGORIES.includes(category)) {
+        return res.status(400).json({ error: `category must be one of: ${VALID_CATEGORIES.join(', ')}` })
+    }
+    if (!message || typeof message !== 'string' || message.trim().length === 0) {
+        return res.status(400).json({ error: 'message is required' })
+    }
+    if (message.length > 2000) {
+        return res.status(400).json({ error: 'message must be 2000 characters or less' })
+    }
+
+    // Rate limit: max 5 open requests per user
+    const { rows: openCount } = await pool.query(
+        `SELECT COUNT(*)::int AS cnt FROM support_requests
+         WHERE user_id = $1 AND status = 'open'`, [userId]
+    )
+    if (openCount[0].cnt >= 5) {
+        return res.status(429).json({
+            error: 'You have too many open requests. Please wait for existing ones to be resolved.'
+        })
+    }
+
+    const { rows } = await pool.query(
+        `INSERT INTO support_requests (user_id, category, message)
+         VALUES ($1, $2, $3)
+         RETURNING id, category, message, status, created_at`,
+        [userId, category, message.trim()]
+    )
+
+    logger.info(`Support request created by user ${userId}: ${rows[0].id}`)
+    res.status(201).json({ request: rows[0] })
+}))
+
+// Get own support requests
+router.get('/support-requests', asyncRoute(async (req, res) => {
+    const userId = req.session.user?.id
+    if (!userId) throw Errors.UNAUTHORIZED()
+
+    const { rows } = await pool.query(
+        `SELECT id, category, message, status, admin_response, created_at, resolved_at
+         FROM support_requests WHERE user_id = $1
+         ORDER BY created_at DESC LIMIT 20`,
+        [userId]
+    )
+
+    res.json({ requests: rows })
+}))
+
 export default router

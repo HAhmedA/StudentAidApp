@@ -111,6 +111,7 @@ const SleepSlider = ({ onSaved, suppressChatbotEvent }: SleepSliderProps) => {
     const [submitting, setSubmitting] = useState(false)
     const [newlyAddedId, setNewlyAddedId] = useState<number | null>(null)
     const [submitMsg, setSubmitMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null)
+    const [manualAwakenings, setManualAwakenings] = useState<number | null>(null)
 
     const trackRef = useRef<HTMLDivElement>(null)
     const [dragState, setDragState] = useState<{
@@ -333,7 +334,7 @@ const SleepSlider = ({ onSaved, suppressChatbotEvent }: SleepSliderProps) => {
         }))
 
         try {
-            const entry = await saveSleep(apiIntervals)
+            const entry = await saveSleep(apiIntervals, manualAwakenings)
             setSavedEntry(entry)
             setEditMode(false)
             setSubmitMsg({ text: 'Sleep log saved!', type: 'success' })
@@ -352,6 +353,7 @@ const SleepSlider = ({ onSaved, suppressChatbotEvent }: SleepSliderProps) => {
     const totalSleep = intervals.reduce((sum, i) => sum + (i.end - i.start), 0)
     const earliestStart = intervals.length > 0 ? Math.min(...intervals.map(i => i.start)) : 0
     const latestEnd = intervals.length > 0 ? Math.max(...intervals.map(i => i.end)) : 0
+    const scrollerAwakenings = Math.max(0, mergeIntervals(intervals).length - 1)
 
     // ── Tick marks positions (hourly; major every 3 hours) ──
     const ticks = Array.from({ length: 25 }, (_, i) => {
@@ -539,9 +541,16 @@ const SleepSlider = ({ onSaved, suppressChatbotEvent }: SleepSliderProps) => {
             {!isReadonly && (
                 <>
                     <div className='sleep-controls'>
-                        <button className='sleep-add-btn' onClick={addInterval}>
-                            {intervals.length === 0 ? '+ Add a Sleep Period' : '+ Add Another Sleep Period'}
-                        </button>
+                        <div className='sleep-controls-buttons'>
+                            <button className='sleep-add-btn' onClick={addInterval}>
+                                {intervals.length === 0 ? '+ Add a Sleep Period' : '+ Add Another Sleep Period'}
+                            </button>
+                            {intervals.length > 0 && (
+                                <button className='sleep-clear-btn' onClick={() => { setIntervals([]); setManualAwakenings(null) }}>
+                                    Clear All
+                                </button>
+                            )}
+                        </div>
                         {intervals.length > 0 && (
                             <div className='sleep-summary'>
                                 <div className='sleep-summary-item'>
@@ -559,6 +568,31 @@ const SleepSlider = ({ onSaved, suppressChatbotEvent }: SleepSliderProps) => {
                             </div>
                         )}
                     </div>
+
+                    {/* Optional awakenings field */}
+                    {intervals.length > 0 && (
+                        <div className='sleep-awakenings-field'>
+                            <label className='sleep-awakenings-label'>
+                                Did you wake up during the night?
+                                <span className='sleep-awakenings-hint'>
+                                    (Optional) Enter the number of times you woke up.
+                                </span>
+                            </label>
+                            <input
+                                type='number'
+                                className='sleep-awakenings-input'
+                                min={0}
+                                max={20}
+                                placeholder='0'
+                                value={manualAwakenings ?? ''}
+                                onChange={(e) => {
+                                    const v = e.target.value
+                                    setManualAwakenings(v === '' ? null : Math.max(0, Math.min(20, parseInt(v, 10) || 0)))
+                                }}
+                            />
+                        </div>
+                    )}
+
                     <div className='sleep-submit-row'>
                         {submitMsg && (
                             <span className={`sleep-submit-msg ${submitMsg.type === 'success' ? 'sleep-msg-success' : 'sleep-msg-error'}`}>

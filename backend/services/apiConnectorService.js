@@ -114,12 +114,22 @@ async function chatCompletionWithRetry(messages, options = {}) {
 }
 
 /**
- * Check if the LLM server is available
- * 
+ * Check if the LLM server is available.
+ * Results are cached for 30 seconds so all concurrent polls see the same status
+ * and we don't hammer the LLM API with redundant /models requests.
+ *
  * @returns {Promise<{available: boolean, models: string[]}>}
  */
+let _availCache = { result: null, expiry: 0 }
+
 async function checkAvailability() {
+    const now = Date.now()
+    if (_availCache.result && now < _availCache.expiry) {
+        return _availCache.result
+    }
+
     const config = await getLlmConfig()
+    let result
     try {
         const controller = new AbortController()
         const timeoutId = setTimeout(() => controller.abort(), 5000) // 5 second timeout
@@ -141,17 +151,20 @@ async function checkAvailability() {
 
         if (!response.ok) {
             logger.error(`LLM availability check failed with status: ${response.status}`)
-            return { available: false, models: [] }
+            result = { available: false, models: [] }
+        } else {
+            const data = await response.json()
+            const models = data.data?.map(m => m.id) || []
+            logger.info(`LLM available, models: ${models.join(', ')}`)
+            result = { available: true, models }
         }
-
-        const data = await response.json()
-        const models = data.data?.map(m => m.id) || []
-        logger.info(`LLM available, models: ${models.join(', ')}`)
-        return { available: true, models }
     } catch (error) {
         logger.error(`LLM availability check failed: ${error.name} - ${error.message}`)
-        return { available: false, models: [] }
+        result = { available: false, models: [] }
     }
+
+    _availCache = { result, expiry: now + 30_000 }
+    return result
 }
 
 /**

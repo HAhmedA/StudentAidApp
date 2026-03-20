@@ -250,11 +250,25 @@ router.put('/preferences', asyncRoute(async (req, res) => {
     }
 }))
 
-// ── Message flagging ─────────────────────────────────────────────
+// ── Message feedback (like / dislike-flag) ──────────────────────
 
 const VALID_FLAG_REASONS = ['inaccurate', 'inappropriate', 'irrelevant', 'harmful', 'other']
 
-// Flag an assistant message
+// Shared helper: verify message exists, is assistant role, belongs to user's session
+async function validateAssistantMessage(messageId, userId) {
+    const { rows } = await pool.query(
+        `SELECT m.id, m.role
+         FROM chat_messages m
+         JOIN chat_sessions s ON s.id = m.session_id
+         WHERE m.id = $1 AND s.user_id = $2`,
+        [messageId, userId]
+    )
+    if (rows.length === 0) return { error: 'Message not found', status: 404 }
+    if (rows[0].role !== 'assistant') return { error: 'Only assistant messages can receive feedback', status: 400 }
+    return { ok: true }
+}
+
+// Flag an assistant message (dislike)
 router.post('/messages/:messageId/flag', asyncRoute(async (req, res) => {
     const userId = req.session.user.id
     const { messageId } = req.params
@@ -267,20 +281,14 @@ router.post('/messages/:messageId/flag', asyncRoute(async (req, res) => {
         return res.status(400).json({ error: 'comment must be 1000 characters or less' })
     }
 
-    // Verify message exists, is assistant role, and belongs to user's session
-    const { rows: msgRows } = await pool.query(
-        `SELECT m.id, m.role
-         FROM chat_messages m
-         JOIN chat_sessions s ON s.id = m.session_id
-         WHERE m.id = $1 AND s.user_id = $2`,
+    const check = await validateAssistantMessage(messageId, userId)
+    if (check.error) return res.status(check.status).json({ error: check.error })
+
+    // Mutual exclusivity: remove any existing like
+    await pool.query(
+        'DELETE FROM chat_message_likes WHERE message_id = $1 AND user_id = $2',
         [messageId, userId]
     )
-    if (msgRows.length === 0) {
-        return res.status(404).json({ error: 'Message not found' })
-    }
-    if (msgRows[0].role !== 'assistant') {
-        return res.status(400).json({ error: 'Only assistant messages can be flagged' })
-    }
 
     try {
         const { rows } = await pool.query(
@@ -318,14 +326,93 @@ router.delete('/messages/:messageId/flag', asyncRoute(async (req, res) => {
     res.json({ message: 'Flag removed' })
 }))
 
-// Get user's own flags for a session (used to restore flag state in UI)
-router.get('/my-flags', asyncRoute(async (req, res) => {
+// Like an assistant message
+router.post('/messages/:messageId/like', asyncRoute(async (req, res) => {
+    const userId = req.session.user.id
+    const { messageId } = req.params
+
+    const check = await validateAssistantMessage(messageId, userId)
+    if (check.error) return res.status(check.status).json({ error: check.error })
+
+    // Mutual exclusivity: remove any pending flag
+    await pool.query(
+        `DELETE FROM chat_message_flags
+         WHERE message_id = $1 AND user_id = $2 AND status = 'pending'`,
+        [messageId, userId]
+    )
+
+    try {
+        await pool.query(
+            `INSERT INTO chat_message_likes (message_id, user_id)
+             VALUES ($1, $2)
+             ON CONFLICT DO NOTHING`,
+            [messageId, userId]
+        )
+        res.status(201).json({ liked: true })
+    } catch (err) {
+        throw err
+    }
+}))
+
+// Unlike an assistant message
+router.delete('/messages/:messageId/like', asyncRoute(async (req, res) => {
+    const userId = req.session.user.id
+    const { messageId } = req.params
+
+    const { rowCount } = await pool.query(
+        'DELETE FROM chat_message_likes WHERE message_id = $1 AND user_id = $2',
+        [messageId, userId]
+    )
+    if (rowCount === 0) {
+        return res.status(404).json({ error: 'Like not found' })
+    }
+    res.json({ liked: false })
+}))
+
+// Get user's own feedback for a session (likes + flags, used to restore UI state)
+router.get('/my-feedback', asyncRoute(async (req, res) => {
     const userId = req.session.user.id
     const { sessionId } = req.query
 
     if (!sessionId) return res.status(400).json({ error: 'sessionId is required' })
 
     // Ownership check
+    const { rows: sessionCheck } = await pool.query(
+        'SELECT id FROM public.chat_sessions WHERE id = $1 AND user_id = $2',
+        [sessionId, userId]
+    )
+    if (sessionCheck.length === 0) return res.status(403).json({ error: 'forbidden' })
+
+    const [flagResult, likeResult] = await Promise.all([
+        pool.query(
+            `SELECT f.message_id
+             FROM chat_message_flags f
+             JOIN chat_messages m ON m.id = f.message_id
+             WHERE m.session_id = $1 AND f.user_id = $2`,
+            [sessionId, userId]
+        ),
+        pool.query(
+            `SELECT l.message_id
+             FROM chat_message_likes l
+             JOIN chat_messages m ON m.id = l.message_id
+             WHERE m.session_id = $1 AND l.user_id = $2`,
+            [sessionId, userId]
+        )
+    ])
+
+    res.json({
+        flaggedMessageIds: flagResult.rows.map(r => r.message_id),
+        likedMessageIds: likeResult.rows.map(r => r.message_id)
+    })
+}))
+
+// Legacy endpoint — kept for backward compatibility
+router.get('/my-flags', asyncRoute(async (req, res) => {
+    const userId = req.session.user.id
+    const { sessionId } = req.query
+
+    if (!sessionId) return res.status(400).json({ error: 'sessionId is required' })
+
     const { rows: sessionCheck } = await pool.query(
         'SELECT id FROM public.chat_sessions WHERE id = $1 AND user_id = $2',
         [sessionId, userId]

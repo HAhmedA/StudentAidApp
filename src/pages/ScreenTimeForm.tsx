@@ -58,7 +58,8 @@ const ScreenTimeForm = () => {
     const isComplete = totalMinutes !== null && longestSession !== null && preSleepMinutes !== null
     // A longest session longer than the total time is a logical contradiction
     const sessionExceedsTotal = longestSession !== null && totalMinutes !== null && longestSession > totalMinutes
-    const isLogicallyValid = !sessionExceedsTotal
+    const preSleepExceedsTotal = preSleepMinutes !== null && totalMinutes !== null && preSleepMinutes > totalMinutes
+    const isLogicallyValid = !sessionExceedsTotal && !preSleepExceedsTotal
 
     // Override parent white card (same pattern as Home page)
     useEffect(() => {
@@ -189,7 +190,8 @@ const ScreenTimeForm = () => {
                                                 onChange={() => {
                                                     setTotalMinutes(opt.value)
                                                     if (opt.value > 0 && longestSession === 0) setLongestSession(null)
-                                                    if (opt.value === 0) setLongestSession(0)
+                                                    if (opt.value > 0 && preSleepMinutes === 0) setPreSleepMinutes(null)
+                                                    if (opt.value === 0) { setLongestSession(0); setPreSleepMinutes(0) }
                                                 }}
                                             />
                                             <span className='st-option-label'>{opt.label}</span>
@@ -239,7 +241,9 @@ const ScreenTimeForm = () => {
                                     How much time did you spend on a screen before going to sleep last night?
                                 </label>
                                 <div className='st-options'>
-                                    {PRE_SLEEP_OPTIONS.map(opt => (
+                                    {PRE_SLEEP_OPTIONS
+                                        .filter(opt => totalMinutes !== 0 || opt.value === 0)
+                                        .map(opt => (
                                         <label className='st-option' key={opt.value}>
                                             <input
                                                 type='radio'
@@ -253,6 +257,12 @@ const ScreenTimeForm = () => {
                                     ))}
                                 </div>
                             </div>
+
+                            {preSleepExceedsTotal && (
+                                <p className='st-validation-warning'>
+                                    Pre-sleep screen time can't be longer than your total screen time. Please adjust one of your answers.
+                                </p>
+                            )}
 
                             {/* Submit */}
                             <div className='st-submit-row'>

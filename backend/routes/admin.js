@@ -699,6 +699,97 @@ router.put('/flagged-messages/:flagId', asyncRoute(async (req, res) => {
     res.json({ flag: rows[0] })
 }))
 
+// ── Feedback stats (likes + dislikes aggregate) ────────────────
+
+router.get('/feedback-stats', asyncRoute(async (req, res) => {
+    const [likes, dislikes, pending] = await Promise.all([
+        pool.query('SELECT COUNT(*)::int AS count FROM chat_message_likes'),
+        pool.query('SELECT COUNT(*)::int AS count FROM chat_message_flags'),
+        pool.query("SELECT COUNT(*)::int AS count FROM chat_message_flags WHERE status = 'pending'")
+    ])
+    res.json({
+        total_likes: likes.rows[0].count,
+        total_dislikes: dislikes.rows[0].count,
+        pending_flags: pending.rows[0].count
+    })
+}))
+
+// ── Support requests ────────────────────────────────────────────
+
+router.get('/support-requests', asyncRoute(async (req, res) => {
+    const { status, category, limit = '20', offset = '0' } = req.query
+    const lim = Math.min(parseInt(limit) || 20, 50)
+    const off = parseInt(offset) || 0
+
+    const conditions = []
+    const params = []
+    let paramIdx = 1
+
+    if (status && ['open', 'resolved', 'closed'].includes(status)) {
+        conditions.push(`sr.status = $${paramIdx++}`)
+        params.push(status)
+    }
+    if (category) {
+        conditions.push(`sr.category = $${paramIdx++}`)
+        params.push(category)
+    }
+
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
+
+    const [dataResult, countResult] = await Promise.all([
+        pool.query(
+            `SELECT sr.id, sr.category, sr.message, sr.status,
+                    sr.admin_response, sr.created_at, sr.resolved_at,
+                    u.email AS student_email, u.name AS student_name,
+                    ra.email AS resolved_by_email
+             FROM support_requests sr
+             JOIN users u ON u.id = sr.user_id
+             LEFT JOIN users ra ON ra.id = sr.resolved_by
+             ${where}
+             ORDER BY sr.created_at DESC
+             LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`,
+            [...params, lim, off]
+        ),
+        pool.query(
+            `SELECT
+                COUNT(*) FILTER (WHERE status = 'open')::int     AS open,
+                COUNT(*) FILTER (WHERE status = 'resolved')::int AS resolved,
+                COUNT(*) FILTER (WHERE status = 'closed')::int   AS closed,
+                COUNT(*)::int                                     AS total
+             FROM support_requests`
+        )
+    ])
+
+    res.json({
+        requests: dataResult.rows,
+        counts: countResult.rows[0]
+    })
+}))
+
+router.put('/support-requests/:requestId', asyncRoute(async (req, res) => {
+    const adminId = req.session.user.id
+    const { requestId } = req.params
+    const { status, response } = req.body
+
+    if (!status || !['resolved', 'closed'].includes(status)) {
+        return res.status(400).json({ error: 'status must be "resolved" or "closed"' })
+    }
+
+    const { rows } = await pool.query(
+        `UPDATE support_requests
+         SET status = $1, resolved_by = $2, resolved_at = NOW(),
+             admin_response = COALESCE($4, admin_response)
+         WHERE id = $3
+         RETURNING id, status, admin_response, resolved_at`,
+        [status, adminId, requestId, response || null]
+    )
+
+    if (rows.length === 0) throw Errors.NOT_FOUND('Support request')
+
+    logger.info(`Admin ${req.session.user?.email} ${status} support request ${requestId}`)
+    res.json({ request: rows[0] })
+}))
+
 // Legacy routes for backwards compatibility — delegate directly to named handlers
 router.get('/system-prompt', asyncRoute((req, res) => {
     req.query.type = 'system'
