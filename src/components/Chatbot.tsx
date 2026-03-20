@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
 import './Chatbot.css'
-import { getInitialChat, getHistory, sendMessage as sendMessageApi, resetChat, getChatStatus, getChatPreferences, updateChatPreferences, ChatbotPreferences } from '../api/chat'
+import { getInitialChat, getHistory, sendMessage as sendMessageApi, resetChat, getChatStatus, getChatPreferences, updateChatPreferences, ChatbotPreferences, flagMessage, unflagMessage, getMyFlags } from '../api/chat'
 
 interface Message {
     id: string
@@ -58,6 +58,16 @@ const Chatbot = ({ isLoggedIn }: ChatbotProps) => {
 
     // Proactive data-update banner
     const [dataUpdateBanner, setDataUpdateBanner] = useState<{ dataType: string } | null>(null)
+
+    // Message flagging state
+    const [flaggedMessageIds, setFlaggedMessageIds] = useState<Set<string>>(new Set())
+    const [flagModalMessageId, setFlagModalMessageId] = useState<string | null>(null)
+    const [flagReason, setFlagReason] = useState<string>('')
+    const [flagComment, setFlagComment] = useState<string>('')
+    const [flagSubmitting, setFlagSubmitting] = useState(false)
+    const [flagError, setFlagError] = useState<string | null>(null)
+    const [unflagConfirmId, setUnflagConfirmId] = useState<string | null>(null)
+    const [flagToast, setFlagToast] = useState<string | null>(null)
 
     const messagesEndRef = useRef<HTMLDivElement>(null)
     const messagesContainerRef = useRef<HTMLDivElement>(null)
@@ -143,6 +153,15 @@ const Chatbot = ({ isLoggedIn }: ChatbotProps) => {
             getChatPreferences().then(setPreferences).catch(console.error)
         }
     }, [isOpen, isLoggedIn, preferences])
+
+    // Restore flag state when session changes
+    useEffect(() => {
+        if (sessionId) {
+            getMyFlags(sessionId)
+                .then(data => setFlaggedMessageIds(new Set(data.flaggedMessageIds)))
+                .catch(() => {}) // Flag state is cosmetic — fail silently
+        }
+    }, [sessionId])
 
     // Listen for data-submission events from other pages/components
     useEffect(() => {
@@ -373,7 +392,7 @@ const Chatbot = ({ isLoggedIn }: ChatbotProps) => {
                 })
             }
 
-            const aid = `assistant-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+            const aid = data.messageId || `assistant-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
             setMessages(prev => [...prev, {
                 id: aid,
                 role: 'assistant',
@@ -460,6 +479,8 @@ const Chatbot = ({ isLoggedIn }: ChatbotProps) => {
                 setCachedGreeting(null)
                 // Reset suggested prompts to defaults
                 setSuggestedPrompts(DEFAULT_PROMPTS)
+                // Clear flag state for old session
+                setFlaggedMessageIds(new Set())
             }
         } catch (error) {
             console.error('Failed to reset session:', error)
@@ -486,6 +507,46 @@ const Chatbot = ({ isLoggedIn }: ChatbotProps) => {
             console.error('Failed to save preference:', err)
         } finally {
             setIsSavingPrefs(false)
+        }
+    }
+
+    // ── Message flagging handlers ──────────────────────────────────
+    const handleFlagSubmit = async () => {
+        if (!flagModalMessageId || !flagReason) return
+        setFlagSubmitting(true)
+        setFlagError(null)
+        try {
+            await flagMessage(flagModalMessageId, flagReason, flagComment || undefined)
+            setFlaggedMessageIds(prev => new Set(prev).add(flagModalMessageId))
+            setFlagModalMessageId(null)
+            setFlagReason('')
+            setFlagComment('')
+            setFlagToast('Response flagged')
+            setTimeout(() => setFlagToast(null), 3000)
+        } catch (err: unknown) {
+            const apiErr = err as { status?: number }
+            if (apiErr.status === 409) {
+                setFlagError('You have already flagged this message')
+            } else {
+                setFlagError('Failed to submit flag. Please try again.')
+            }
+        } finally {
+            setFlagSubmitting(false)
+        }
+    }
+
+    const handleUnflag = async (messageId: string) => {
+        try {
+            await unflagMessage(messageId)
+            setFlaggedMessageIds(prev => {
+                const next = new Set(prev)
+                next.delete(messageId)
+                return next
+            })
+        } catch {
+            // Admin may have already reviewed — keep the flag shown
+        } finally {
+            setUnflagConfirmId(null)
         }
     }
 
@@ -664,9 +725,13 @@ const Chatbot = ({ isLoggedIn }: ChatbotProps) => {
                             <div className="chatbot-loading-more">Loading older messages...</div>
                         )}
 
-                        {messages.map((msg) => (
+                        {messages.map((msg) => {
+                            const isFlaggable = msg.role === 'assistant' && !msg.isError
+                                && !['initial', 'reset-greeting', 'wizard-greeting', 'error'].includes(msg.id)
+                                && !msg.id.startsWith('error-')
+                            return (
+                            <React.Fragment key={msg.id}>
                             <div
-                                key={msg.id}
                                 className={`chatbot-message ${msg.role}${msg.isError ? ' error' : ''}`}
                             >
                                 <div className="chatbot-message-content">
@@ -674,6 +739,25 @@ const Chatbot = ({ isLoggedIn }: ChatbotProps) => {
                                         ? <ReactMarkdown>{msg.content}</ReactMarkdown>
                                         : msg.content}
                                 </div>
+                                {/* Flag button on assistant messages */}
+                                {isFlaggable && (
+                                    <button
+                                        className={`chatbot-flag-btn${flaggedMessageIds.has(msg.id) ? ' flagged' : ''}`}
+                                        onClick={() => {
+                                            if (flaggedMessageIds.has(msg.id)) {
+                                                setUnflagConfirmId(msg.id)
+                                            } else {
+                                                setFlagModalMessageId(msg.id)
+                                                setFlagReason('')
+                                                setFlagComment('')
+                                                setFlagError(null)
+                                            }
+                                        }}
+                                        title={flaggedMessageIds.has(msg.id) ? 'Flagged — click to unflag' : 'Report this response'}
+                                    >
+                                        ⚑
+                                    </button>
+                                )}
                                 {/* Retry button for error messages */}
                                 {msg.isError && msg.failedMessage && (
                                     <button
@@ -684,7 +768,58 @@ const Chatbot = ({ isLoggedIn }: ChatbotProps) => {
                                     </button>
                                 )}
                             </div>
-                        ))}
+                            {/* Flag report modal — inline, directly below the flagged message */}
+                            {flagModalMessageId === msg.id && (
+                                <div className="chatbot-flag-modal">
+                                    <h4>Report this response</h4>
+                                    <div className="flag-reasons">
+                                        {([
+                                            ['inaccurate', 'Inaccurate / Misleading'],
+                                            ['inappropriate', 'Inappropriate / Offensive'],
+                                            ['irrelevant', 'Irrelevant / Off-topic'],
+                                            ['harmful', 'Harmful / Unsafe'],
+                                            ['other', 'Other']
+                                        ] as const).map(([value, label]) => (
+                                            <label key={value} className="flag-reason-option">
+                                                <input
+                                                    type="radio"
+                                                    name="flagReason"
+                                                    value={value}
+                                                    checked={flagReason === value}
+                                                    onChange={() => setFlagReason(value)}
+                                                />
+                                                {label}
+                                            </label>
+                                        ))}
+                                    </div>
+                                    <textarea
+                                        className="flag-comment"
+                                        placeholder="Add a comment (optional)"
+                                        value={flagComment}
+                                        onChange={e => setFlagComment(e.target.value)}
+                                        maxLength={1000}
+                                    />
+                                    {flagError && <p className="flag-error">{flagError}</p>}
+                                    <div className="flag-actions">
+                                        <button
+                                            className="flag-cancel"
+                                            onClick={() => setFlagModalMessageId(null)}
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            className="flag-submit"
+                                            onClick={handleFlagSubmit}
+                                            disabled={!flagReason || flagSubmitting}
+                                        >
+                                            {flagSubmitting ? 'Submitting…' : 'Submit Report'}
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                            </React.Fragment>
+                            )
+                        })}
 
                         {/* Suggested prompts - shows when input is empty and not loading */}
                         {!isLoading && !inputValue.trim() && messages.length > 0 && messages[messages.length - 1].role === 'assistant' && (
@@ -740,6 +875,22 @@ const Chatbot = ({ isLoggedIn }: ChatbotProps) => {
                             </svg>
                         </button>
                     </div>
+
+                    {/* Unflag confirmation dialog */}
+                    {unflagConfirmId && (
+                        <div className="chatbot-confirm-overlay">
+                            <div className="chatbot-confirm-dialog">
+                                <p>Remove your flag?</p>
+                                <div className="chatbot-confirm-buttons">
+                                    <button onClick={() => setUnflagConfirmId(null)}>No</button>
+                                    <button onClick={() => handleUnflag(unflagConfirmId)} className="confirm-btn">Yes</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Flag success toast */}
+                    {flagToast && <div className="chatbot-flag-toast">{flagToast}</div>}
 
                     {/* Reset confirmation dialog */}
                     {showResetConfirm && (

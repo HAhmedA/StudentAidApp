@@ -35,6 +35,43 @@ export interface CsvImportResult {
     details: CsvImportDetail[]
 }
 
+// -- Moodle ID upload types --
+
+export interface MoodleIdSuggestion {
+    moodleId: number
+    eventCount: number
+    matched: boolean
+    userId: string | null
+    email: string | null
+    name: string | null
+}
+
+export interface MoodleIdUploadResult {
+    uploadId: string
+    rowCount: number
+    dateRange: { start: string | null; end: string | null }
+    suggestions: MoodleIdSuggestion[]
+}
+
+export interface MoodleIdImportDetail {
+    moodleId: number
+    userId: string
+    daysUpdated: number
+    totalEvents: number
+}
+
+export interface MoodleIdImportResult {
+    imported: number
+    skipped: number
+    details: MoodleIdImportDetail[]
+}
+
+export interface LinkableStudent {
+    id: string
+    email: string
+    name: string
+}
+
 // -- API functions --
 
 /**
@@ -92,3 +129,58 @@ export const deleteCsvMappingWithData = (csvName: string) =>
  */
 export const importCsvLog = (uploadId: string) =>
     api.post<CsvImportResult>(`/lms/admin/csv/import/${uploadId}`, {})
+
+// -- Moodle ID upload API functions --
+
+export async function uploadCsvByMoodleId(file: File): Promise<MoodleIdUploadResult> {
+    const text = await file.text()
+    const res = await fetch('/api/lms/admin/csv/upload-by-id', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+            'Content-Type': 'text/csv',
+            'X-Filename': file.name,
+        },
+        body: text,
+    })
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error((err as any).message || 'Upload failed')
+    }
+    return res.json()
+}
+
+export const approveAndImport = (
+    uploadId: string,
+    approved: Array<{ moodleId: number; userId: string }>,
+    manualLinks: Array<{ moodleId: number; userId: string }>,
+) =>
+    api.post<MoodleIdImportResult>(`/lms/admin/csv/approve-import/${uploadId}`, {
+        approved,
+        manualLinks,
+    })
+
+export const getStudentsForLinking = () =>
+    api.get<{ students: LinkableStudent[] }>('/lms/admin/students-for-linking')
+
+// -- Moodle ID pairing management --
+
+export interface MoodlePairing {
+    id: string
+    email: string
+    name: string
+    moodleId: number
+}
+
+export const getMoodlePairings = () =>
+    api.get<{ pairings: MoodlePairing[] }>('/lms/admin/moodle-pairings')
+
+export const deleteMoodlePairing = (userId: string) =>
+    api.delete<{ cleared: boolean; userId: string }>(
+        `/lms/admin/moodle-pairing/${userId}`
+    )
+
+export const deleteMoodlePairingWithData = (userId: string) =>
+    api.delete<{ cleared: boolean; userId: string; sessionsDeleted: number }>(
+        `/lms/admin/moodle-pairing/${userId}/with-data`
+    )

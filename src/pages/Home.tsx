@@ -5,7 +5,9 @@ import Surveys from '../components/Surveys'
 import AdminStudentViewer from '../components/AdminStudentViewer'
 import AdminClusterDiagnosticsPanel from '../components/AdminClusterDiagnosticsPanel'
 import AdminCsvLogPanel from '../components/AdminCsvLogPanel'
+import AdminCsvMoodleIdPanel from '../components/AdminCsvMoodleIdPanel'
 import AdminLlmConfigPanel from '../components/AdminLlmConfigPanel'
+import AdminFlaggedMessagesPanel from '../components/AdminFlaggedMessagesPanel'
 import ScoreBoard from '../components/ScoreBoard'
 import { useReduxSelector, useReduxDispatch } from '../redux'
 import { api } from '../api/client'
@@ -165,11 +167,17 @@ const Home = () => {
                         }}
                     />
 
+                    {/* Flagged chatbot messages — moderation panel */}
+                    <AdminFlaggedMessagesPanel />
+
                     {/* Cluster diagnostics panel — always visible to admin */}
                     <AdminClusterDiagnosticsPanel />
 
                     {/* CSV activity log upload panel */}
                     <AdminCsvLogPanel />
+
+                    {/* CSV upload by Moodle ID (auto-matching) */}
+                    <AdminCsvMoodleIdPanel />
 
                     {/* LLM configuration panel */}
                     <AdminLlmConfigPanel />

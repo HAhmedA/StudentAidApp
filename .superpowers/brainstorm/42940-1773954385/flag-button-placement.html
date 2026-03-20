@@ -1,0 +1,112 @@
+<h2>Where should the flag button appear on assistant messages?</h2>
+<p class="subtitle">Consider discoverability vs. visual clutter in the chat window</p>
+
+<div class="cards">
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding: 20px; background: #f8f9fa;">
+      <!-- Mockup A: Hover reveal -->
+      <div style="font-family: system-ui; max-width: 340px; margin: 0 auto;">
+        <div style="background: #e8f0fe; border-radius: 12px 12px 12px 0; padding: 12px 16px; position: relative; margin-bottom: 8px;">
+          <div style="font-size: 13px; color: #333; line-height: 1.5;">Based on your sleep data, you're averaging 6.2 hours. Research suggests 7-9 hours for optimal...</div>
+          <div style="position: absolute; top: 8px; right: 8px; opacity: 0.7;">
+            <span style="font-size: 16px; cursor: pointer; color: #666;" title="Flag this response">&#9873;</span>
+          </div>
+        </div>
+        <div style="font-size: 11px; color: #999; margin-bottom: 16px;">&#8593; Icon appears on hover (top-right corner)</div>
+
+        <div style="background: #e8f0fe; border-radius: 12px 12px 12px 0; padding: 12px 16px; margin-bottom: 4px;">
+          <div style="font-size: 13px; color: #333; line-height: 1.5;">Your screen time has increased by 23% this week...</div>
+        </div>
+        <div style="font-size: 11px; color: #999;">&#8593; No icon visible when not hovering</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A. Hover-reveal icon (top-right)</h3>
+      <p>A small flag icon (&#9873;) appears in the top-right corner of the message bubble when the user hovers over it. Clean by default, discoverable on interaction. <strong>This is the ChatGPT / Claude pattern.</strong></p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding: 20px; background: #f8f9fa;">
+      <!-- Mockup B: Always-visible row -->
+      <div style="font-family: system-ui; max-width: 340px; margin: 0 auto;">
+        <div style="background: #e8f0fe; border-radius: 12px 12px 12px 0; padding: 12px 16px; margin-bottom: 4px;">
+          <div style="font-size: 13px; color: #333; line-height: 1.5;">Based on your sleep data, you're averaging 6.2 hours. Research suggests 7-9 hours for optimal...</div>
+        </div>
+        <div style="display: flex; gap: 8px; padding: 2px 8px; margin-bottom: 16px;">
+          <span style="font-size: 12px; color: #888; cursor: pointer; display: flex; align-items: center; gap: 3px;">
+            <span style="font-size: 14px;">&#128077;</span>
+          </span>
+          <span style="font-size: 12px; color: #888; cursor: pointer; display: flex; align-items: center; gap: 3px;">
+            <span style="font-size: 14px;">&#128078;</span>
+          </span>
+          <span style="font-size: 12px; color: #c00; cursor: pointer; display: flex; align-items: center; gap: 3px;">
+            <span style="font-size: 14px;">&#9873;</span> Flag
+          </span>
+        </div>
+
+        <div style="background: #e8f0fe; border-radius: 12px 12px 12px 0; padding: 12px 16px; margin-bottom: 4px;">
+          <div style="font-size: 13px; color: #333; line-height: 1.5;">Your screen time has increased by 23% this week...</div>
+        </div>
+        <div style="display: flex; gap: 8px; padding: 2px 8px;">
+          <span style="font-size: 12px; color: #888; cursor: pointer; display: flex; align-items: center; gap: 3px;">
+            <span style="font-size: 14px;">&#128077;</span>
+          </span>
+          <span style="font-size: 12px; color: #888; cursor: pointer; display: flex; align-items: center; gap: 3px;">
+            <span style="font-size: 14px;">&#128078;</span>
+          </span>
+          <span style="font-size: 12px; color: #c00; cursor: pointer; display: flex; align-items: center; gap: 3px;">
+            <span style="font-size: 14px;">&#9873;</span> Flag
+          </span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B. Always-visible action row (below message)</h3>
+      <p>A small row of actions (thumbs up, thumbs down, flag) sits below every assistant message. Always visible. <strong>This is the Google Gemini / Copilot pattern.</strong> More discoverable but adds visual weight.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding: 20px; background: #f8f9fa;">
+      <!-- Mockup C: Three-dot menu -->
+      <div style="font-family: system-ui; max-width: 340px; margin: 0 auto;">
+        <div style="background: #e8f0fe; border-radius: 12px 12px 12px 0; padding: 12px 16px; position: relative; margin-bottom: 8px;">
+          <div style="font-size: 13px; color: #333; line-height: 1.5;">Based on your sleep data, you're averaging 6.2 hours. Research suggests 7-9 hours for optimal...</div>
+          <div style="position: absolute; top: 8px; right: 8px; opacity: 0.7;">
+            <span style="font-size: 16px; cursor: pointer; color: #666; letter-spacing: 1px;">&#8942;</span>
+          </div>
+        </div>
+        <!-- Dropdown -->
+        <div style="background: white; border: 1px solid #ddd; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); padding: 4px 0; width: 160px; margin-left: auto; margin-bottom: 16px;">
+          <div style="padding: 8px 14px; font-size: 13px; color: #333; cursor: pointer;">&#128203; Copy text</div>
+          <div style="padding: 8px 14px; font-size: 13px; color: #c00; cursor: pointer;">&#9873; Flag response</div>
+        </div>
+        <div style="font-size: 11px; color: #999;">&#8593; Menu opens on click of &#8942; icon</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C. Three-dot menu (&#8942;)</h3>
+      <p>A &#8942; icon appears on hover. Clicking it opens a small dropdown with "Copy text" and "Flag response". <strong>This is the Slack / Discord pattern.</strong> Most hidden, but extensible for future actions.</p>
+    </div>
+  </div>
+</div>
+
+<div class="pros-cons" style="margin-top: 24px;">
+  <div class="pros">
+    <h4>Recommendation: Option A</h4>
+    <ul>
+      <li>Cleanest UI — no clutter by default</li>
+      <li>Instantly recognizable flag icon</li>
+      <li>Standard pattern for AI chat apps</li>
+      <li>Single click to start report flow</li>
+    </ul>
+  </div>
+  <div class="cons">
+    <h4>Why not B or C?</h4>
+    <ul>
+      <li>B: Adds visual weight to every message (thumbs up/down isn't in scope)</li>
+      <li>C: Extra click (open menu → click flag) and hides the action deeper</li>
+    </ul>
+  </div>
+</div>

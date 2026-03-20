@@ -428,7 +428,7 @@ ${summaries}
 
     const messages = [
         { role: 'system', content: assembledSystem },
-        { role: 'user', content: "Hey, just opened the app." }
+        { role: 'user', content: "Hey, I just opened the app. Please greet me and, if my data is available, briefly summarize how I'm doing." }
     ]
 
     logger.info(`FULL INITIAL GREETING PROMPT for ${userId}:\n${JSON.stringify(messages, null, 2)}`)

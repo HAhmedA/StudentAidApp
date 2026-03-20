@@ -7,11 +7,13 @@ CREATE TABLE IF NOT EXISTS public.users (
   email varchar(255) NOT NULL UNIQUE,
   name varchar(255) NOT NULL,
   password_hash text NOT NULL,
+  moodle_id INTEGER UNIQUE,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_users_email ON public.users (email);
+CREATE INDEX IF NOT EXISTS idx_users_moodle_id ON public.users (moodle_id);
 
 -- Link questionnaire results to users (each user can have many questionnaire results)
 ALTER TABLE public.questionnaire_results

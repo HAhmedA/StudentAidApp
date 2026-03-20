@@ -21,6 +21,7 @@ const Profile = () => {
     const [showSystemSuccess, setShowSystemSuccess] = useState(false)
     const [showAlignmentSuccess, setShowAlignmentSuccess] = useState(false)
     const [exporting, setExporting] = useState(false)
+    const [exportingUnified, setExportingUnified] = useState(false)
 
     // Remove white sjs-app__content card (same pattern as Sleep/Screen/Run pages)
     useEffect(() => {
@@ -62,24 +63,27 @@ const Profile = () => {
         }
     }
 
-    const handleExport = async () => {
-        setExporting(true)
+    const downloadCsv = async (endpoint: string, filename: string, setLoading: (v: boolean) => void) => {
+        setLoading(true)
         try {
-            const res = await fetch(`${API_BASE}/profile/export`, { credentials: 'include' })
+            const res = await fetch(`${API_BASE}${endpoint}`, { credentials: 'include' })
             if (!res.ok) throw new Error('Export failed')
             const blob = await res.blob()
             const url = URL.createObjectURL(blob)
             const a = document.createElement('a')
             a.href = url
-            a.download = 'my-data-export.csv'
+            a.download = filename
             a.click()
             URL.revokeObjectURL(url)
         } catch {
             alert('Failed to export data. Please try again.')
         } finally {
-            setExporting(false)
+            setLoading(false)
         }
     }
+
+    const handleExport = () => downloadCsv('/profile/export', 'my-data-export.csv', setExporting)
+    const handleExportUnified = () => downloadCsv('/profile/export-unified', 'my-data-unified.csv', setExportingUnified)
 
     if (isAdmin) {
         return (
@@ -188,20 +192,42 @@ const Profile = () => {
                     }}>
                         <h3 style={{ margin: '0 0 8px', color: '#1e40af', fontSize: '14px' }}>Export My Data</h3>
                         <p style={{ fontSize: '13px', color: '#6b7280', margin: '0 0 12px' }}>
-                            Download all your data as a CSV file, including questionnaire responses,
-                            sleep logs, screen time logs, LMS activity, and scores.
+                            Download your data as a CSV file for analysis.
                         </p>
-                        <button
-                            onClick={handleExport}
-                            disabled={exporting}
-                            style={{
-                                padding: '8px 16px', backgroundColor: '#3b82f6', color: 'white',
-                                border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '13px',
-                                opacity: exporting ? 0.6 : 1
-                            }}
-                        >
-                            {exporting ? 'Exporting...' : 'Download CSV'}
-                        </button>
+                        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                            <div>
+                                <button
+                                    onClick={handleExport}
+                                    disabled={exporting}
+                                    style={{
+                                        padding: '8px 16px', backgroundColor: '#3b82f6', color: 'white',
+                                        border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '13px',
+                                        opacity: exporting ? 0.6 : 1
+                                    }}
+                                >
+                                    {exporting ? 'Exporting...' : 'Download Detailed CSV'}
+                                </button>
+                                <p style={{ fontSize: '11px', color: '#6b7280', margin: '4px 0 0' }}>
+                                    Multi-section format with detailed breakdown by category
+                                </p>
+                            </div>
+                            <div>
+                                <button
+                                    onClick={handleExportUnified}
+                                    disabled={exportingUnified}
+                                    style={{
+                                        padding: '8px 16px', backgroundColor: '#059669', color: 'white',
+                                        border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '13px',
+                                        opacity: exportingUnified ? 0.6 : 1
+                                    }}
+                                >
+                                    {exportingUnified ? 'Exporting...' : 'Download Unified CSV'}
+                                </button>
+                                <p style={{ fontSize: '11px', color: '#6b7280', margin: '4px 0 0' }}>
+                                    Single table with all data sources grouped by date
+                                </p>
+                            </div>
+                        </div>
                     </div>
 
                     {/* Consent & Data Management */}

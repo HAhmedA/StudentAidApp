@@ -19,6 +19,7 @@ export interface InitialChatResponse {
 export interface SendMessageResponse {
     response: string
     sessionId: string
+    messageId: string | null
     suggestedPrompts: string[]
     success: boolean
 }
@@ -62,3 +63,15 @@ export const getChatPreferences = () =>
 
 export const updateChatPreferences = (prefs: Partial<ChatbotPreferences>) =>
     api.put<ChatbotPreferences>('/chat/preferences', prefs)
+
+// Message flagging
+export const flagMessage = (messageId: string, reason: string, comment?: string) =>
+    api.post<{ flag: { id: string; message_id: string; reason: string; comment: string | null; created_at: string } }>(
+        `/chat/messages/${messageId}/flag`, { reason, comment }
+    )
+
+export const unflagMessage = (messageId: string) =>
+    api.delete<{ message: string }>(`/chat/messages/${messageId}/flag`)
+
+export const getMyFlags = (sessionId: string) =>
+    api.get<{ flaggedMessageIds: string[] }>(`/chat/my-flags?sessionId=${encodeURIComponent(sessionId)}`)

@@ -103,14 +103,13 @@ interface SleepSliderProps {
 }
 
 const SleepSlider = ({ onSaved, suppressChatbotEvent }: SleepSliderProps) => {
-    const [intervals, setIntervals] = useState<Interval[]>([
-        { id: nextId++, start: snap(MIDNIGHT_OFFSET - 90), end: snap(MIDNIGHT_OFFSET + 420) }
-        // default: 10:30 PM → 7:00 AM
-    ])
+    const [intervals, setIntervals] = useState<Interval[]>([])
+    const [hasInteracted, setHasInteracted] = useState(false)
     const [savedEntry, setSavedEntry] = useState<SavedSleepEntry | null>(null)
     const [editMode, setEditMode] = useState(false)
     const [loading, setLoading] = useState(true)
     const [submitting, setSubmitting] = useState(false)
+    const [newlyAddedId, setNewlyAddedId] = useState<number | null>(null)
     const [submitMsg, setSubmitMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null)
 
     const trackRef = useRef<HTMLDivElement>(null)
@@ -130,6 +129,7 @@ const SleepSlider = ({ onSaved, suppressChatbotEvent }: SleepSliderProps) => {
             .then(entry => {
                 if (entry) {
                     setSavedEntry(entry)
+                    setHasInteracted(true)
                     // Bug fix: populate slider position from saved data (prevents reset-to-default on refresh)
                     setIntervals([{
                         id: nextId++,
@@ -227,11 +227,13 @@ const SleepSlider = ({ onSaved, suppressChatbotEvent }: SleepSliderProps) => {
     }, [dragState, drawStart, pxToMin, isReadonly])
 
     // ── Handlers ──
-    const onTrackMouseDown = (e: React.MouseEvent) => {
+    const onTrackPointerDown = (e: React.MouseEvent | React.TouchEvent) => {
         if (isReadonly) return
         // Only start a new draw if clicking on the bare track (not on an interval)
         if ((e.target as HTMLElement).closest('.sleep-interval')) return
-        const min = pxToMin(e.clientX)
+        if (!hasInteracted) setHasInteracted(true)
+        const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX
+        const min = pxToMin(clientX)
         setDrawStart(min)
     }
 
@@ -256,10 +258,60 @@ const SleepSlider = ({ onSaved, suppressChatbotEvent }: SleepSliderProps) => {
     }
 
     const addInterval = () => {
-        // Find a gap to place the new interval, default: 2 AM → 3 AM
-        const newStart = snap(MIDNIGHT_OFFSET + 120) // 2 AM
-        const newEnd = snap(MIDNIGHT_OFFSET + 180)   // 3 AM
-        setIntervals(prev => mergeIntervals([...prev, { id: nextId++, start: newStart, end: newEnd }]))
+        if (!hasInteracted) setHasInteracted(true)
+        const addedId = nextId // capture before setIntervals increments it
+
+        setIntervals(prev => {
+            const sorted = [...prev].sort((a, b) => a.start - b.start)
+            const DESIRED_WIDTH = 120 // 2 hours — visible at ~8.3% of track
+
+            // Build list of gaps on the track
+            const gaps: { start: number; end: number }[] = []
+            const firstStart = sorted.length > 0 ? sorted[0].start : TRACK_MINUTES
+            if (firstStart > 0) gaps.push({ start: 0, end: firstStart })
+            for (let i = 0; i < sorted.length - 1; i++) {
+                if (sorted[i + 1].start > sorted[i].end) {
+                    gaps.push({ start: sorted[i].end, end: sorted[i + 1].start })
+                }
+            }
+            if (sorted.length > 0) {
+                const lastEnd = sorted[sorted.length - 1].end
+                if (lastEnd < TRACK_MINUTES) gaps.push({ start: lastEnd, end: TRACK_MINUTES })
+            }
+
+            // Filter to usable gaps (at least 10 min)
+            const usable = gaps.filter(g => g.end - g.start >= SNAP_MINUTES * 2)
+
+            let newStart: number, newEnd: number
+
+            if (usable.length > 0) {
+                // Pick largest gap; tiebreak by proximity to midnight
+                const bestGap = usable.sort((a, b) => {
+                    const aSize = a.end - a.start
+                    const bSize = b.end - b.start
+                    if (aSize !== bSize) return bSize - aSize
+                    const aMid = (a.start + a.end) / 2
+                    const bMid = (b.start + b.end) / 2
+                    return Math.abs(aMid - MIDNIGHT_OFFSET) - Math.abs(bMid - MIDNIGHT_OFFSET)
+                })[0]
+
+                const gapWidth = bestGap.end - bestGap.start
+                const width = Math.min(DESIRED_WIDTH, gapWidth)
+                // Gravitate toward midnight within the gap
+                const idealCenter = clamp(MIDNIGHT_OFFSET, bestGap.start + width / 2, bestGap.end - width / 2)
+                newStart = snap(idealCenter - width / 2)
+                newEnd = snap(newStart + width)
+            } else {
+                // No usable gap — place at track end (merge will extend visibly)
+                newStart = snap(TRACK_MINUTES - DESIRED_WIDTH)
+                newEnd = snap(TRACK_MINUTES)
+            }
+
+            return mergeIntervals([...prev, { id: nextId++, start: newStart, end: newEnd }])
+        })
+
+        setNewlyAddedId(addedId)
+        setTimeout(() => setNewlyAddedId(null), 700)
     }
 
     const onTrackHover = (e: React.MouseEvent) => {
@@ -335,6 +387,8 @@ const SleepSlider = ({ onSaved, suppressChatbotEvent }: SleepSliderProps) => {
                     <p className='sleep-slider-subtitle'>
                         {isReadonly
                             ? "Your sleep log for last night"
+                            : intervals.length === 0 && !hasInteracted
+                            ? "Click and drag on the timeline below to mark when you slept"
                             : "Drag on the timeline to mark when you slept last night"
                         }
                     </p>
@@ -372,7 +426,8 @@ const SleepSlider = ({ onSaved, suppressChatbotEvent }: SleepSliderProps) => {
                 <div
                     ref={trackRef}
                     className={`sleep-track ${isReadonly ? 'sleep-track--readonly' : ''}`}
-                    onMouseDown={!isReadonly ? onTrackMouseDown : undefined}
+                    onMouseDown={!isReadonly ? onTrackPointerDown : undefined}
+                    onTouchStart={!isReadonly ? onTrackPointerDown : undefined}
                     onMouseMove={!isReadonly ? onTrackHover : undefined}
                     onMouseLeave={onTrackLeave}
                 >
@@ -381,6 +436,25 @@ const SleepSlider = ({ onSaved, suppressChatbotEvent }: SleepSliderProps) => {
                         className='sleep-night-zone'
                         style={{ left: `${nightStart}%`, width: `${nightEnd - nightStart}%` }}
                     />
+
+                    {/* Ghost preview — teaches interaction, disappears on first touch */}
+                    {!isReadonly && !hasInteracted && intervals.length === 0 && (
+                        <div className='sleep-ghost-container'>
+                            <div className='sleep-ghost-bar'>
+                                <span className='sleep-ghost-label'>Drag here to log your sleep</span>
+                            </div>
+                            <div className='sleep-ghost-hand'>
+                                <svg width='20' height='20' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'>
+                                    <path d='M18 8.5V17a5 5 0 01-5 5h-1.28a5 5 0 01-3.536-1.464l-4.038-4.038a1.5 1.5 0 012.014-2.212L8 16V4.5a1.5 1.5 0 013 0v5a1.5 1.5 0 013 0v1a1.5 1.5 0 013 0v-2a1.5 1.5 0 013 0z' fill='#0891B2' fillOpacity='0.6' stroke='#0891B2' strokeOpacity='0.8' strokeWidth='1.2'/>
+                                </svg>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Track shimmer — draws attention when empty */}
+                    {!isReadonly && !hasInteracted && intervals.length === 0 && (
+                        <div className='sleep-track-shimmer' />
+                    )}
 
                     {/* Hover tooltip */}
                     {hoverMin !== null && !dragState && !drawStart && !isReadonly && (
@@ -397,7 +471,7 @@ const SleepSlider = ({ onSaved, suppressChatbotEvent }: SleepSliderProps) => {
                         return (
                             <div
                                 key={intv.id}
-                                className={`sleep-interval ${isDragging ? 'sleep-interval--dragging' : ''}`}
+                                className={`sleep-interval ${isDragging ? 'sleep-interval--dragging' : ''} ${intv.id === newlyAddedId ? 'sleep-interval--pop-in' : ''}`}
                                 style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
                                 onMouseDown={!isReadonly ? (e) => onIntervalDown(e, intv) : undefined}
                                 onTouchStart={!isReadonly ? (e) => onIntervalDown(e, intv) : undefined}
@@ -466,7 +540,7 @@ const SleepSlider = ({ onSaved, suppressChatbotEvent }: SleepSliderProps) => {
                 <>
                     <div className='sleep-controls'>
                         <button className='sleep-add-btn' onClick={addInterval}>
-                            + Add Another Sleep Period
+                            {intervals.length === 0 ? '+ Add a Sleep Period' : '+ Add Another Sleep Period'}
                         </button>
                         {intervals.length > 0 && (
                             <div className='sleep-summary'>

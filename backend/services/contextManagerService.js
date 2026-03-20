@@ -10,6 +10,7 @@ import { getAlignedResponse, quickValidation, SERVICE_UNAVAILABLE_MESSAGE, ALIGN
 import { invalidateSummary } from './summarizationService.js'
 import { hasSRLData } from './annotators/srlAnnotationService.js'
 import { isGreetingStale } from './chatbotPreferencesService.js'
+import { computeAllScores } from './scoring/scoreComputationService.js'
 import {
     GREETING_NO_DATA,
     GREETING_FALLBACK,
@@ -433,7 +434,7 @@ async function sendMessage(userId, userMessage) {
         result.content = stripResponseTags(stripSignOff(cleanedResponse))
 
         // Optimization #4: Parallelize assistant message save + session activity update
-        await Promise.all([
+        const [assistantMessageId] = await Promise.all([
             saveMessage(sessionId, userId, 'assistant', result.content, {
                 passed: result.passed,
                 retries: result.retries
@@ -474,6 +475,7 @@ async function sendMessage(userId, userMessage) {
             success: true,
             response: result.content,
             sessionId,
+            messageId: assistantMessageId,
             suggestedPrompts
         }
 
@@ -569,6 +571,11 @@ async function generateInitialGreeting(userId) {
 
         // User has SRL data - proceed with LLM-generated greeting
         logger.chat(`User has SRL data, proceeding with LLM greeting`, { userId })
+
+        // Ensure concept scores are up-to-date before assembling the prompt.
+        // Score computation is fire-and-forget in data submission routes, so
+        // after wizard completion the concept_scores table may lag behind.
+        await computeAllScores(userId)
 
         // Check LLM availability
         const { available } = await checkAvailability()

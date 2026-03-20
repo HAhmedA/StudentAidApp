@@ -800,3 +800,155 @@
     font-size: 14px;
     font-weight: 500;
 }
+
+/* ── Flag Icon ───────────────────────────────────── */
+.chatbot-message.assistant {
+    position: relative;
+}
+
+.chatbot-flag-btn {
+    position: absolute;
+    bottom: 6px;
+    right: 6px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 18px;
+    color: #b0b5bf;
+    opacity: 0.5;
+    transition: opacity 0.2s ease, color 0.2s ease;
+    padding: 4px 8px;
+    border-radius: 4px;
+}
+
+.chatbot-flag-btn:hover {
+    opacity: 1;
+    color: #ef4444;
+}
+
+.chatbot-flag-btn.flagged {
+    opacity: 1;
+    color: #ef4444;
+}
+
+/* ── Flag Modal ──────────────────────────────────── */
+.chatbot-flag-modal {
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 16px;
+    margin: 8px 0;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.chatbot-flag-modal h4 {
+    margin: 0 0 12px;
+    font-size: 15px;
+    font-weight: 600;
+    color: #1f2937;
+}
+
+.flag-reasons {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.flag-reason-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: #374151;
+    cursor: pointer;
+}
+
+.flag-reason-option input[type="radio"] {
+    accent-color: #ef4444;
+}
+
+.flag-comment {
+    width: 100%;
+    min-height: 60px;
+    padding: 8px 12px;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    font-size: 13px;
+    font-family: inherit;
+    resize: vertical;
+    margin-bottom: 8px;
+    box-sizing: border-box;
+}
+
+.flag-comment:focus {
+    outline: none;
+    border-color: #0891B2;
+}
+
+.flag-error {
+    color: #991b1b;
+    font-size: 12px;
+    margin: 0 0 8px;
+}
+
+.flag-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+}
+
+.flag-submit {
+    padding: 8px 16px;
+    border-radius: 8px;
+    border: none;
+    background: #ef4444;
+    color: white;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.flag-submit:hover:not(:disabled) {
+    background: #dc2626;
+}
+
+.flag-submit:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.flag-cancel {
+    padding: 8px 16px;
+    border-radius: 8px;
+    border: 1px solid #d1d5db;
+    background: white;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.flag-cancel:hover {
+    background: #f3f4f6;
+}
+
+/* ── Flag Toast ──────────────────────────────────── */
+.chatbot-flag-toast {
+    position: absolute;
+    bottom: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #065f46;
+    color: white;
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 500;
+    animation: fadeIn 0.2s ease, flagToastOut 0.3s ease 2.7s forwards;
+    z-index: 20;
+}
+
+@keyframes flagToastOut {
+    to { opacity: 0; }
+}

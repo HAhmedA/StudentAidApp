@@ -19,7 +19,8 @@ const RECOMMENDED_ENV = {
     LLM_MAIN_MODEL: 'Main LLM model name',
     SIMULATION_MODE: 'Set to "false" to disable simulators and exclude test data from clustering (default: "true")',
     MOODLE_BASE_URL: 'Base URL of Moodle instance for LMS sync (e.g. http://localhost:8888/moodle501)',
-    MOODLE_TOKEN:    'Moodle web service token for REST API access'
+    MOODLE_TOKEN:    'Moodle web service token for REST API access',
+    MOODLE_AUTO_LOGIN_KEY: 'Shared secret for Moodle auto-login URL authentication'
 }
 
 /**

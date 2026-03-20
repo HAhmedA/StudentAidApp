@@ -1,0 +1,97 @@
+<h2>Admin Panel: Flagged Messages</h2>
+<p class="subtitle">How the admin would see and manage flagged chatbot responses</p>
+
+<div class="mockup">
+  <div class="mockup-header">AdminFlaggedMessagesPanel — Collapsible Panel in Home.tsx</div>
+  <div class="mockup-body" style="background: #fff; padding: 0;">
+    <!-- Panel Header -->
+    <div style="display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; background: linear-gradient(135deg, #fee2e2, #fef3c7); border-bottom: 1px solid #fca5a5; cursor: pointer;">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <span style="font-size: 20px;">&#9873;</span>
+        <span style="font-weight: 600; font-size: 16px; color: #991b1b;">Flagged Messages</span>
+        <span style="background: #dc2626; color: white; font-size: 12px; padding: 2px 8px; border-radius: 10px; font-weight: 600;">3 pending</span>
+      </div>
+      <span style="font-size: 14px; color: #666;">&#9660;</span>
+    </div>
+
+    <!-- Filter row -->
+    <div style="display: flex; gap: 8px; padding: 12px 20px; background: #f9fafb; border-bottom: 1px solid #e5e7eb; flex-wrap: wrap; align-items: center;">
+      <span style="font-size: 13px; color: #6b7280; font-weight: 500;">Filter:</span>
+      <button style="padding: 4px 12px; border-radius: 16px; border: 1px solid #d1d5db; background: #dc2626; color: white; font-size: 12px; cursor: pointer;">Pending (3)</button>
+      <button style="padding: 4px 12px; border-radius: 16px; border: 1px solid #d1d5db; background: white; color: #374151; font-size: 12px; cursor: pointer;">Reviewed (5)</button>
+      <button style="padding: 4px 12px; border-radius: 16px; border: 1px solid #d1d5db; background: white; color: #374151; font-size: 12px; cursor: pointer;">Dismissed (2)</button>
+      <button style="padding: 4px 12px; border-radius: 16px; border: 1px solid #d1d5db; background: white; color: #374151; font-size: 12px; cursor: pointer;">All (10)</button>
+    </div>
+
+    <!-- Flag Card 1 (expanded) -->
+    <div style="margin: 16px 20px; border: 1px solid #fca5a5; border-radius: 12px; overflow: hidden; background: white;">
+      <!-- Card header -->
+      <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: #fef2f2; border-bottom: 1px solid #fecaca;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <span style="background: #fecaca; color: #991b1b; font-size: 11px; padding: 3px 10px; border-radius: 6px; font-weight: 600;">Inappropriate / Offensive</span>
+          <span style="font-size: 12px; color: #6b7280;">by <strong>student5@example.com</strong></span>
+          <span style="font-size: 12px; color: #9ca3af;">&#183; 2 hours ago</span>
+        </div>
+        <span style="background: #fef3c7; color: #92400e; font-size: 11px; padding: 3px 8px; border-radius: 6px; font-weight: 500;">Pending</span>
+      </div>
+      <!-- Conversation context -->
+      <div style="padding: 16px;">
+        <div style="margin-bottom: 12px;">
+          <div style="font-size: 11px; color: #6b7280; text-transform: uppercase; margin-bottom: 4px; font-weight: 600;">Student asked:</div>
+          <div style="background: #f3f4f6; border-radius: 8px; padding: 10px 14px; font-size: 13px; color: #374151;">How can I improve my study habits?</div>
+        </div>
+        <div style="margin-bottom: 12px;">
+          <div style="font-size: 11px; color: #dc2626; text-transform: uppercase; margin-bottom: 4px; font-weight: 600;">&#9873; Flagged response:</div>
+          <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 10px 14px; font-size: 13px; color: #374151;">Based on your data, you seem to be struggling with basic time management. Your performance is significantly below average compared to your peers...</div>
+        </div>
+        <div style="margin-bottom: 16px;">
+          <div style="font-size: 11px; color: #6b7280; text-transform: uppercase; margin-bottom: 4px; font-weight: 600;">Student comment:</div>
+          <div style="font-size: 13px; color: #6b7280; font-style: italic;">"This response felt judgmental and demotivating"</div>
+        </div>
+        <!-- Action buttons -->
+        <div style="display: flex; gap: 8px; border-top: 1px solid #e5e7eb; padding-top: 12px;">
+          <button style="padding: 6px 16px; border-radius: 8px; border: 1px solid #059669; background: #ecfdf5; color: #059669; font-size: 13px; cursor: pointer; font-weight: 500;">&#10003; Mark Reviewed</button>
+          <button style="padding: 6px 16px; border-radius: 8px; border: 1px solid #d1d5db; background: white; color: #6b7280; font-size: 13px; cursor: pointer;">Dismiss</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Flag Card 2 (collapsed) -->
+    <div style="margin: 0 20px 16px; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; background: white; cursor: pointer;">
+      <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px;">
+        <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+          <span style="background: #dbeafe; color: #1e40af; font-size: 11px; padding: 3px 10px; border-radius: 6px; font-weight: 600;">Inaccurate / Misleading</span>
+          <span style="font-size: 12px; color: #6b7280;">by <strong>student12@example.com</strong></span>
+          <span style="font-size: 12px; color: #9ca3af;">&#183; 5 hours ago</span>
+          <span style="background: #fef3c7; color: #92400e; font-size: 11px; padding: 3px 8px; border-radius: 6px; font-weight: 500;">Pending</span>
+        </div>
+        <span style="font-size: 14px; color: #9ca3af;">&#9654;</span>
+      </div>
+    </div>
+
+    <!-- Flag Card 3 (collapsed, reviewed) -->
+    <div style="margin: 0 20px 16px; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; background: #f9fafb; cursor: pointer; opacity: 0.7;">
+      <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px;">
+        <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+          <span style="background: #f3f4f6; color: #6b7280; font-size: 11px; padding: 3px 10px; border-radius: 6px; font-weight: 600;">Harmful / Unsafe</span>
+          <span style="font-size: 12px; color: #6b7280;">by <strong>student3@example.com</strong></span>
+          <span style="font-size: 12px; color: #9ca3af;">&#183; 1 day ago</span>
+          <span style="background: #ecfdf5; color: #065f46; font-size: 11px; padding: 3px 8px; border-radius: 6px; font-weight: 500;">&#10003; Reviewed</span>
+        </div>
+        <span style="font-size: 14px; color: #9ca3af;">&#9654;</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div style="margin-top: 20px; padding: 16px; background: #f0f9ff; border-radius: 8px; border: 1px solid #bae6fd;">
+  <h3 style="margin: 0 0 8px; font-size: 15px; color: #0369a1;">Design Notes</h3>
+  <ul style="margin: 0; padding-left: 20px; font-size: 13px; color: #374151; line-height: 1.8;">
+    <li><strong>Each flag card</strong> shows: reason badge, student email, time ago, status</li>
+    <li><strong>Expanded view</strong> shows full conversation context: student's question + flagged response + student comment</li>
+    <li><strong>Status filter pills</strong> at top let admin focus on pending vs reviewed vs dismissed</li>
+    <li><strong>"Pending" count badge</strong> in panel header draws attention</li>
+    <li><strong>Reviewed cards</strong> are dimmed to reduce visual noise</li>
+    <li><strong>Actions</strong>: "Mark Reviewed" (green) and "Dismiss" (gray)</li>
+  </ul>
+</div>

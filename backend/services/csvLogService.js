@@ -244,6 +244,85 @@ function aggregateCsvToDaily(csvName, rows) {
 }
 
 // =============================================================================
+// MOODLE ID EXTRACTION (from Description column)
+// =============================================================================
+
+const MOODLE_ID_RE = /user with id '(\d+)'/
+
+function extractActingMoodleId(description) {
+    const match = description?.match(MOODLE_ID_RE)
+    return match ? parseInt(match[1], 10) : null
+}
+
+function extractMoodleIdsFromCsv(rows) {
+    const idMap = new Map() // moodleId → { eventCount }
+    for (const row of rows) {
+        const moodleId = extractActingMoodleId(row['Description'])
+        if (moodleId === null) continue
+        const entry = idMap.get(moodleId)
+        if (entry) {
+            entry.eventCount++
+        } else {
+            idMap.set(moodleId, { eventCount: 1 })
+        }
+    }
+    return idMap
+}
+
+function aggregateCsvToDailyByMoodleId(moodleId, rows) {
+    const userEvents = rows
+        .filter(r => extractActingMoodleId(r['Description']) === moodleId)
+        .map(r => ({
+            timestamp: parseMoodleTime(r['Time']),
+            component: r['Component'] || '',
+            eventName: r['Event name'] || ''
+        }))
+        .filter(e => e.timestamp !== null)
+
+    if (userEvents.length === 0) return []
+
+    const byDate = {}
+    for (const event of userEvents) {
+        const date = toDateString(event.timestamp)
+        if (!byDate[date]) byDate[date] = []
+        byDate[date].push(event)
+    }
+
+    return Object.entries(byDate).map(([date, events]) => {
+        const ealt = computeEalt(events)
+
+        const counters = {
+            exercise_practice_events: 0,
+            assignment_work_events:   0,
+            forum_views:              0,
+            forum_posts:              0,
+        }
+        for (const event of events) {
+            const inc = classifyComponent(event.component, event.eventName)
+            for (const [k, v] of Object.entries(inc)) {
+                counters[k] = (counters[k] || 0) + v
+            }
+        }
+
+        return {
+            session_date:              date,
+            total_active_minutes:      ealt.total_active_minutes,
+            total_events:              events.length,
+            number_of_sessions:        ealt.number_of_sessions,
+            longest_session_minutes:   ealt.longest_session_minutes,
+            days_active_in_period:     1,
+            reading_minutes:           0,
+            watching_minutes:          0,
+            exercise_practice_events:  counters.exercise_practice_events,
+            assignment_work_events:    counters.assignment_work_events,
+            forum_views:               counters.forum_views,
+            forum_posts:               counters.forum_posts,
+            session_durations:         ealt.session_durations,
+        }
+    })
+}
+
+// =============================================================================
 // EXPORTS (pure functions)
 // =============================================================================
 
@@ -253,6 +332,8 @@ export {
     classifyComponent,
     computeEalt,
     aggregateCsvToDaily,
+    extractMoodleIdsFromCsv,
+    aggregateCsvToDailyByMoodleId,
 }
 
 // =============================================================================
@@ -404,4 +485,83 @@ async function processUpload(uploadId) {
     }
 }
 
-export { processUpload }
+async function processUploadByMoodleId(uploadId, approvedMappings) {
+    try {
+        const { rows: uploadRows } = await pool.query(
+            `SELECT id, csv_content FROM public.csv_log_uploads WHERE id = $1`,
+            [uploadId]
+        )
+        if (uploadRows.length === 0) throw new Error(`Upload ${uploadId} not found`)
+        const csvContent = uploadRows[0].csv_content
+
+        if (approvedMappings.length === 0) {
+            return { imported: 0, skipped: 0, details: [] }
+        }
+
+        const rows = parseCsv(csvContent)
+
+        const details = []
+        let imported = 0
+        let skipped  = 0
+
+        const importedMappings = []
+
+        for (const mapping of approvedMappings) {
+            const dailyRows = aggregateCsvToDailyByMoodleId(mapping.moodleId, rows)
+            if (dailyRows.length === 0) {
+                skipped++
+                details.push({ moodleId: mapping.moodleId, userId: mapping.userId, daysUpdated: 0, totalEvents: 0 })
+                continue
+            }
+
+            try {
+                await withTransaction(pool, async (client) => {
+                    await upsertSessionRows(client, mapping.userId, dailyRows)
+                })
+
+                importedMappings.push({ ...mapping, dailyRows })
+
+                const totalEvents = dailyRows.reduce((s, r) => s + r.total_events, 0)
+                imported++
+                details.push({
+                    moodleId:    mapping.moodleId,
+                    userId:      mapping.userId,
+                    daysUpdated: dailyRows.length,
+                    totalEvents,
+                })
+                logger.info(`CSV ID import: moodle_id=${mapping.moodleId} → user=${mapping.userId}: ${dailyRows.length} days, ${totalEvents} events`)
+            } catch (studentErr) {
+                logger.error(`CSV ID import: failed for moodle_id=${mapping.moodleId}: ${studentErr.message}`)
+                skipped++
+                details.push({ moodleId: mapping.moodleId, userId: mapping.userId, daysUpdated: 0, totalEvents: 0 })
+            }
+        }
+
+        if (importedMappings.length > 0) {
+            batchScoreLMSCohort().catch(err =>
+                logger.error(`CSV ID import: batchScoreLMSCohort error: ${err.message}`)
+            )
+
+            for (const m of importedMappings) {
+                computeJudgments(pool, m.userId).catch(err =>
+                    logger.error(`CSV ID import: computeJudgments error for ${m.userId}: ${err.message}`)
+                )
+            }
+        }
+
+        await pool.query(
+            `UPDATE public.csv_log_uploads SET status = 'imported', imported_at = NOW() WHERE id = $1`,
+            [uploadId]
+        )
+
+        return { imported, skipped, details }
+    } catch (err) {
+        await pool.query(
+            `UPDATE public.csv_log_uploads SET status = 'failed' WHERE id = $1`,
+            [uploadId]
+        ).catch(updateErr => logger.error(`CSV ID import: could not write failed status: ${updateErr.message}`))
+        throw err
+    }
+}
+
+export { processUpload, processUploadByMoodleId }

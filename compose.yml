@@ -29,6 +29,7 @@ services:
       - MOODLE_BASE_URL=http://host.docker.internal:8888/moodle501
       - MOODLE_TOKEN=${MOODLE_TOKEN:-}
       - SIMULATION_MODE=${SIMULATION_MODE:-true}
+      - MOODLE_AUTO_LOGIN_KEY=${MOODLE_AUTO_LOGIN_KEY:-}
       - NODE_OPTIONS=--dns-result-order=ipv4first
     ports:
       - "8080:8080" # expose the API on localhost:8080

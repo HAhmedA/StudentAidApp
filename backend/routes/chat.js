@@ -3,7 +3,7 @@ import { Router } from 'express'
 import rateLimit from 'express-rate-limit'
 import { requireAuth } from '../middleware/auth.js'
 import pool from '../config/database.js'
-import { asyncRoute } from '../utils/errors.js'
+import { asyncRoute, Errors } from '../utils/errors.js'
 import {
     sendMessage,
     generateInitialGreeting,
@@ -142,6 +142,7 @@ router.post('/message', chatMessageLimiter, asyncRoute(async (req, res) => {
     res.json({
         response: result.response,
         sessionId: result.sessionId,
+        messageId: result.messageId || null,
         suggestedPrompts: result.suggestedPrompts,
         success: result.success
     })
@@ -247,6 +248,98 @@ router.put('/preferences', asyncRoute(async (req, res) => {
         }
         throw err
     }
+}))
+
+// ── Message flagging ─────────────────────────────────────────────
+
+const VALID_FLAG_REASONS = ['inaccurate', 'inappropriate', 'irrelevant', 'harmful', 'other']
+
+// Flag an assistant message
+router.post('/messages/:messageId/flag', asyncRoute(async (req, res) => {
+    const userId = req.session.user.id
+    const { messageId } = req.params
+    const { reason, comment } = req.body
+
+    if (!reason || !VALID_FLAG_REASONS.includes(reason)) {
+        return res.status(400).json({ error: `reason must be one of: ${VALID_FLAG_REASONS.join(', ')}` })
+    }
+    if (comment && comment.length > 1000) {
+        return res.status(400).json({ error: 'comment must be 1000 characters or less' })
+    }
+
+    // Verify message exists, is assistant role, and belongs to user's session
+    const { rows: msgRows } = await pool.query(
+        `SELECT m.id, m.role
+         FROM chat_messages m
+         JOIN chat_sessions s ON s.id = m.session_id
+         WHERE m.id = $1 AND s.user_id = $2`,
+        [messageId, userId]
+    )
+    if (msgRows.length === 0) {
+        return res.status(404).json({ error: 'Message not found' })
+    }
+    if (msgRows[0].role !== 'assistant') {
+        return res.status(400).json({ error: 'Only assistant messages can be flagged' })
+    }
+
+    try {
+        const { rows } = await pool.query(
+            `INSERT INTO chat_message_flags (message_id, user_id, reason, comment)
+             VALUES ($1, $2, $3, $4)
+             RETURNING id, message_id, reason, comment, created_at`,
+            [messageId, userId, reason, comment || null]
+        )
+        res.status(201).json({ flag: rows[0] })
+    } catch (err) {
+        if (err.code === '23505') {
+            return res.status(409).json({ error: 'You have already flagged this message' })
+        }
+        throw err
+    }
+}))
+
+// Remove own flag (only if still pending)
+router.delete('/messages/:messageId/flag', asyncRoute(async (req, res) => {
+    const userId = req.session.user.id
+    const { messageId } = req.params
+
+    const { rows } = await pool.query(
+        'SELECT id, status FROM chat_message_flags WHERE message_id = $1 AND user_id = $2',
+        [messageId, userId]
+    )
+    if (rows.length === 0) {
+        return res.status(404).json({ error: 'Flag not found' })
+    }
+    if (rows[0].status !== 'pending') {
+        return res.status(409).json({ error: 'Cannot remove a flag that has been reviewed or dismissed' })
+    }
+
+    await pool.query('DELETE FROM chat_message_flags WHERE id = $1', [rows[0].id])
+    res.json({ message: 'Flag removed' })
+}))
+
+// Get user's own flags for a session (used to restore flag state in UI)
+router.get('/my-flags', asyncRoute(async (req, res) => {
+    const userId = req.session.user.id
+    const { sessionId } = req.query
+
+    if (!sessionId) return res.status(400).json({ error: 'sessionId is required' })
+
+    // Ownership check
+    const { rows: sessionCheck } = await pool.query(
+        'SELECT id FROM public.chat_sessions WHERE id = $1 AND user_id = $2',
+        [sessionId, userId]
+    )
+    if (sessionCheck.length === 0) return res.status(403).json({ error: 'forbidden' })
+
+    const { rows } = await pool.query(
+        `SELECT f.message_id
+         FROM chat_message_flags f
+         JOIN chat_messages m ON m.id = f.message_id
+         WHERE m.session_id = $1 AND f.user_id = $2`,
+        [sessionId, userId]
+    )
+    res.json({ flaggedMessageIds: rows.map(r => r.message_id) })
 }))
 
 export default router

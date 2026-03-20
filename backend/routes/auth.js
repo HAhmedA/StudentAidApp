@@ -6,7 +6,7 @@ import pool from '../config/database.js'
 import logger from '../utils/logger.js'
 import { validate } from '../middleware/validation.js'
 
-import { register, login, logout, getMe } from '../controllers/authController.js'
+import { register, login, logout, getMe, moodleAutoLogin } from '../controllers/authController.js'
 import { authLimiter } from '../middleware/rateLimit.js'
 
 const router = Router()
@@ -128,6 +128,9 @@ router.post('/logout', logout)
  *                 role:  { type: string }
  */
 router.get('/me', getMe)
+
+// Moodle auto-login: validates shared secret, finds/creates user by Moodle ID, sets 45-day session
+router.get('/moodle', authLimiter, moodleAutoLogin)
 
 // Legacy endpoints (backwards compatible)
 router.post('/legacy-login', async (req, res) => {

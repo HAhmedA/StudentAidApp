@@ -621,6 +621,84 @@ router.post('/llm-config/test', asyncRoute(async (req, res) => {
     }
 }))
 
+// ── Flagged Messages endpoints ───────────────────────────────────
+
+router.get('/flagged-messages', asyncRoute(async (req, res) => {
+    const status = req.query.status || null
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 20))
+    const offset = Math.max(0, parseInt(req.query.offset, 10) || 0)
+
+    const statusFilter = status ? 'AND f.status = $3' : ''
+    const params = status ? [limit, offset, status] : [limit, offset]
+
+    const [{ rows: flags }, { rows: countRows }] = await Promise.all([
+        pool.query(
+            `SELECT
+                f.id, f.reason, f.comment, f.status, f.created_at,
+                f.resolved_at,
+                u.email AS student_email,
+                u.name  AS student_name,
+                m.content AS message_content,
+                prev.content AS user_message_content,
+                resolver.email AS resolved_by_email
+             FROM chat_message_flags f
+             JOIN chat_messages m ON m.id = f.message_id
+             JOIN users u ON u.id = f.user_id
+             LEFT JOIN LATERAL (
+                SELECT content FROM chat_messages
+                WHERE session_id = m.session_id
+                  AND created_at < m.created_at
+                  AND role = 'user'
+                ORDER BY created_at DESC LIMIT 1
+             ) prev ON true
+             LEFT JOIN users resolver ON resolver.id = f.resolved_by
+             WHERE 1=1 ${statusFilter}
+             ORDER BY f.created_at DESC
+             LIMIT $1 OFFSET $2`,
+            params
+        ),
+        pool.query(
+            `SELECT
+                COUNT(*) FILTER (WHERE status = 'pending')   AS pending,
+                COUNT(*) FILTER (WHERE status = 'reviewed')  AS reviewed,
+                COUNT(*) FILTER (WHERE status = 'dismissed') AS dismissed,
+                COUNT(*) AS total
+             FROM chat_message_flags`
+        )
+    ])
+
+    const counts = {
+        pending:   parseInt(countRows[0].pending),
+        reviewed:  parseInt(countRows[0].reviewed),
+        dismissed: parseInt(countRows[0].dismissed)
+    }
+
+    res.json({ flags, total: parseInt(countRows[0].total), counts })
+}))
+
+router.put('/flagged-messages/:flagId', asyncRoute(async (req, res) => {
+    const { flagId } = req.params
+    const { status } = req.body
+    const adminId = req.session.user.id
+
+    if (!['reviewed', 'dismissed'].includes(status)) {
+        throw Errors.VALIDATION('status must be "reviewed" or "dismissed"')
+    }
+
+    const { rows } = await pool.query(
+        `UPDATE chat_message_flags
+         SET status = $1, resolved_by = $2, resolved_at = NOW()
+         WHERE id = $3
+         RETURNING id, status, resolved_by, resolved_at`,
+        [status, adminId, flagId]
+    )
+
+    if (rows.length === 0) throw Errors.NOT_FOUND('Flag')
+
+    logger.info(`Admin ${req.session.user?.email} ${status} flag ${flagId}`)
+    res.json({ flag: rows[0] })
+}))
+
 // Legacy routes for backwards compatibility — delegate directly to named handlers
 router.get('/system-prompt', asyncRoute((req, res) => {
     req.query.type = 'system'
