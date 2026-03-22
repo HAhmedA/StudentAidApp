@@ -8,6 +8,7 @@ export interface AuthUser {
     email: string
     name: string
     role?: UserRole // Optional for backwards compatibility
+    moodleUser?: boolean
 }
 
 interface AuthState {

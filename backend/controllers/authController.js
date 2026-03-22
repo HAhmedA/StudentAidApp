@@ -175,7 +175,7 @@ export const moodleAutoLogin = asyncRoute(async (req, res) => {
             }
         }
 
-        req.session.user = { id: user.id, email: user.email, name: user.name, role: user.role }
+        req.session.user = { id: user.id, email: user.email, name: user.name, role: user.role, moodleUser: true }
         req.session.cookie.maxAge = MOODLE_SESSION_MAX_AGE
         await new Promise((resolve, reject) =>
             req.session.save(err => (err ? reject(err) : resolve()))
