@@ -182,8 +182,16 @@ export const moodleAutoLogin = asyncRoute(async (req, res) => {
         )
         setSessionCookie(res, req.sessionID, MOODLE_SESSION_MAX_AGE)
 
+        // Respond with an HTML page that does a client-side redirect instead of a
+        // 302. This ensures the browser fully processes the Set-Cookie header before
+        // navigating — some browsers inconsistently store cookies from 302 responses,
+        // causing the session to be missing when the SPA loads and calls GET /api/me.
         const basePath = process.env.APP_BASE_PATH || '/'
-        res.redirect(basePath)
+        res.send(
+            `<!DOCTYPE html><html><head>` +
+            `<meta http-equiv="refresh" content="0;url=${basePath}">` +
+            `</head><body><p>Redirecting\u2026</p></body></html>`
+        )
     } catch (err) {
         if (validRef) {
             logger.warn(`Moodle auto-login failed (${err.message}), redirecting to ref: ${validRef}`)
