@@ -7,10 +7,10 @@ import { generateStudentData } from '../services/simulationOrchestratorService.j
 import { asyncRoute, AppError } from '../utils/errors.js'
 
 // Produce the signed session cookie value that express-session expects.
-// Uses the same algorithm as the 'cookie-signature' package (HMAC-SHA256, base64url).
+// Must match the 'cookie-signature' package exactly (HMAC-SHA256, base64 with padding stripped).
 function signSessionId(id, secret) {
     const sig = createHmac('sha256', secret).update(id).digest('base64')
-        .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+        .replace(/=+$/, '')
     return 's:' + id + '.' + sig
 }
 
@@ -182,12 +182,8 @@ export const moodleAutoLogin = asyncRoute(async (req, res) => {
         )
         setSessionCookie(res, req.sessionID, MOODLE_SESSION_MAX_AGE)
 
-        // Double redirect: first to /api/auth/bounce, then to the dashboard.
-        // The extra HTTP round-trip gives the browser time to store the Set-Cookie
-        // before the SPA loads. This avoids CSP issues (no inline JS) and is more
-        // reliable than meta-refresh for cross-tab session consistency.
         const basePath = process.env.APP_BASE_PATH || '/'
-        res.redirect('/api/auth/bounce?to=' + encodeURIComponent(basePath))
+        res.redirect(basePath)
     } catch (err) {
         if (validRef) {
             logger.warn(`Moodle auto-login failed (${err.message}), redirecting to ref: ${validRef}`)
