@@ -30,6 +30,8 @@ jest.unstable_mockModule('../../config/database.js', () => ({
 // ── Mock scoreComputationService (not used directly — injected per test) ─────
 jest.unstable_mockModule('../../services/scoring/scoreComputationService.js', () => ({
     computeAllScores: jest.fn(),
+    batchScoreSleepCohort: jest.fn().mockResolvedValue({ usersScored: 0 }),
+    batchScoreScreenTimeCohort: jest.fn().mockResolvedValue({ usersScored: 0 }),
     batchScoreSRLCohort: jest.fn().mockResolvedValue({ usersScored: 0 })
 }))
 

@@ -9,7 +9,7 @@
 import cron from 'node-cron';
 import pool from '../config/database.js';
 import logger from '../utils/logger.js';
-import { computeAllScores, batchScoreSRLCohort } from './scoring/scoreComputationService.js';
+import { computeAllScores, batchScoreSleepCohort, batchScoreScreenTimeCohort, batchScoreSRLCohort } from './scoring/scoreComputationService.js';
 
 // Mirror the SIM_FILTER pattern from scoreQueryService: only exclude simulated rows
 // when SIMULATION_MODE is explicitly 'false' (production). In dev/test mode all users
@@ -76,8 +76,15 @@ export async function recomputeAllActiveUserScores(dbPool = pool, computeAllScor
 
         logger.info(`Cron: Nightly recomputation complete. ✓ ${successCount} succeeded, ✗ ${errorCount} failed.`);
 
-        // SRL requires a single batch run so peer_clusters and all user_cluster_assignments
-        // are written from the same model (one PGMoE fit, one atomic transaction).
+        // Batch-score each concept so every user is scored against the same stable pool.
+        // This catches users who were skipped during the per-user loop due to cold start
+        // (pool < 10 users at that moment but now large enough for clustering).
+        await batchScoreSleepCohort().catch(err =>
+            logger.error(`Cron: Sleep batch scoring failed: ${err.message}`)
+        );
+        await batchScoreScreenTimeCohort().catch(err =>
+            logger.error(`Cron: Screen time batch scoring failed: ${err.message}`)
+        );
         await batchScoreSRLCohort().catch(err =>
             logger.error(`Cron: SRL batch scoring failed: ${err.message}`)
         );

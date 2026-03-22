@@ -148,6 +148,54 @@ async function batchScoreSRLCohort() {
 }
 
 /**
+ * Batch-score all users for the Sleep concept in a single PGMoE run.
+ * Ensures all users get a concept_score_history entry even if the per-user
+ * loop in the nightly cron hit cold start when the cohort was still growing.
+ *
+ * @returns {Promise<{coldStart?: boolean, usersScored: number}>}
+ */
+async function batchScoreSleepCohort() {
+    logger.info('batchScoreSleepCohort: scoring all users');
+    const result = await batchComputeClusterScores('sleep');
+
+    if (!result.coldStart && result.userResults?.length > 0) {
+        for (const { userId, domains } of result.userResults) {
+            await computeAndStoreRawScore(userId, 'sleep', domains).catch(err =>
+                logger.error(`batchScoreSleepCohort: concept_scores write failed for ${userId}: ${err.message}`)
+            );
+        }
+        logger.info(`batchScoreSleepCohort: concept_scores written for ${result.userResults.length} users`);
+    }
+
+    logger.info(`batchScoreSleepCohort complete: ${result?.usersScored ?? 0} users scored`);
+    return result;
+}
+
+/**
+ * Batch-score all users for the Screen Time concept in a single PGMoE run.
+ * Ensures all users get a concept_score_history entry even if the per-user
+ * loop in the nightly cron hit cold start when the cohort was still growing.
+ *
+ * @returns {Promise<{coldStart?: boolean, usersScored: number}>}
+ */
+async function batchScoreScreenTimeCohort() {
+    logger.info('batchScoreScreenTimeCohort: scoring all users');
+    const result = await batchComputeClusterScores('screen_time');
+
+    if (!result.coldStart && result.userResults?.length > 0) {
+        for (const { userId, domains } of result.userResults) {
+            await computeAndStoreRawScore(userId, 'screen_time', domains).catch(err =>
+                logger.error(`batchScoreScreenTimeCohort: concept_scores write failed for ${userId}: ${err.message}`)
+            );
+        }
+        logger.info(`batchScoreScreenTimeCohort: concept_scores written for ${result.userResults.length} users`);
+    }
+
+    logger.info(`batchScoreScreenTimeCohort complete: ${result?.usersScored ?? 0} users scored`);
+    return result;
+}
+
+/**
  * Get formatted scores for chatbot prompt
  * This replaces the individual getJudgmentsForChatbot calls
  *
@@ -167,5 +215,7 @@ export {
     computeAllScores,
     batchScoreLMSCohort,
     batchScoreSRLCohort,
+    batchScoreSleepCohort,
+    batchScoreScreenTimeCohort,
     getScoresForChatbot
 };
