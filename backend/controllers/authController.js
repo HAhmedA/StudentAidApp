@@ -175,6 +175,12 @@ export const moodleAutoLogin = asyncRoute(async (req, res) => {
             }
         }
 
+        // Regenerate session to prevent session fixation and clear stale data
+        // from a previous user's session in this browser.
+        await new Promise((resolve, reject) =>
+            req.session.regenerate(err => (err ? reject(err) : resolve()))
+        )
+
         req.session.user = { id: user.id, email: user.email, name: user.name, role: user.role, moodleUser: true }
         req.session.cookie.maxAge = MOODLE_SESSION_MAX_AGE
         await new Promise((resolve, reject) =>
