@@ -116,7 +116,7 @@ router.get('/', asyncRoute(async (req, res) => {
             score: parseFloat(row.score),
             trend: row.trend,
             breakdown: row.aspect_breakdown,
-            yesterdayScore: yesterdayScores[row.concept_id] || null,
+            yesterdayScore: yesterdayScores[row.concept_id] ?? null,
             // History breakdown preferred; fall back to previous_aspect_breakdown saved on upsert
             previousBreakdown: yesterdayBreakdowns[row.concept_id] || row.previous_aspect_breakdown || null,
             clusterLabel: clusterInfo[row.concept_id]?.clusterLabel || null,

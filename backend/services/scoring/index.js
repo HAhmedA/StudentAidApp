@@ -12,7 +12,7 @@ export {
     computeScore,
     computeAndStoreScore,
     calculateTrend,
-    getYesterdayScore,
+    getPreviousScore,
     getAllScoresForChatbot,
     getScoreForChatbot,
     formatScoreForChatbot,

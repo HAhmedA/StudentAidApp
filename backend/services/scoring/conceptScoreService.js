@@ -99,23 +99,27 @@ function calculateTrend(todayScore, yesterdayScore) {
 }
 
 /**
- * Get yesterday's score for a concept (used for day-over-day trend)
+ * Get the most recent previous score for a concept (used for day-over-day trend).
+ * Uses score_date < CURRENT_DATE (not exact yesterday) so trends survive
+ * missed days (weekends, gaps in data).
  *
  * @param {string} userId - User ID
  * @param {string} conceptId - Concept ID
- * @returns {Promise<number|null>} - Yesterday's score or null if no history
+ * @returns {Promise<number|null>} - Previous score or null if no history
  */
-async function getYesterdayScore(userId, conceptId) {
+async function getPreviousScore(userId, conceptId) {
     const { rows } = await pool.query(
         `SELECT score
          FROM public.concept_score_history
          WHERE user_id = $1
            AND concept_id = $2
-           AND score_date = CURRENT_DATE - 1`,
+           AND score_date < CURRENT_DATE
+         ORDER BY score_date DESC
+         LIMIT 1`,
         [userId, conceptId]
     );
 
-    return rows[0]?.score ? parseFloat(rows[0].score) : null;
+    return rows[0]?.score != null ? parseFloat(rows[0].score) : null;
 }
 
 /**
@@ -172,8 +176,8 @@ async function computeAndStoreScore(userId, conceptId, aspects, strategy = DEFAU
     // Compute score
     const { score, breakdown } = computeScore(aspects, strategy);
 
-    // Get yesterday's score for day-over-day trend
-    const yesterdayScore = await getYesterdayScore(userId, conceptId);
+    // Get previous score for day-over-day trend
+    const yesterdayScore = await getPreviousScore(userId, conceptId);
 
     // Calculate trend
     const trend = calculateTrend(score, yesterdayScore);
@@ -222,8 +226,8 @@ async function computeAndStoreRawScore(userId, conceptId, rawScores) {
         };
     }
 
-    // Get yesterday's score for day-over-day trend
-    const yesterdayScore = await getYesterdayScore(userId, conceptId);
+    // Get previous score for day-over-day trend
+    const yesterdayScore = await getPreviousScore(userId, conceptId);
 
     // Calculate trend
     const trend = calculateTrend(score, yesterdayScore);
@@ -343,7 +347,7 @@ export {
     computeAndStoreScore,
     computeAndStoreRawScore,
     calculateTrend,
-    getYesterdayScore,
+    getPreviousScore,
 
     // Chatbot output
     getAllScoresForChatbot,

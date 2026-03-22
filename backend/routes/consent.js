@@ -2,36 +2,9 @@ import { Router } from 'express';
 import pool from '../config/database.js';
 import { requireAuth } from '../middleware/auth.js';
 import logger from '../utils/logger.js';
+import { deleteAllUserData } from '../services/userDeletionService.js';
 
 const router = Router();
-
-/**
- * Delete all personal data for a user (order matters for FK constraints).
- * Shared by both /revoke (keep account) and /delete-account (remove account).
- */
-async function deleteAllUserData(client, userId) {
-    await client.query('DELETE FROM public.chat_messages WHERE user_id = $1', [userId]);
-    await client.query('DELETE FROM public.chat_summaries WHERE user_id = $1', [userId]);
-    await client.query('DELETE FROM public.chat_sessions WHERE user_id = $1', [userId]);
-    await client.query('DELETE FROM public.chatbot_preferences WHERE user_id = $1', [userId]);
-    await client.query('DELETE FROM public.wellbeing_responses WHERE user_id = $1', [userId]);
-    await client.query('DELETE FROM public.srl_annotations WHERE user_id = $1', [userId]);
-    await client.query('DELETE FROM public.srl_responses WHERE user_id = $1', [userId]);
-    await client.query('DELETE FROM public.questionnaire_results WHERE user_id = $1', [userId]);
-    await client.query('DELETE FROM public.sleep_judgments WHERE user_id = $1', [userId]);
-    await client.query('DELETE FROM public.sleep_sessions WHERE user_id = $1', [userId]);
-    await client.query('DELETE FROM public.sleep_baselines WHERE user_id = $1', [userId]);
-    await client.query('DELETE FROM public.screen_time_judgments WHERE user_id = $1', [userId]);
-    await client.query('DELETE FROM public.screen_time_sessions WHERE user_id = $1', [userId]);
-    await client.query('DELETE FROM public.screen_time_baselines WHERE user_id = $1', [userId]);
-    await client.query('DELETE FROM public.lms_judgments WHERE user_id = $1', [userId]);
-    await client.query('DELETE FROM public.lms_sessions WHERE user_id = $1', [userId]);
-    await client.query('DELETE FROM public.lms_baselines WHERE user_id = $1', [userId]);
-    await client.query('DELETE FROM public.concept_scores WHERE user_id = $1', [userId]);
-    await client.query('DELETE FROM public.concept_score_history WHERE user_id = $1', [userId]);
-    await client.query('DELETE FROM public.user_cluster_assignments WHERE user_id = $1', [userId]);
-    await client.query('DELETE FROM public.student_profiles WHERE user_id = $1', [userId]);
-}
 
 // GET /consent — check if user has given consent
 router.get('/', requireAuth, async (req, res, next) => {

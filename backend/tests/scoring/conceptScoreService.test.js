@@ -77,7 +77,7 @@ describe('computeAndStoreRawScore', () => {
     })
 
     test('computes average score from rawScores (numericScore field)', async () => {
-        // getYesterdayScore: no history → trend will be 'stable'
+        // getPreviousScore: no history → trend will be 'stable'
         mockQuery.mockResolvedValue({ rows: [] })
         // storeScore uses withTransaction
         mockWithTransaction.mockImplementation(async (_pool, fn) => {
@@ -98,7 +98,7 @@ describe('computeAndStoreRawScore', () => {
     })
 
     test('returns improving trend when score improved by more than 5 from yesterday', async () => {
-        // getYesterdayScore: yesterday was 60
+        // getPreviousScore: previous was 60
         mockQuery.mockResolvedValue({ rows: [{ score: '60.00' }] })
         mockWithTransaction.mockImplementation(async (_pool, fn) => {
             await fn({ query: jest.fn().mockResolvedValue({ rows: [] }) })

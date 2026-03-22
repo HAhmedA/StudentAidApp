@@ -134,6 +134,12 @@ router.post('/', asyncRoute(async (req, res) => {
                 totalSleepMinutes, timeInBedMinutes, awakeningsCount, awakeMinutes]
         )
 
+        // Delete simulated rows now that user has submitted real data
+        await pool.query(
+            `DELETE FROM public.sleep_sessions WHERE user_id = $1 AND is_simulated = true`,
+            [userId]
+        )
+
         // Trigger score recomputation in background (do not await)
         computeAllScores(userId).catch(err => logger.error('Score recomputation error after sleep submit:', err))
         updateDataVersion(userId).catch(err => logger.warn('data version update failed:', err.message))

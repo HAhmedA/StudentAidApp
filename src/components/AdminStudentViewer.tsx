@@ -31,6 +31,8 @@ const AdminStudentViewer = ({ onStudentSelect, selectedStudentId }: Props) => {
     const [syncSearch, setSyncSearch] = useState('')
     const [clusterFilter, setClusterFilter] = useState<'all' | 'included' | 'excluded'>('all')
     const [excludeLoading, setExcludeLoading] = useState<Set<string>>(new Set())
+    const [deleteConfirming, setDeleteConfirming] = useState<string | null>(null)
+    const [deleteLoading, setDeleteLoading] = useState<Set<string>>(new Set())
 
     useEffect(() => {
         // Load students for dropdown
@@ -103,6 +105,23 @@ const AdminStudentViewer = ({ onStudentSelect, selectedStudentId }: Props) => {
             setStudents(prev => prev.map(s => s.id === userId ? { ...s, exclude_from_clustering: currentExcluded } : s))
         } finally {
             setExcludeLoading(prev => { const next = new Set(prev); next.delete(userId); return next })
+        }
+    }
+
+    const handleDeleteStudent = async (userId: string) => {
+        setDeleteLoading(prev => new Set(prev).add(userId))
+        try {
+            await api.delete(`/admin/students/${userId}`)
+            setStudents(prev => prev.filter(s => s.id !== userId))
+            setSyncStatuses(prev => prev.filter(s => s.userId !== userId))
+            if (selectedStudentId === userId) {
+                onStudentSelect('', '')
+            }
+        } catch {
+            // Network error — student was not deleted
+        } finally {
+            setDeleteLoading(prev => { const next = new Set(prev); next.delete(userId); return next })
+            setDeleteConfirming(null)
         }
     }
 
@@ -232,6 +251,32 @@ const AdminStudentViewer = ({ onStudentSelect, selectedStudentId }: Props) => {
                                                     >
                                                         {excludeLoading.has(s.userId) ? '…' : isExcluded ? 'Include' : 'Exclude'}
                                                     </button>
+                                                    {deleteConfirming === s.userId ? (
+                                                        <>
+                                                            <button
+                                                                className='admin-delete-confirm-btn'
+                                                                onClick={() => handleDeleteStudent(s.userId)}
+                                                                disabled={deleteLoading.has(s.userId)}
+                                                            >
+                                                                {deleteLoading.has(s.userId) ? '…' : 'Confirm'}
+                                                            </button>
+                                                            <button
+                                                                className='admin-delete-cancel-btn'
+                                                                onClick={() => setDeleteConfirming(null)}
+                                                                disabled={deleteLoading.has(s.userId)}
+                                                            >
+                                                                Cancel
+                                                            </button>
+                                                        </>
+                                                    ) : (
+                                                        <button
+                                                            className='admin-delete-row-btn'
+                                                            onClick={() => setDeleteConfirming(s.userId)}
+                                                            title='Delete this student account and all data'
+                                                        >
+                                                            Delete
+                                                        </button>
+                                                    )}
                                                 </td>
                                             </tr>
                                         )

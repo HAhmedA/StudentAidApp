@@ -62,6 +62,39 @@ function ordinal(n: number): string {
     return `${abs}th`
 }
 
+/** Maps a short cluster label to a full descriptive sentence, tailored per concept. */
+const CLUSTER_DESCRIPTIONS: Record<string, Record<string, string>> = {
+    sleep: {
+        'Disrupted patterns':  'You belong to a group that tends to have disrupted sleep patterns',
+        'Irregular patterns':  'You belong to a group that tends to have irregular sleep patterns',
+        'Developing habits':   'You belong to a group that is developing healthier sleep habits',
+        'Healthy sleepers':    'You belong to a group that maintains healthy sleep habits',
+    },
+    screen_time: {
+        'Heavy usage':         'You belong to a group with heavy screen time usage',
+        'Above-average usage': 'You belong to a group with above-average screen time usage',
+        'Moderate usage':      'You belong to a group with moderate screen time usage',
+        'Balanced usage':      'You belong to a group with balanced screen time usage',
+    },
+    lms: {
+        'Limited engagement':    'You belong to a group with limited course engagement',
+        'Building engagement':   'You belong to a group that is building course engagement',
+        'Developing engagement': 'You belong to a group that is developing course engagement',
+        'Consistent learners':   'You belong to a group of consistent learners',
+        'Active learners':       'You belong to a group of active and engaged learners',
+    },
+    srl: {
+        'Developing regulation':  'You belong to a group that is developing self-regulation skills',
+        'Building regulation':    'You belong to a group that is building self-regulation skills',
+        'Capable regulators':     'You belong to a group of capable self-regulators',
+        'Strong self-regulators': 'You belong to a group of strong self-regulators',
+    },
+}
+
+function describeClusterLabel(conceptId: string, label: string): string {
+    return CLUSTER_DESCRIPTIONS[conceptId]?.[label] ?? `You belong to a group described as: ${label}`
+}
+
 function formatLastUpdated(computedAt?: string | null): { text: string; stale: boolean } {
     if (!computedAt) return { text: '', stale: false }
     const diff = Date.now() - new Date(computedAt).getTime()
@@ -199,17 +232,7 @@ const ScoreBoard = ({
                         marginBottom: '10px',
                         color: badgeColor
                     }}>
-                        <div className='cluster-badge-label'>{badgeDot} {score.clusterLabel}</div>
-                        {score.percentilePosition != null && (
-                            <div className='cluster-badge-detail'>
-                                You are at the {ordinal(score.percentilePosition)} percentile of this group
-                            </div>
-                        )}
-                        {score.clusterUserCount != null && (
-                            <div className='cluster-badge-detail'>
-                                {score.clusterUserCount} student{score.clusterUserCount !== 1 ? 's' : ''} in this group
-                            </div>
-                        )}
+                        <div className='cluster-badge-label'>{badgeDot} {describeClusterLabel(score.conceptId, score.clusterLabel!)}</div>
                     </div>
                 )}
                 <div style={{

@@ -42,6 +42,12 @@ router.post('/post', asyncRoute(async (req, res) => {
 
         await computeAnnotations(pool, userId)
 
+        // Delete simulated rows now that user has submitted real data
+        await pool.query(
+            `DELETE FROM public.questionnaire_results WHERE user_id = $1 AND is_simulated = true`,
+            [userId]
+        )
+
         // Trigger full score recomputation in background (do not await)
         computeAllScores(userId).catch(err =>
             logger.error('Score recomputation error after SRL submit:', err)

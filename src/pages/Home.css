@@ -743,6 +743,53 @@
   cursor: default;
 }
 
+.admin-delete-row-btn {
+  padding: 3px 10px;
+  font-size: 12px;
+  border: 1px solid #FECACA;
+  border-radius: 6px;
+  background: #FFFFFF;
+  color: #DC2626;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.admin-delete-row-btn:hover {
+  background: #DC2626;
+  border-color: #DC2626;
+  color: #FFFFFF;
+}
+
+.admin-delete-confirm-btn {
+  padding: 3px 10px;
+  font-size: 12px;
+  border: 1px solid #DC2626;
+  border-radius: 6px;
+  background: #DC2626;
+  color: #FFFFFF;
+  cursor: pointer;
+}
+
+.admin-delete-confirm-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.admin-delete-cancel-btn {
+  padding: 3px 10px;
+  font-size: 12px;
+  border: 1px solid #D1D5DB;
+  border-radius: 6px;
+  background: #FFFFFF;
+  color: #6B7280;
+  cursor: pointer;
+}
+
+.admin-delete-cancel-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 /* Row styling for excluded users */
 .cluster-excluded-row td {
   color: #9CA3AF;

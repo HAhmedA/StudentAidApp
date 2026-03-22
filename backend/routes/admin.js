@@ -10,6 +10,8 @@ import { CONCEPT_NAMES, CONCEPT_IDS } from '../config/concepts.js'
 import { getConceptPoolSizes, getUserConceptDataSet, getClusterInfoByUser } from '../services/scoring/scoreQueryService.js'
 import { getLlmConfig, clearLlmConfigCache } from '../services/llmConfigService.js'
 import { computeAllScores, batchScoreSRLCohort } from '../services/scoring/scoreComputationService.js'
+import { withTransaction } from '../utils/withTransaction.js'
+import { deleteUserAccount } from '../services/userDeletionService.js'
 
 const router = Router()
 
@@ -292,6 +294,29 @@ router.patch('/students/:studentId/cluster-exclusion', asyncRoute(async (req, re
         }
         logger.info(`Admin ${req.session.user?.email} set exclude_from_clustering=${exclude} for user ${studentId}`)
         res.json({ success: true, studentId, excludeFromClustering: exclude })
+}))
+
+// Delete a specific student account and all associated data
+router.delete('/students/:studentId', asyncRoute(async (req, res) => {
+    const { studentId } = req.params
+    const adminEmail = req.session.user?.email
+
+    // Verify the target user exists and is a student (not an admin)
+    const { rows } = await pool.query(
+        'SELECT id, role, email FROM public.users WHERE id = $1',
+        [studentId]
+    )
+    if (rows.length === 0) throw Errors.NOT_FOUND('User')
+    if (rows[0].role === 'admin') throw Errors.VALIDATION('Cannot delete admin accounts')
+
+    const targetEmail = rows[0].email
+
+    await withTransaction(pool, async (client) => {
+        await deleteUserAccount(client, studentId)
+    })
+
+    logger.warn(`Admin ${adminEmail} deleted student account ${studentId} (${targetEmail})`)
+    res.json({ deleted: true, studentId })
 }))
 
 // Get annotations for a specific student

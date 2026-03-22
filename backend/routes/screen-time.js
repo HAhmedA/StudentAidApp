@@ -75,6 +75,12 @@ router.post('/', asyncRoute(async (req, res) => {
             [userId, sessionDate, totalMinutes, baselineMinutes, longestSession, preSleepMinutes]
         )
 
+        // Delete simulated rows now that user has submitted real data
+        await pool.query(
+            `DELETE FROM public.screen_time_sessions WHERE user_id = $1 AND is_simulated = true`,
+            [userId]
+        )
+
         // Trigger score recomputation in background (do not await)
         computeAllScores(userId).catch(err => logger.error('Score recomputation error after screen-time submit:', err))
         updateDataVersion(userId).catch(err => logger.warn('data version update failed:', err.message))
