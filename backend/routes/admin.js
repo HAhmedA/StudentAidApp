@@ -9,7 +9,7 @@ import { asyncRoute, Errors } from '../utils/errors.js'
 import { CONCEPT_NAMES, CONCEPT_IDS } from '../config/concepts.js'
 import { getConceptPoolSizes, getUserConceptDataSet, getClusterInfoByUser } from '../services/scoring/scoreQueryService.js'
 import { getLlmConfig, clearLlmConfigCache } from '../services/llmConfigService.js'
-import { computeAllScores, batchScoreSRLCohort } from '../services/scoring/scoreComputationService.js'
+import { computeAllScores, batchScoreSleepCohort, batchScoreScreenTimeCohort, batchScoreSRLCohort } from '../services/scoring/scoreComputationService.js'
 import { withTransaction } from '../utils/withTransaction.js'
 import { deleteUserAccount } from '../services/userDeletionService.js'
 
@@ -510,8 +510,14 @@ router.post('/recompute-scores', asyncRoute(async (req, res) => {
         }
     }
 
-    // SRL requires a single batch run (one PGMoE fit for all users) to keep
-    // peer_clusters and user_cluster_assignments in sync.
+    // Batch-score each concept so every user is scored against the same stable pool.
+    // This catches users skipped during the per-user loop due to cold start.
+    await batchScoreSleepCohort().catch(err =>
+        logger.error(`recompute-scores: Sleep batch scoring failed: ${err.message}`)
+    )
+    await batchScoreScreenTimeCohort().catch(err =>
+        logger.error(`recompute-scores: Screen time batch scoring failed: ${err.message}`)
+    )
     await batchScoreSRLCohort().catch(err =>
         logger.error(`recompute-scores: SRL batch scoring failed: ${err.message}`)
     )
