@@ -20,7 +20,8 @@ const RECOMMENDED_ENV = {
     SIMULATION_MODE: 'Set to "false" to disable simulators and exclude test data from clustering (default: "true")',
     MOODLE_BASE_URL: 'Base URL of Moodle instance for LMS sync (e.g. http://localhost:8888/moodle501)',
     MOODLE_TOKEN:    'Moodle web service token for REST API access',
-    MOODLE_AUTO_LOGIN_KEY: 'Shared secret for Moodle auto-login URL authentication'
+    MOODLE_AUTO_LOGIN_KEY: 'Shared secret for Moodle auto-login URL authentication',
+    MOODLE_ALLOWED_ORIGINS: 'Comma-separated allowed origins for Moodle return URLs (e.g. https://elearn.uef.fi)'
 }
 
 /**

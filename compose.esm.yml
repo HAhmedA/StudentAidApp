@@ -6,7 +6,7 @@
 #
 # Usage: docker compose -f compose.esm.yml up -d --build
 # Required .env: SESSION_SECRET, PGPASSWORD
-# Optional .env: MOODLE_BASE_URL, MOODLE_TOKEN
+# Optional .env: MOODLE_BASE_URL, MOODLE_TOKEN, LLM_BASE_URL, LLM_API_KEY, MOODLE_ALLOWED_ORIGINS
 
 services:
   web:
@@ -43,6 +43,11 @@ services:
       - MOODLE_TOKEN=${MOODLE_TOKEN:-}
       - MOODLE_AUTO_LOGIN_KEY=${MOODLE_AUTO_LOGIN_KEY:-}
       - APP_BASE_PATH=/esm/
+      - LLM_PROVIDER=${LLM_PROVIDER:-lmstudio}
+      - LLM_BASE_URL=${LLM_BASE_URL:-}
+      - LLM_MAIN_MODEL=${LLM_MAIN_MODEL:-}
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - MOODLE_ALLOWED_ORIGINS=${MOODLE_ALLOWED_ORIGINS:-}
       - NODE_OPTIONS=--dns-result-order=ipv4first
     # No host port exposure - only accessible via internal nginx proxy
     expose:
