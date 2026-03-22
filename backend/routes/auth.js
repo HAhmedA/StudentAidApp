@@ -133,6 +133,14 @@ router.get('/me', getMe)
 // Moodle auto-login: validates shared secret, finds/creates user by Moodle ID, sets 45-day session
 router.get('/moodle', authLimiter, moodleAutoLogin)
 
+// Bounce endpoint for Moodle auto-login double redirect.
+// The extra hop ensures the session cookie is stored before the SPA loads.
+router.get('/bounce', (req, res) => {
+    const to = req.query.to || '/'
+    const safeTo = to.startsWith('/') ? to : '/'
+    res.redirect(safeTo)
+})
+
 // Legacy endpoints (backwards compatible)
 router.post('/legacy-login', asyncRoute(async (req, res) => {
     if (process.env.NODE_ENV === 'production') {
