@@ -62,7 +62,7 @@ const DIMENSION_DEFS = {
     lms: {
         volume: { metric: 'total_active_minutes', inverted: false },
         consistency: { metric: 'days_active', inverted: false },
-        action_mix: { metric: 'active_percent', inverted: false },
+        participation_variety: { metric: 'participation_score', inverted: false },
         session_quality: { metric: 'avg_session_duration', inverted: false }
     },
     sleep: {

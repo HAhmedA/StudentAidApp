@@ -143,7 +143,7 @@ app.use((err, req, res, next) => {
 });
 
 // Start server
-app.listen(PORT, async () => {
+const server = app.listen(PORT, async () => {
   logger.info(`Backend listening on http://0.0.0.0:${PORT}`)
 
   // Initialize system prompt (seeds from file if database is empty)
@@ -171,3 +171,20 @@ app.listen(PORT, async () => {
   // Start nightly background jobs
   startCronJobs()
 })
+
+// Graceful shutdown — drain active requests and close DB pool on SIGTERM/SIGINT
+// Docker sends SIGTERM during container stop; without this handler the process
+// exits immediately, dropping in-flight requests and abandoning DB connections.
+function gracefulShutdown(signal) {
+  logger.info(`${signal} received — shutting down gracefully`)
+  server.close(() => {
+    pool.end().then(() => {
+      logger.info('Database pool closed')
+      process.exit(0)
+    })
+  })
+  // Force exit if draining takes too long
+  setTimeout(() => process.exit(1), 10000)
+}
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'))
+process.on('SIGINT', () => gracefulShutdown('SIGINT'))

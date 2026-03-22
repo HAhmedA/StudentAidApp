@@ -8,6 +8,7 @@ import { validate } from '../middleware/validation.js'
 
 import { register, login, logout, getMe, moodleAutoLogin } from '../controllers/authController.js'
 import { authLimiter } from '../middleware/rateLimit.js'
+import { asyncRoute } from '../utils/errors.js'
 
 const router = Router()
 
@@ -133,7 +134,7 @@ router.get('/me', getMe)
 router.get('/moodle', authLimiter, moodleAutoLogin)
 
 // Legacy endpoints (backwards compatible)
-router.post('/legacy-login', async (req, res) => {
+router.post('/legacy-login', asyncRoute(async (req, res) => {
     if (process.env.NODE_ENV === 'production') {
         return res.status(404).json({ error: 'not_found' })
     }
@@ -147,6 +148,6 @@ router.post('/legacy-login', async (req, res) => {
     req.session.user = user
     logger.info(`Demo login as: ${role}`)
     res.json(user)
-})
+}))
 
 export default router
