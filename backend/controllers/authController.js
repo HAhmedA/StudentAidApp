@@ -182,15 +182,23 @@ export const moodleAutoLogin = asyncRoute(async (req, res) => {
         )
         setSessionCookie(res, req.sessionID, MOODLE_SESSION_MAX_AGE)
 
-        // Respond with an HTML page that does a client-side redirect instead of a
-        // 302. This ensures the browser fully processes the Set-Cookie header before
-        // navigating — some browsers inconsistently store cookies from 302 responses,
-        // causing the session to be missing when the SPA loads and calls GET /api/me.
+        // Respond with an HTML page that verifies the session cookie is working
+        // before redirecting to the dashboard. The fetch('/api/me') round-trip
+        // "activates" the cookie in the browser's jar, guaranteeing the SPA's
+        // own GET /api/me call will include it. This fixes an inconsistency where
+        // some browsers don't reliably send cookies set during redirect chains.
         const basePath = process.env.APP_BASE_PATH || '/'
+        const meUrl = basePath + 'api/me'
         res.send(
-            `<!DOCTYPE html><html><head>` +
-            `<meta http-equiv="refresh" content="0;url=${basePath}">` +
-            `</head><body><p>Redirecting\u2026</p></body></html>`
+            `<!DOCTYPE html><html><head></head><body>` +
+            `<p>Redirecting\u2026</p>` +
+            `<script>` +
+            `fetch('${meUrl}',{credentials:'include'})` +
+            `.then(function(){window.location.replace('${basePath}')})` +
+            `.catch(function(){window.location.replace('${basePath}')})` +
+            `</script>` +
+            `<noscript><meta http-equiv="refresh" content="1;url=${basePath}"></noscript>` +
+            `</body></html>`
         )
     } catch (err) {
         if (validRef) {
