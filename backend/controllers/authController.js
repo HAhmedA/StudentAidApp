@@ -189,6 +189,8 @@ export const moodleAutoLogin = asyncRoute(async (req, res) => {
         setSessionCookie(res, req.sessionID, MOODLE_SESSION_MAX_AGE)
 
         const basePath = process.env.APP_BASE_PATH || '/'
+        res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private')
+        res.set('Pragma', 'no-cache')
         res.redirect(basePath)
     } catch (err) {
         if (validRef) {

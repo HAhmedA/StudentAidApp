@@ -120,6 +120,14 @@ app.use((req, res, next) => {
 // Health check — used by Docker and load balancers
 app.get('/api/health', (_req, res) => res.json({ status: 'ok' }))
 
+// Prevent intermediate proxies (e.g. ESM external nginx) from caching API responses.
+// All API endpoints serve user-specific data and must never be served from cache.
+app.use('/api', (req, res, next) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private')
+  res.set('Pragma', 'no-cache')
+  next()
+})
+
 // Mount all routes under /api with rate limiting
 app.use('/api', apiLimiter, routes)
 
