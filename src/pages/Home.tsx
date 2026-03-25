@@ -9,6 +9,7 @@ import AdminLlmConfigPanel from '../components/AdminLlmConfigPanel'
 import AdminFlaggedMessagesPanel from '../components/AdminFlaggedMessagesPanel'
 import AdminSupportRequestsPanel from '../components/AdminSupportRequestsPanel'
 import AdminTabNav from '../components/AdminTabNav'
+import AdminWizardHeatmap from '../components/AdminWizardHeatmap'
 import ScoreBoard from '../components/ScoreBoard'
 import { useReduxSelector, useReduxDispatch } from '../redux'
 import { api } from '../api/client'
@@ -203,6 +204,8 @@ const Home = () => {
                                     setSelectedStudentName(name)
                                 }}
                             />
+
+                            <AdminWizardHeatmap />
 
                             {selectedStudentId && selectedStudentName && (
                                 <>

@@ -327,6 +327,55 @@ router.get('/students/:studentId/annotations', asyncRoute(async (req, res) => {
         res.json({ annotations })
 }))
 
+// Wizard completion heatmap — which students completed the wizard on which days
+router.get('/wizard-completions', asyncRoute(async (req, res) => {
+    const dateRe = /^\d{4}-\d{2}-\d{2}$/
+    const today = new Date().toISOString().slice(0, 10)
+    const fourteenAgo = new Date(Date.now() - 14 * 86400000).toISOString().slice(0, 10)
+
+    const startDate = req.query.startDate || fourteenAgo
+    const endDate   = req.query.endDate   || today
+
+    if (!dateRe.test(startDate) || !dateRe.test(endDate)) {
+        throw Errors.VALIDATION('startDate and endDate must be YYYY-MM-DD')
+    }
+    if (startDate > endDate) {
+        throw Errors.VALIDATION('startDate must be <= endDate')
+    }
+    const daySpan = (new Date(endDate) - new Date(startDate)) / 86400000
+    if (daySpan > 90) {
+        throw Errors.VALIDATION('Date range must not exceed 90 days')
+    }
+
+    const [studentRes, compRes] = await Promise.all([
+        pool.query(
+            `SELECT u.id, u.name, COALESCE(sp.exclude_from_clustering, false) AS excluded
+             FROM public.users u
+             LEFT JOIN public.student_profiles sp ON sp.user_id = u.id
+             WHERE u.role = 'student'
+             ORDER BY u.name`
+        ),
+        pool.query(
+            `SELECT user_id, DATE(created_at)::text AS completion_date
+             FROM public.questionnaire_results
+             WHERE is_simulated = false
+               AND DATE(created_at) >= $1
+               AND DATE(created_at) <= $2
+             GROUP BY user_id, DATE(created_at)
+             ORDER BY completion_date`,
+            [startDate, endDate]
+        )
+    ])
+
+    const completions = {}
+    for (const row of compRes.rows) {
+        if (!completions[row.user_id]) completions[row.user_id] = []
+        completions[row.user_id].push(row.completion_date)
+    }
+
+    res.json({ students: studentRes.rows, completions, startDate, endDate })
+}))
+
 // Cluster diagnostics — most-recent run per concept
 router.get('/cluster-diagnostics', asyncRoute(async (req, res) => {
     const { rows } = await pool.query(
