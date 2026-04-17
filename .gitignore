@@ -9,7 +9,7 @@ postgres/password.txt
 .pnp.js
 
 # testing
-/coverage
+**/coverage
 
 # production
 /build
