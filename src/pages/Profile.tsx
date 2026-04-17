@@ -23,6 +23,7 @@ const Profile = () => {
     const [showAlignmentSuccess, setShowAlignmentSuccess] = useState(false)
     const [exporting, setExporting] = useState(false)
     const [exportingUnified, setExportingUnified] = useState(false)
+    const [exportingProject, setExportingProject] = useState(false)
 
     // Contact admin state
     const [contactCategory, setContactCategory] = useState('')
@@ -95,6 +96,7 @@ const Profile = () => {
 
     const handleExport = () => downloadCsv('/profile/export', 'my-data-export.csv', setExporting)
     const handleExportUnified = () => downloadCsv('/profile/export-unified', 'my-data-unified.csv', setExportingUnified)
+    const handleExportProject = () => downloadCsv('/profile/export-project', 'project-data.csv', setExportingProject)
 
     // Load support requests for students
     useEffect(() => {
@@ -284,6 +286,32 @@ const Profile = () => {
                                 </p>
                             </div>
                         </div>
+                    </div>
+
+                    {/* Download Project Data (compiled, anonymized sample + synthetic rows) */}
+                    <div style={{
+                        padding: '16px',
+                        border: '1px solid #8b5cf6',
+                        borderRadius: '8px',
+                        backgroundColor: '#f5f3ff',
+                        marginBottom: '20px'
+                    }}>
+                        <h3 style={{ margin: '0 0 8px', color: '#6d28d9', fontSize: '14px' }}>Download Project Data</h3>
+                        <p style={{ fontSize: '13px', color: '#6b7280', margin: '0 0 12px' }}>
+                            CSV file contains data for the Project. The data represent answers of the self-regulation
+                            and well-being questionnaires. All data on a scale of 1-5.
+                        </p>
+                        <button
+                            onClick={handleExportProject}
+                            disabled={exportingProject}
+                            style={{
+                                padding: '8px 16px', backgroundColor: '#7c3aed', color: 'white',
+                                border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '13px',
+                                opacity: exportingProject ? 0.6 : 1
+                            }}
+                        >
+                            {exportingProject ? 'Compiling...' : 'Download Project Data'}
+                        </button>
                     </div>
 
                     {/* Contact Admin */}

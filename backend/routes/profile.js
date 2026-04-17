@@ -4,6 +4,7 @@ import pool from '../config/database.js'
 import logger from '../utils/logger.js'
 import { requireAuth } from '../middleware/auth.js'
 import { asyncRoute, Errors } from '../utils/errors.js'
+import { buildProjectDataCsv } from '../services/projectDataExportService.js'
 
 const router = Router()
 
@@ -296,6 +297,23 @@ router.get('/export-unified', asyncRoute(async (req, res) => {
         res.send(lines.join('\n'))
 
         logger.info(`Unified data exported for user: ${userId}`)
+}))
+
+// Download a compiled, anonymized project-data CSV: random sample of real
+// SRL + wellbeing responses from a subset of students, padded with synthetic
+// rows to >=70, rescaled to an integer 1..5 unified scale, fresh each click.
+router.get('/export-project', asyncRoute(async (req, res) => {
+        const userId = req.session.user?.id
+        if (!userId) throw Errors.UNAUTHORIZED()
+
+        const csv = await buildProjectDataCsv(pool)
+
+        res.setHeader('Content-Type', 'text/csv')
+        res.setHeader('Content-Disposition', 'attachment; filename="project-data.csv"')
+        res.send(csv)
+
+        const rowCount = csv.split('\n').length - 1   // minus header
+        logger.info(`Project data exported by user: ${userId} (${rowCount} rows)`)
 }))
 
 // ── Support requests (student → admin) ──────────────────────────
