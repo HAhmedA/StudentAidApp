@@ -23,7 +23,7 @@ export const SRL_KEYS = [
 ]
 
 export const CSV_COLUMNS = [
-    'row_id', 'date',
+    'row_id',
     ...WELLBEING_KEYS,
     ...SRL_KEYS,
 ]
@@ -234,10 +234,7 @@ function normalizeRealRow(row) {
 function renderCsv(rows) {
     const lines = [CSV_COLUMNS.join(',')]
     rows.forEach((r, i) => {
-        const rescaled = {
-            row_id: i + 1,
-            date: r.date,
-        }
+        const rescaled = { row_id: i + 1 }
         for (const k of WELLBEING_KEYS) {
             rescaled[k] = toUnifiedScale(r[k], 0, 10)
         }

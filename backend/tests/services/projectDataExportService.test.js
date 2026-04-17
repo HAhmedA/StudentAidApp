@@ -211,11 +211,4 @@ describe('buildProjectDataCsv', () => {
         expect(header).not.toContain('source')
     })
 
-    test('rows are ordered by date ascending', async () => {
-        const csv = await buildProjectDataCsv(makeFakePool([]))
-        const { rows } = parseCsv(csv)
-        for (let i = 1; i < rows.length; i++) {
-            expect(rows[i].date >= rows[i - 1].date).toBe(true)
-        }
-    })
 })
