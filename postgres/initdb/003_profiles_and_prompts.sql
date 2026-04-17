@@ -4,11 +4,6 @@
 -- Student profiles table (1-to-1 with users)
 CREATE TABLE IF NOT EXISTS public.student_profiles (
     user_id UUID PRIMARY KEY REFERENCES public.users(id) ON DELETE CASCADE,
-    edu_level VARCHAR(50),
-    field_of_study VARCHAR(100),
-    major VARCHAR(100),
-    learning_formats JSONB DEFAULT '[]'::jsonb,
-    disabilities JSONB DEFAULT '[]'::jsonb,
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
